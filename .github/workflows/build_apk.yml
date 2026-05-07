@@ -79,6 +79,19 @@ jobs:
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
           cat android/local.properties
 
+      - name: Corrigir Kotlin e compileSdk no Android gerado
+        run: |
+          # Atualiza Kotlin de 1.7.10 para 1.9.22 no settings.gradle
+          sed -i 's/org.jetbrains.kotlin.android" version "1.7.10"/org.jetbrains.kotlin.android" version "1.9.22"/' android/settings.gradle
+          echo "--- settings.gradle (kotlin line) ---"
+          grep "kotlin" android/settings.gradle
+
+          # Adiciona compileSdk = 35 no app/build.gradle
+          sed -i 's/compileSdk = flutter\.compileSdkVersion/compileSdk = 35/' android/app/build.gradle
+          sed -i 's/targetSdk = flutter\.targetSdkVersion/targetSdk = 35/' android/app/build.gradle
+          echo "--- app/build.gradle (sdk lines) ---"
+          grep -E "compileSdk|targetSdk|ndkVersion" android/app/build.gradle
+
       - name: Aplicar AndroidManifest WizMart
         run: |
           cat > android/app/src/main/AndroidManifest.xml << 'EOF'
