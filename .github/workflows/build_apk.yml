@@ -27,6 +27,9 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Desabilitar analytics Flutter
+        run: flutter config --no-analytics
+
       - name: flutter pub get
         run: flutter pub get
 
@@ -35,14 +38,19 @@ jobs:
 
       - name: Regenerar pasta Android
         run: |
-          # Remove a pasta android existente (incompleta) e regenera via Flutter
           rm -rf android
           flutter create --platforms=android --org com.wizmart --project-name wizmart_app .
-          echo "Android regenerado pelo Flutter"
 
-      - name: Aplicar configurações WizMart no Android
+      - name: Configurar local.properties
         run: |
-          # Sobrescreve AndroidManifest com as permissões corretas do WizMart
+          FLUTTER_ROOT=$(dirname $(dirname $(which flutter)))
+          echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
+          echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
+          echo "--- local.properties ---"
+          cat android/local.properties
+
+      - name: Aplicar AndroidManifest WizMart
+        run: |
           cat > android/app/src/main/AndroidManifest.xml << 'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET"/>
@@ -90,7 +98,6 @@ jobs:
               </queries>
           </manifest>
           EOF
-          echo "AndroidManifest.xml aplicado"
 
       - name: Build APK release
         run: flutter build apk --release
