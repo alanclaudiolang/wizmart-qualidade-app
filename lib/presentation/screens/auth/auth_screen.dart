@@ -1,7 +1,6 @@
 // lib/presentation/screens/auth/auth_screen.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -15,20 +14,39 @@ class AuthScreen extends ConsumerStatefulWidget {
 }
 
 class _AuthScreenState extends ConsumerState<AuthScreen> {
-  final _phoneController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _senhaController = TextEditingController();
   bool _loading = false;
+  bool _senhaVisivel = false;
+  bool _lembrarMe = true;
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    _carregarEmailSalvo();
+  }
+
+  Future<void> _carregarEmailSalvo() async {
+    final session = await SessionService.getSession();
+    if (session != null && session.email.isNotEmpty) {
+      _emailController.text = session.email;
+    }
+  }
+
+  @override
   void dispose() {
-    _phoneController.dispose();
+    _emailController.dispose();
+    _senhaController.dispose();
     super.dispose();
   }
 
   Future<void> _entrar() async {
-    final phone = _phoneController.text.trim();
-    if (phone.isEmpty) {
-      setState(() => _error = 'Digite seu número de celular');
+    final email = _emailController.text.trim().toLowerCase();
+    final senha = _senhaController.text;
+
+    if (email.isEmpty || senha.isEmpty) {
+      setState(() => _error = 'Preencha o email e a senha.');
       return;
     }
 
@@ -38,208 +56,263 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     });
 
     try {
-      // Busca usuário pelo telefone no Supabase
-      // Tenta vários formatos para ser tolerante com dados inconsistentes
-      final phoneVariants = _getPhoneVariants(phone);
+      // 1. Verifica conexão tentando logar via Supabase Auth
+      final authResponse = await Supabase.instance.client.auth
+          .signInWithPassword(email: email, password: senha);
 
-      Map<String, dynamic>? user;
-      for (final variant in phoneVariants) {
-        final result = await Supabase.instance.client
-            .from('users')
-            .select('id,nome,telefone,ativo,tipo_user')
-            .eq('telefone', variant)
-            .eq('ativo', true)
-            .maybeSingle();
-
-        if (result != null) {
-          user = result;
-          break;
-        }
-      }
-
-      if (user == null) {
+      if (authResponse.user == null) {
         setState(() {
-          _error =
-              'Número não encontrado. Contate seu supervisor.';
+          _error = 'Usuário ou senha incorretos.';
           _loading = false;
         });
         return;
       }
 
-      // Verifica se está ativo
-      if (user['ativo'] == false) {
+      // 2. Busca dados do usuário na tabela users
+      final userData = await Supabase.instance.client
+          .from('users')
+          .select('id,nome,email,foto,ativo,tipo_user,supervisor_associado')
+          .eq('uid', authResponse.user!.id)
+          .maybeSingle();
+
+      if (userData == null) {
+        await Supabase.instance.client.auth.signOut();
         setState(() {
-          _error = 'Acesso desativado. Contate seu supervisor.';
+          _error = 'Usuário não encontrado. Contate seu supervisor.';
           _loading = false;
         });
         return;
       }
 
-      // Salva sessão persistente
+      // 3. Verifica se está ativo
+      if (userData['ativo'] == false) {
+        await Supabase.instance.client.auth.signOut();
+        setState(() {
+          _error = 'Sua conta está desativada. Contate seu supervisor.';
+          _loading = false;
+        });
+        return;
+      }
+
+      // 4. Verifica se é promotor (tipo_user == 3)
+      if (userData['tipo_user'] != 3) {
+        await Supabase.instance.client.auth.signOut();
+        setState(() {
+          _error = 'Acesso apenas para Promotores.';
+          _loading = false;
+        });
+        return;
+      }
+
+      // 5. Salva sessão persistente
       await SessionService.saveSession(
-        userId: user['id'] as int,
-        phone: phone,
-        nome: user['nome'] as String? ?? '',
+        userId: userData['id'] as int,
+        email: email,
+        nome: userData['nome'] as String? ?? '',
+        senhaHash: _lembrarMe ? senha : '',
       );
 
-      if (mounted) {
-        context.go('/home');
-      }
-    } catch (e) {
+      if (mounted) context.go('/home');
+    } on AuthException catch (e) {
       setState(() {
-        _error = 'Erro ao verificar número. Verifique sua conexão.';
+        _error = e.message.contains('Invalid login')
+            ? 'Usuário ou senha incorretos.'
+            : 'Erro ao entrar. Verifique sua conexão.';
+        _loading = false;
+      });
+    } catch (e) {
+      // Tenta login offline se não há conexão
+      final session = await SessionService.getSession();
+      if (session != null &&
+          session.email == email &&
+          session.senhaHash == _senhaController.text &&
+          session.senhaHash.isNotEmpty) {
+        if (mounted) context.go('/home');
+        return;
+      }
+      setState(() {
+        _error = 'Erro ao conectar. Verifique sua internet.';
         _loading = false;
       });
     }
   }
 
-  // Gera variantes do número para tolerar formatos diferentes no banco
-  List<String> _getPhoneVariants(String phone) {
-    // Remove tudo que não é dígito
-    final digits = phone.replaceAll(RegExp(r'\D'), '');
-    return [
-      phone, // exato como digitado
-      digits, // só dígitos
-      '($digits)', // com parênteses
-      if (digits.length == 11)
-        '(${digits.substring(0, 2)}) ${digits.substring(2, 7)}-${digits.substring(7)}',
-      if (digits.length == 11)
-        '(${digits.substring(0, 2)}) ${digits.substring(2)}',
-    ];
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A2E),
+      backgroundColor: Colors.white,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Logo / título
-              const SizedBox(height: 40),
-              Center(
-                child: Image.asset(
-                  'assets/images/logo.png',
-                  height: 80,
-                  errorBuilder: (_, __, ___) => const Text(
-                    'WizMart',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 36,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Center(
-                child: Text(
-                  'App do Promotor',
-                  style: TextStyle(
-                    color: Color(0xFF8892B0),
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 60),
+              const SizedBox(height: 24),
 
-              // Campo de telefone
-              const Text(
-                'Número de celular',
-                style: TextStyle(
-                  color: Color(0xFF8892B0),
-                  fontSize: 14,
+              // Logo WizMart
+              Image.asset(
+                'assets/images/logo.png',
+                height: 60,
+                alignment: Alignment.centerLeft,
+                errorBuilder: (_, __, ___) => const Text(
+                  'WizMart',
+                  style: TextStyle(
+                    color: Color(0xFF38A169),
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(
-                      RegExp(r'[\d\s\(\)\-\+]')),
-                ],
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
+
+              const SizedBox(height: 24),
+
+              // Título
+              const Text(
+                'Bem vindo de volta!',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A202C),
                 ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Campo Email
+              TextField(
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+                autocorrect: false,
+                style: const TextStyle(fontSize: 16, color: Color(0xFF1A202C)),
                 decoration: InputDecoration(
-                  hintText: '(21) 99999-9999',
-                  hintStyle:
-                      const TextStyle(color: Color(0xFF4A5568)),
+                  labelText: 'Email',
+                  labelStyle: const TextStyle(color: Color(0xFF718096)),
                   filled: true,
-                  fillColor: const Color(0xFF16213E),
-                  border: OutlineInputBorder(
+                  fillColor: const Color(0xFFF8F9FA),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 2),
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
                   ),
                   focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: Color(0xFF38A169), width: 2),
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                        color: Color(0xFF4CAF50), width: 2),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 18),
-                  prefixIcon: const Icon(Icons.phone,
-                      color: Color(0xFF4CAF50)),
+                ),
+                onSubmitted: (_) => FocusScope.of(context).nextFocus(),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Campo Senha
+              TextField(
+                controller: _senhaController,
+                obscureText: !_senhaVisivel,
+                style: const TextStyle(fontSize: 16, color: Color(0xFF1A202C)),
+                decoration: InputDecoration(
+                  labelText: 'Senha',
+                  labelStyle: const TextStyle(color: Color(0xFF718096)),
+                  filled: true,
+                  fillColor: const Color(0xFFF8F9FA),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: Color(0xFF38A169), width: 2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _senhaVisivel ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                      color: const Color(0xFF718096),
+                    ),
+                    onPressed: () => setState(() => _senhaVisivel = !_senhaVisivel),
+                  ),
                 ),
                 onSubmitted: (_) => _entrar(),
               ),
 
+              const SizedBox(height: 16),
+
+              // Lembre de mim + Esqueceu a senha
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Switch.adaptive(
+                        value: _lembrarMe,
+                        onChanged: (v) => setState(() => _lembrarMe = v),
+                        activeColor: const Color(0xFF38A169),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Lembre de mim',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF1A202C)),
+                      ),
+                    ],
+                  ),
+                  TextButton(
+                    onPressed: () => _mostrarRecuperarSenha(),
+                    child: const Text(
+                      'Esqueceu sua Senha?',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF38A169),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
               // Erro
               if (_error != null) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF3B1F1F),
+                    color: const Color(0xFFFFF5F5),
                     borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFFC8181)),
                   ),
                   child: Text(
                     _error!,
-                    style: const TextStyle(
-                      color: Color(0xFFFF6B6B),
-                      fontSize: 14,
-                    ),
+                    style: const TextStyle(color: Color(0xFFC53030), fontSize: 14),
                   ),
                 ),
               ],
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
 
-              // Botão entrar
+              // Botão Entrar agora
               SizedBox(
-                height: 56,
+                height: 48,
                 child: ElevatedButton(
                   onPressed: _loading ? null : _entrar,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4CAF50),
-                    disabledBackgroundColor:
-                        const Color(0xFF4CAF50).withOpacity(0.5),
+                    backgroundColor: const Color(0xFF38A169),
+                    disabledBackgroundColor: const Color(0xFF38A169).withOpacity(0.5),
+                    elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                   child: _loading
                       ? const SizedBox(
-                          width: 24,
-                          height: 24,
+                          width: 22,
+                          height: 22,
                           child: CircularProgressIndicator(
                             color: Colors.white,
                             strokeWidth: 2,
                           ),
                         )
                       : const Text(
-                          'Entrar',
+                          'Entrar agora',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                 ),
@@ -247,6 +320,61 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _mostrarRecuperarSenha() {
+    final emailCtrl = TextEditingController(text: _emailController.text);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Recuperar senha'),
+        content: TextField(
+          controller: emailCtrl,
+          keyboardType: TextInputType.emailAddress,
+          decoration: const InputDecoration(
+            labelText: 'Email cadastrado',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF38A169),
+            ),
+            onPressed: () async {
+              final email = emailCtrl.text.trim();
+              if (email.isEmpty) return;
+              Navigator.pop(ctx);
+              try {
+                await Supabase.instance.client.auth.resetPasswordForEmail(email);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Email de recuperação enviado!'),
+                      backgroundColor: Color(0xFF38A169),
+                    ),
+                  );
+                }
+              } catch (_) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Erro ao enviar email. Tente novamente.'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Enviar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
   }
