@@ -62,7 +62,7 @@ dev_dependencies:
   riverpod_generator: ^2.4.3
 
 dependency_overrides:
-  app_links: ^3.0.0
+  app_links: ^6.0.0
 
 flutter:
   uses-material-design: true
