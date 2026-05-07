@@ -39,7 +39,7 @@ jobs:
       - name: Regenerar pasta Android
         run: |
           rm -rf android
-          flutter create --platforms=android --org com.wizmart --project-name wizmart_app .
+          flutter create --platforms=android --org com.wizmart --project-name wizmart_app --no-pub .
 
       - name: Configurar local.properties
         run: |
