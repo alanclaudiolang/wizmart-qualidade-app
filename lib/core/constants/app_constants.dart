@@ -4,7 +4,7 @@ class AppConstants {
   // Supabase
   static const String supabaseUrl = 'https://czvrbntewaisegvjdzyj.supabase.co';
   static const String supabaseAnonKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN6dnJibnRld2Fpc2VndmpkenlqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjE3NjYxMTYsImV4cCI6MjAzNzM0MjExNn0.placeholder';
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN6dnJibnRld2Fpc2VndmpkenlqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjE3NjYxMTYsImV4cCI6MjAzNzM0MjExNn0.drNMrjTZ9Dye7D6g1twyUSlR_XtKCJUGoUlKLGQM-oU';
 
   // Chave de sessão no secure storage
   static const String sessionUserIdKey = 'wizmart_user_id';
