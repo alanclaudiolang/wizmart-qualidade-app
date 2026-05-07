@@ -37,7 +37,7 @@ jobs:
         run: |
           # Remove a pasta android existente (incompleta) e regenera via Flutter
           rm -rf android
-          flutter create --platforms=android --org com.wizmart .
+          flutter create --platforms=android --org com.wizmart --project-name wizmart_app .
           echo "Android regenerado pelo Flutter"
 
       - name: Aplicar configurações WizMart no Android
