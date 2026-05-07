@@ -30,16 +30,18 @@ jobs:
       - name: Desabilitar analytics
         run: flutter config --no-analytics
 
+      - name: Criar diretório assets
+        run: mkdir -p assets/images
+
       - name: flutter pub get
         run: flutter pub get
 
       - name: Patch plugins com flutter.compileSdkVersion
         run: |
           PUB_CACHE="$HOME/.pub-cache/hosted/pub.dev"
-          echo "Aplicando patch nos plugins problemáticos..."
-
+          echo "Aplicando patch nos plugins..."
           for BUILD_GRADLE in $(find "$PUB_CACHE" -name "build.gradle" 2>/dev/null); do
-            if grep -q "flutter\.compileSdkVersion\|flutter\.minSdkVersion\|flutter\.targetSdkVersion\|flutter\.ndkVersion" "$BUILD_GRADLE" 2>/dev/null; then
+            if grep -qE "flutter\.(compileSdk|minSdk|targetSdk|ndkVersion)" "$BUILD_GRADLE" 2>/dev/null; then
               echo "Patching: $BUILD_GRADLE"
               sed -i \
                 -e 's/flutter\.compileSdkVersion/35/g' \
@@ -47,190 +49,35 @@ jobs:
                 -e 's/compileSdkVersion flutter\.compileSdkVersion/compileSdkVersion 35/g' \
                 -e 's/flutter\.minSdkVersion/21/g' \
                 -e 's/minSdkVersion flutter\.minSdkVersion/minSdkVersion 21/g' \
-                -e 's/flutter\.targetSdkVersion/34/g' \
-                -e 's/targetSdkVersion flutter\.targetSdkVersion/targetSdkVersion 34/g' \
+                -e 's/minSdk flutter\.minSdkVersion/minSdk 21/g' \
+                -e 's/flutter\.targetSdkVersion/35/g' \
+                -e 's/targetSdkVersion flutter\.targetSdkVersion/targetSdkVersion 35/g' \
+                -e 's/targetSdk flutter\.targetSdkVersion/targetSdk 35/g' \
                 -e 's/flutter\.ndkVersion/"26.1.10909125"/g' \
                 "$BUILD_GRADLE"
             fi
           done
-
           echo "Patch concluído"
 
       - name: Gerar código Drift
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Criar pasta Android
+      - name: Instalar Android SDK 35
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            --sdk_root=$ANDROID_HOME 2>/dev/null || true
+          echo "SDK 35 instalado"
+
+      - name: Regenerar pasta Android com flutter create
         run: |
           FLUTTER_ROOT=$(dirname $(dirname $(which flutter)))
-          mkdir -p android/app/src/main/kotlin/com/wizmart/app
-          mkdir -p android/app/src/main/res/values
-          mkdir -p android/app/src/main/res/values-night
-          mkdir -p android/app/src/main/res/drawable
-          mkdir -p android/app/src/main/res/drawable-v21
-          mkdir -p android/app/src/main/res/mipmap-hdpi
-          mkdir -p android/app/src/main/res/mipmap-mdpi
-          mkdir -p android/app/src/main/res/mipmap-xhdpi
-          mkdir -p android/app/src/main/res/mipmap-xxhdpi
-          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
-          mkdir -p android/gradle/wrapper
-
-          # local.properties
+          rm -rf android
+          flutter create --platforms=android --org com.wizmart --project-name wizmart_app --no-pub .
           echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
-
-          # gradle-wrapper.properties
-          cat > android/gradle/wrapper/gradle-wrapper.properties << 'EOF'
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-7.6.3-all.zip
-          EOF
-
-          # gradle.properties
-          cat > android/gradle.properties << 'EOF'
-          org.gradle.jvmargs=-Xmx4G -XX:MaxMetaspaceSize=2G
-          android.useAndroidX=true
-          android.enableJetifier=true
-          EOF
-
-          # build.gradle root
-          cat > android/build.gradle << 'EOF'
-          buildscript {
-              ext.kotlin_version = '1.9.22'
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:7.3.0'
-                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
-              }
-          }
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          rootProject.buildDir = '../build'
-          subprojects {
-              project.buildDir = "${rootProject.buildDir}/${project.name}"
-          }
-          subprojects {
-              project.evaluationDependsOn(':app')
-          }
-          tasks.register("clean", Delete) {
-              delete rootProject.buildDir
-          }
-          EOF
-
-          # settings.gradle
-          cat > android/settings.gradle << 'EOF'
-          include ':app'
-          def localPropertiesFile = new File(rootProject.projectDir, "local.properties")
-          def properties = new Properties()
-          assert localPropertiesFile.exists()
-          localPropertiesFile.withReader("UTF-8") { reader -> properties.load(reader) }
-          def flutterSdkPath = properties.getProperty("flutter.sdk")
-          assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
-          apply from: "$flutterSdkPath/packages/flutter_tools/gradle/app_plugin_loader.gradle"
-          EOF
-
-          # app/build.gradle
-          cat > android/app/build.gradle << 'EOF'
-          def localProperties = new Properties()
-          def localPropertiesFile = rootProject.file('local.properties')
-          if (localPropertiesFile.exists()) {
-              localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
-          }
-          def flutterRoot = localProperties.getProperty('flutter.sdk')
-          if (flutterRoot == null) {
-              throw new GradleException("Flutter SDK not found. Define flutter.sdk in local.properties.")
-          }
-          def flutterVersionCode = localProperties.getProperty('flutter.versionCode') ?: '1'
-          def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '1.0'
-
-          apply plugin: 'com.android.application'
-          apply plugin: 'kotlin-android'
-          apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
-
-          android {
-              compileSdkVersion 35
-              ndkVersion "26.1.10909125"
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_1_8
-                  targetCompatibility JavaVersion.VERSION_1_8
-              }
-              kotlinOptions { jvmTarget = '1.8' }
-              sourceSets { main.java.srcDirs += 'src/main/kotlin' }
-              defaultConfig {
-                  applicationId "com.wizmart.app"
-                  minSdkVersion 21
-                  targetSdkVersion 35
-                  versionCode flutterVersionCode.toInteger()
-                  versionName flutterVersionName
-              }
-              buildTypes {
-                  release { signingConfig signingConfigs.debug }
-              }
-          }
-          flutter { source '../..' }
-          EOF
-
-          # MainActivity.kt
-          cat > android/app/src/main/kotlin/com/wizmart/app/MainActivity.kt << 'EOF'
-          package com.wizmart.app
-          import io.flutter.embedding.android.FlutterActivity
-          class MainActivity: FlutterActivity()
-          EOF
-
-          # styles
-          cat > android/app/src/main/res/values/styles.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
-                  <item name="android:windowBackground">@drawable/launch_background</item>
-              </style>
-              <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
-                  <item name="android:windowBackground">?android:colorBackground</item>
-              </style>
-          </resources>
-          EOF
-
-          cat > android/app/src/main/res/values-night/styles.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
-                  <item name="android:windowBackground">@drawable/launch_background</item>
-              </style>
-              <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
-                  <item name="android:windowBackground">?android:colorBackground</item>
-              </style>
-          </resources>
-          EOF
-
-          cat > android/app/src/main/res/drawable/launch_background.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-              <item android:drawable="@android:color/white" />
-          </layer-list>
-          EOF
-
-          cat > android/app/src/main/res/drawable-v21/launch_background.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-              <item android:drawable="@android:color/white" />
-          </layer-list>
-          EOF
-
-          # Ícone placeholder
-          for dir in mipmap-hdpi mipmap-mdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
-            cp "$FLUTTER_ROOT/packages/flutter_tools/templates/app_shared/android.tmpl/app/src/main/res/$dir/ic_launcher.png.img.tmpl" \
-               "android/app/src/main/res/$dir/ic_launcher.png" 2>/dev/null || true
-          done
-
-          echo "Pasta Android criada"
+          cat android/local.properties
 
       - name: Aplicar AndroidManifest WizMart
         run: |
