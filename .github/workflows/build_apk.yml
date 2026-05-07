@@ -42,9 +42,9 @@ jobs:
             if grep -q "flutter\.compileSdkVersion\|flutter\.minSdkVersion\|flutter\.targetSdkVersion\|flutter\.ndkVersion" "$BUILD_GRADLE" 2>/dev/null; then
               echo "Patching: $BUILD_GRADLE"
               sed -i \
-                -e 's/flutter\.compileSdkVersion/34/g' \
-                -e 's/compileSdk flutter\.compileSdkVersion/compileSdk 34/g' \
-                -e 's/compileSdkVersion flutter\.compileSdkVersion/compileSdkVersion 34/g' \
+                -e 's/flutter\.compileSdkVersion/35/g' \
+                -e 's/compileSdk flutter\.compileSdkVersion/compileSdk 35/g' \
+                -e 's/compileSdkVersion flutter\.compileSdkVersion/compileSdkVersion 35/g' \
                 -e 's/flutter\.minSdkVersion/21/g' \
                 -e 's/minSdkVersion flutter\.minSdkVersion/minSdkVersion 21/g' \
                 -e 's/flutter\.targetSdkVersion/34/g' \
@@ -97,7 +97,7 @@ jobs:
           # build.gradle root
           cat > android/build.gradle << 'EOF'
           buildscript {
-              ext.kotlin_version = '1.8.22'
+              ext.kotlin_version = '1.9.22'
               repositories {
                   google()
                   mavenCentral()
@@ -156,7 +156,7 @@ jobs:
           apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
           android {
-              compileSdkVersion 34
+              compileSdkVersion 35
               ndkVersion "26.1.10909125"
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_1_8
@@ -167,7 +167,7 @@ jobs:
               defaultConfig {
                   applicationId "com.wizmart.app"
                   minSdkVersion 21
-                  targetSdkVersion 34
+                  targetSdkVersion 35
                   versionCode flutterVersionCode.toInteger()
                   versionName flutterVersionName
               }
