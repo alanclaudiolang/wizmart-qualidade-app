@@ -9,6 +9,8 @@ jobs:
   build:
     name: Build Android APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout código
@@ -145,9 +147,27 @@ jobs:
       - name: Build APK release
         run: flutter build apk --release
 
-      - name: Upload APK
+      - name: Upload APK (artifact)
         uses: actions/upload-artifact@v4
         with:
           name: wizmart-app-${{ github.run_number }}
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
+
+      - name: Publicar release v-latest
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Renomeia o APK para um nome estável
+          cp build/app/outputs/flutter-apk/app-release.apk wizmart-app-latest.apk
+
+          # Apaga release e tag anteriores (se existirem) para mover a tag pro commit atual
+          gh release delete v-latest --yes --cleanup-tag 2>/dev/null || true
+
+          # Cria nova release apontando para o commit atual
+          gh release create v-latest \
+            wizmart-app-latest.apk \
+            --title "WizMart APK — build ${{ github.run_number }}" \
+            --notes "Build automático do commit ${{ github.sha }} em $(date -u +'%Y-%m-%d %H:%M UTC')." \
+            --target ${{ github.sha }}
