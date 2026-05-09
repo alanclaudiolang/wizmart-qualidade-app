@@ -1,0 +1,94 @@
+name: 🐛 Reportar bug
+description: Registrar um problema encontrado no app (com fotos/vídeos)
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Obrigado por reportar!
+        Quanto mais detalhes (especialmente **vídeo ou screenshot**), mais rápido conseguimos corrigir.
+        Você pode arrastar arquivos direto nos campos de texto abaixo — o GitHub aceita imagens (até 25MB) e vídeos (até 10MB).
+
+  - type: textarea
+    id: descricao
+    attributes:
+      label: O que aconteceu?
+      description: Descreva o problema em poucas frases.
+      placeholder: Ex.- "Tirei a primeira foto do antes e ela não apareceu na tela."
+    validations:
+      required: true
+
+  - type: textarea
+    id: passos
+    attributes:
+      label: Passos para reproduzir
+      description: O que você fez antes do bug acontecer?
+      placeholder: |
+        1. Abri uma visita
+        2. Cliquei em "Iniciar visita"
+        3. Cliquei em "Tirar foto ANTES"
+        4. Tirei a foto e cliquei OK
+        5. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: midia
+    attributes:
+      label: 📸 Vídeo ou screenshot
+      description: Arraste o arquivo aqui (ou cole). Vídeos curtos do bug acontecendo são extremamente úteis.
+      placeholder: Arraste o arquivo aqui...
+    validations:
+      required: false
+
+  - type: textarea
+    id: esperado
+    attributes:
+      label: O que deveria ter acontecido?
+      placeholder: Ex.- "A foto deveria aparecer na grade com a marca d'água."
+    validations:
+      required: false
+
+  - type: input
+    id: versao
+    attributes:
+      label: Versão do app
+      description: Está no canto da tela de login (ex.- v0.6).
+      placeholder: v0.6
+    validations:
+      required: false
+
+  - type: input
+    id: dispositivo
+    attributes:
+      label: Dispositivo
+      description: Modelo do celular e versão do Android.
+      placeholder: Samsung Galaxy A14, Android 14
+    validations:
+      required: false
+
+  - type: dropdown
+    id: tela
+    attributes:
+      label: Em qual tela aconteceu?
+      options:
+        - Login
+        - Home (lista de visitas)
+        - Iniciar visita
+        - Fotos ANTES
+        - Em reposição
+        - Fotos DEPOIS
+        - Checklist
+        - Sincronização
+        - Outra / não sei
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Algo mais?
+      description: Qualquer informação adicional (estava offline? primeiro uso? etc.)
+    validations:
+      required: false
