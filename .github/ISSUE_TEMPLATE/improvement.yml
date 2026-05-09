@@ -1,0 +1,50 @@
+name: ✨ Melhoria ou nova feature
+description: Algo que você quer mudar, adicionar ou refinar no app.
+title: "[MELHORIA] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use este template para registrar uma melhoria/feature.
+        Quando for pedir a implementação ao Claude, é só colar a URL desta issue na conversa.
+
+  - type: textarea
+    id: o_que
+    attributes:
+      label: O que você quer mudar ou adicionar?
+      placeholder: Ex.- "Quero que a tela de fotos mostre um contador grande no topo: '1 de 8'."
+    validations:
+      required: true
+
+  - type: textarea
+    id: por_que
+    attributes:
+      label: Por quê?
+      description: Qual o motivo / qual problema resolve.
+      placeholder: Ex.- "Os promotores estão se perdendo na contagem de fotos."
+    validations:
+      required: false
+
+  - type: textarea
+    id: midia
+    attributes:
+      label: 📎 Referência visual (screenshot, mockup, GIF)
+      description: |
+        Se já tem uma ideia visual, anexa aqui.
+        - **Screenshot/GIF/mockup** — Claude consegue ver e usar como referência
+        - **Vídeo ou áudio** — descreva o conteúdo em texto também (Claude não assiste/escuta)
+    validations:
+      required: false
+
+  - type: textarea
+    id: criterios
+    attributes:
+      label: Critérios de aceite (opcional)
+      description: Como saber que está pronto?
+      placeholder: |
+        - Aparece "X de 8" no topo da tela de fotos
+        - Atualiza após cada foto tirada
+        - Some quando atinge o limite
+    validations:
+      required: false

@@ -1,43 +1,54 @@
-name: 🐛 Reportar um problema
-description: Conte o que deu errado e anexe um vídeo, foto ou áudio.
+name: 🐛 Bug encontrado
+description: Algo no app não está funcionando como deveria.
 title: "[BUG] "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        ## Como funciona
-        Preencha os campos abaixo e clique em **Submit new issue** no fim da página.
-        Você não precisa saber nada técnico — quanto mais simples a explicação, melhor.
-        Depois que enviar, vamos conversar pelos comentários da página até resolver.
+        Use este template para registrar um bug que você (dev) encontrou no app.
+        Quando for pedir o fix ao Claude, é só colar a URL desta issue na conversa.
 
   - type: textarea
-    id: o_que_aconteceu
+    id: descricao
     attributes:
-      label: O que aconteceu?
-      description: Conta com suas palavras. Pode ser bem curto.
-      placeholder: Ex.- "Tirei a foto e ela sumiu, não apareceu na tela."
+      label: O que está acontecendo?
+      description: Descreva o bug de forma direta.
+      placeholder: Ex.- "Após tirar a 1ª foto do antes, ela não aparece no grid e nada é gravado no DB."
     validations:
       required: true
 
   - type: textarea
-    id: midia
+    id: passos
     attributes:
-      label: 📎 Anexe aqui um vídeo, foto ou áudio
-      description: |
-        **Arraste o arquivo direto pra dentro deste campo** (ou cole, ou clique pra escolher).
-        - 🎥 Vídeo da tela é o que mais ajuda
-        - 📸 Foto também serve
-        - 🎙️ Áudio explicando funciona
-        Pode anexar mais de um.
-      placeholder: Solte o arquivo aqui...
+      label: Como reproduzir
+      description: Passo a passo curto.
+      placeholder: |
+        1. Login com promotor X
+        2. Abrir visita Y
+        3. Iniciar visita
+        4. Tirar foto antes
     validations:
       required: false
 
   - type: textarea
-    id: extra
+    id: midia
     attributes:
-      label: Quer acrescentar algo? (opcional)
-      description: Qualquer coisa que ache importante.
+      label: 📎 Mídia (screenshot, GIF, vídeo ou áudio)
+      description: |
+        Arraste arquivos aqui. Tudo é aceito, mas preferências práticas:
+        - **Screenshot ou GIF curto** — Claude consegue ver e analisar direto
+        - **Vídeo MP4** — só serve como referência humana (Claude não assiste)
+        - **Áudio** — idem (Claude não escuta) — descreva o conteúdo em texto também
+    validations:
+      required: false
+
+  - type: textarea
+    id: contexto
+    attributes:
+      label: Contexto técnico (opcional)
+      description: |
+        Qualquer pista útil — log de console, branch, tela específica, dispositivo,
+        última ação que funcionou, etc.
     validations:
       required: false

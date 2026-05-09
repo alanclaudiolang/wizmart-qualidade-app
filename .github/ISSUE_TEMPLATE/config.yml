@@ -1,5 +1,5 @@
-blank_issues_enabled: false
+blank_issues_enabled: true
 contact_links:
-  - name: 📦 Baixar a última versão do APK
+  - name: 📦 Última versão do APK
     url: https://github.com/alanclaudiolang/wizmart-qualidade-app/releases/tag/v-latest
-    about: A última versão compilada do app está sempre aqui.
+    about: APK compilado do último commit em main.
