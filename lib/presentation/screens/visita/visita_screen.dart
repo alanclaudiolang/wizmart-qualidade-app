@@ -42,6 +42,9 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   List<String> _fotosAntes = []; // paths locais
   List<String> _fotosDepois = [];
 
+  // Nome do promotor (para watermark)
+  String _promotorNome = '';
+
   // Localização
   String? _localizacaoAbertura;
   String? _localizacaoEncerramento;
@@ -90,11 +93,20 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       gabarito = await db.getGabaritoByPdv(visita.idPdvAssociado!);
     }
 
+    // Carrega nome do promotor para o watermark
+    String promotorNome = '';
+    final session = await SessionService.getSession();
+    if (session != null) {
+      final user = await db.getUserById(session.userId);
+      promotorNome = user?.nome ?? session.nome;
+    }
+
     // Restaura fotos já capturadas (caso retorne à visita)
     final fotosAntesJson = visita.fotosAntesJson;
     final fotosDepoisJson = visita.fotosDepoisJson;
 
     setState(() {
+      _promotorNome = promotorNome;
       _visita = visita;
       _pdv = pdv;
       _gabarito = gabarito;
@@ -179,45 +191,51 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
     if (picked == null) return;
 
-    // Captura localização da foto
-    final loc = await _capturarLocalizacao();
-    final capturedAt = DateTime.now();
-
-    final pdvNome = _pdv?.apiLocalName ??
-        _pdv?.apiLocalCustomerName ??
-        'PDV ${_visita?.idPdvAssociado ?? '?'}';
-
-    // Aplica watermark
-    final watermarkedPath = await WatermarkUtil.applyWatermark(
-      sourcePath: picked.path,
-      visitaId: widget.visitaId,
-      pdvNome: pdvNome,
-      slot: slot == 'antes' ? 'Antes' : 'Depois',
-      numero: atual + 1,
-      capturedAt: capturedAt,
-    );
-
-    // Salva cópia na galeria
     try {
-      await Gal.putImage(watermarkedPath);
-    } catch (_) {
-      // Não critica se falhar — o path local é o importante
-    }
+      // Captura localização da foto
+      final loc = await _capturarLocalizacao();
+      final capturedAt = DateTime.now();
 
-    setState(() {
-      if (slot == 'antes') {
-        _fotosAntes.add(watermarkedPath);
-      } else {
-        _fotosDepois.add(watermarkedPath);
+      final pdvNome = _pdv?.apiLocalName ??
+          _pdv?.apiLocalCustomerName ??
+          'PDV ${_visita?.idPdvAssociado ?? '?'}';
+
+      // Aplica watermark
+      final watermarkedPath = await WatermarkUtil.applyWatermark(
+        sourcePath: picked.path,
+        pdvNome: pdvNome,
+        promotorNome: _promotorNome,
+        slot: slot == 'antes' ? 'Antes' : 'Depois',
+        capturedAt: capturedAt,
+      );
+
+      // Salva cópia na galeria
+      try {
+        await Gal.putImage(watermarkedPath);
+      } catch (_) {
+        // Não critica se falhar — o path local é o importante
       }
-    });
 
-    // Salva no DB local
-    await _salvarFotosLocalmente(slot, loc, capturedAt);
+      setState(() {
+        if (slot == 'antes') {
+          _fotosAntes.add(watermarkedPath);
+        } else {
+          _fotosDepois.add(watermarkedPath);
+        }
+      });
 
-    // Enfileira upload
-    await _enfileirarUploadFoto(
-        watermarkedPath, slot, atual + 1, capturedAt);
+      // Salva no DB local
+      await _salvarFotosLocalmente(slot, loc, capturedAt);
+
+      // Enfileira upload
+      await _enfileirarUploadFoto(
+          watermarkedPath, slot, atual + 1, capturedAt);
+    } catch (e, stack) {
+      debugPrint('Erro ao registrar foto ($slot): $e\n$stack');
+      if (mounted) {
+        _showError('Falha ao registrar foto: $e');
+      }
+    }
   }
 
   Future<void> _salvarFotosLocalmente(
@@ -492,7 +510,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '[${widget.visitaId}] $pdvNome',
+              pdvNome,
               style: const TextStyle(
                   color: Colors.white,
                   fontSize: 15,
