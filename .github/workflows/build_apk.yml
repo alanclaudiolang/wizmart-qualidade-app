@@ -38,111 +38,17 @@ jobs:
       - name: flutter pub get
         run: flutter pub get
 
-      - name: Patch plugins (substituir flutter.compileSdkVersion)
-        run: |
-          PUB_CACHE="$HOME/.pub-cache/hosted/pub.dev"
-          for f in $(find "$PUB_CACHE" -name "build.gradle" 2>/dev/null); do
-            if grep -qE "flutter\.(compileSdk|minSdk|targetSdk|ndkVersion)" "$f" 2>/dev/null; then
-              sed -i \
-                -e 's/flutter\.compileSdkVersion/34/g' \
-                -e 's/compileSdk flutter\.compileSdkVersion/compileSdk 34/g' \
-                -e 's/compileSdkVersion flutter\.compileSdkVersion/compileSdkVersion 34/g' \
-                -e 's/compileSdk = flutter\.compileSdkVersion/compileSdk = 34/g' \
-                -e 's/flutter\.minSdkVersion/21/g' \
-                -e 's/minSdkVersion flutter\.minSdkVersion/minSdkVersion 21/g' \
-                -e 's/minSdk flutter\.minSdkVersion/minSdk 21/g' \
-                -e 's/minSdk = flutter\.minSdkVersion/minSdk = 21/g' \
-                -e 's/flutter\.targetSdkVersion/34/g' \
-                -e 's/targetSdkVersion flutter\.targetSdkVersion/targetSdkVersion 34/g' \
-                -e 's/targetSdk flutter\.targetSdkVersion/targetSdk 34/g' \
-                -e 's/targetSdk = flutter\.targetSdkVersion/targetSdk = 34/g' \
-                -e 's/flutter\.ndkVersion/"26.1.10909125"/g' \
-                "$f"
-            fi
-          done
-          echo "Patch concluído"
-
       - name: Gerar código Drift
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Regenerar pasta Android
+      - name: Configurar local.properties
         run: |
           FLUTTER_ROOT=$(dirname $(dirname $(which flutter)))
-          rm -rf android
-          flutter create --platforms=android --org com.wizmart --project-name wizmart_app --no-pub .
-          echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
-          echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
-
-      - name: Patch Android gerado (AGP, Kotlin, Gradle, SDK)
-        run: |
-          # AGP 7.3.0 → 8.1.0 (compatível com Kotlin 1.8.22)
-          sed -i 's/com.android.application" version "7.3.0"/com.android.application" version "8.1.0"/' \
-            android/settings.gradle
-
-          # Kotlin 1.7.10 → 1.8.22 (compatível com AndroidX libs)
-          sed -i 's/org.jetbrains.kotlin.android" version "1.7.10"/org.jetbrains.kotlin.android" version "1.8.22"/' \
-            android/settings.gradle
-
-          # Gradle 7.6.3 → 8.3 (requerido pelo AGP 8.1.0)
-          sed -i 's/gradle-7.6.3-all/gradle-8.3-all/' \
-            android/gradle/wrapper/gradle-wrapper.properties
-
-          # compileSdk e targetSdk: flutter.compileSdkVersion → 34
-          # (SDK 35 está corrompido no runner; warnings de plugins são apenas avisos)
-          sed -i \
-            -e 's/compileSdk = flutter\.compileSdkVersion/compileSdk = 34/' \
-            -e 's/targetSdk = flutter\.targetSdkVersion/targetSdk = 34/' \
-            -e 's/namespace = "com\.wizmart\.wizmart_app"/namespace = "com.wizmart.app"/' \
-            -e 's/applicationId = "com\.wizmart\.wizmart_app"/applicationId = "com.wizmart.app"/' \
-            android/app/build.gradle
-
-          echo "=== Verificação final ==="
-          grep -E "kotlin|android.application" android/settings.gradle
-          grep "distributionUrl" android/gradle/wrapper/gradle-wrapper.properties
-          grep -E "compileSdk|targetSdk|namespace|applicationId" android/app/build.gradle
-
-      - name: Aplicar AndroidManifest WizMart
-        run: |
-          cat > android/app/src/main/AndroidManifest.xml << 'EOF'
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              package="com.wizmart.app">
-              <uses-permission android:name="android.permission.INTERNET"/>
-              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-              <uses-permission android:name="android.permission.CAMERA"/>
-              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
-              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
-              <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
-              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-              <uses-feature android:name="android.hardware.camera" android:required="true"/>
-              <application
-                  android:label="WizMart"
-                  android:name="${applicationName}"
-                  android:icon="@mipmap/ic_launcher"
-                  android:allowBackup="false"
-                  android:usesCleartextTraffic="false">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:launchMode="singleTop"
-                      android:taskAffinity=""
-                      android:theme="@style/LaunchTheme"
-                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-                      android:hardwareAccelerated="true"
-                      android:windowSoftInputMode="adjustResize">
-                      <meta-data
-                        android:name="io.flutter.embedding.android.NormalTheme"
-                        android:resource="@style/NormalTheme"/>
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN"/>
-                          <category android:name="android.intent.category.LAUNCHER"/>
-                      </intent-filter>
-                  </activity>
-                  <meta-data android:name="flutterEmbedding" android:value="2"/>
-              </application>
-          </manifest>
-          EOF
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+          echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
+          echo "flutter.buildMode=release" >> android/local.properties
+          echo "flutter.versionName=1.0.0" >> android/local.properties
+          echo "flutter.versionCode=${{ github.run_number }}" >> android/local.properties
 
       - name: Build APK release
         run: flutter build apk --release
@@ -159,13 +65,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Renomeia o APK para um nome estável
           cp build/app/outputs/flutter-apk/app-release.apk wizmart-app-latest.apk
-
-          # Apaga release e tag anteriores (se existirem) para mover a tag pro commit atual
           gh release delete v-latest --yes --cleanup-tag 2>/dev/null || true
-
-          # Cria nova release apontando para o commit atual
           gh release create v-latest \
             wizmart-app-latest.apk \
             --title "WizMart APK — build ${{ github.run_number }}" \
