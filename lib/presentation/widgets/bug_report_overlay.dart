@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder/screen_recorder.dart';
-import '../../core/utils/app_router.dart';
 import '../../core/utils/bug_report_controller.dart';
 
 /// Envolve o app inteiro com:
@@ -31,99 +30,24 @@ class BugReportOverlay extends ConsumerWidget {
           child: child,
         ),
 
-        // Indicador "GRAVANDO" + FAB ficam dentro de SafeArea
-        // pra respeitar status bar, notch e edge-to-edge automaticamente.
-        Positioned.fill(
-          child: SafeArea(
-            child: Stack(
-              children: [
-                if (state.state == BugRecordingState.recording)
-                  const Align(
-                    alignment: Alignment.topCenter,
-                    child: Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: _RecordingBadge(),
-                    ),
-                  ),
-                Align(
-                  alignment: Alignment.topRight,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 8, right: 8),
-                    child: _BugFab(state: state.state, notifier: notifier),
-                  ),
+        // Badge "GRAVANDO" centralizado no topo
+        if (state.state == BugRecordingState.recording)
+          const Positioned.fill(
+            child: SafeArea(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: _RecordingBadge(),
                 ),
-              ],
+              ),
             ),
           ),
-        ),
 
         // Loading durante exportação (cobre tudo)
         if (state.state == BugRecordingState.exporting)
           const _ExportingOverlay(),
       ],
-    );
-  }
-}
-
-class _BugFab extends StatelessWidget {
-  final BugRecordingState state;
-  final BugReportNotifier notifier;
-  const _BugFab({required this.state, required this.notifier});
-
-  @override
-  Widget build(BuildContext context) {
-    if (state == BugRecordingState.exporting) {
-      return const SizedBox.shrink();
-    }
-
-    final isRecording = state == BugRecordingState.recording;
-    final messenger = ScaffoldMessenger.maybeOf(context);
-
-    return Tooltip(
-      message: isRecording ? 'Parar gravação' : 'Reportar bug',
-      child: Material(
-        color: isRecording
-            ? const Color(0xFFE53E3E)
-            : const Color(0xFF38A169),
-        shape: const CircleBorder(),
-        elevation: 4,
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: () async {
-            if (isRecording) {
-              final path = await notifier.stopAndExport();
-              if (path != null) {
-                // Usa appRouter direto — o context deste FAB está acima
-                // do Navigator do GoRouter (ele vive no MaterialApp.builder),
-                // então context.push() não funcionaria.
-                appRouter.push('/bug-report?gif=${Uri.encodeComponent(path)}');
-              } else {
-                messenger?.showSnackBar(const SnackBar(
-                  content: Text('Não foi possível gerar o GIF.'),
-                  backgroundColor: Color(0xFFFF5252),
-                ));
-              }
-            } else {
-              notifier.start();
-              messenger?.showSnackBar(const SnackBar(
-                content: Text(
-                    'Gravando... reproduza o problema e toque no botão vermelho para parar.'),
-                duration: Duration(seconds: 3),
-                backgroundColor: Color(0xFF38A169),
-              ));
-            }
-          },
-          child: SizedBox(
-            width: 40,
-            height: 40,
-            child: Icon(
-              isRecording ? Icons.stop : Icons.bug_report_outlined,
-              color: Colors.white,
-              size: 22,
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

@@ -17,6 +17,7 @@ import '../../../core/network/sync_engine.dart';
 import '../../../core/network/connectivity_service.dart';
 import '../../../core/utils/watermark_util.dart';
 import '../../../core/utils/session_service.dart';
+import '../../widgets/bug_report_button.dart';
 
 const _uuid = Uuid();
 
@@ -526,6 +527,12 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
               ),
           ],
         ),
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: 12),
+            child: BugReportButton(),
+          ),
+        ],
       ),
       body: _buildBody(),
     );

@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../../../core/utils/session_service.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../widgets/bug_report_button.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -169,7 +170,14 @@ class _AuthScreenState extends State<AuthScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text('WizMart', style: TextStyle(color: Color(0xFF38A169), fontSize: 32, fontWeight: FontWeight.bold)),
-                  _buildConexaoIndicador(),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const BugReportButton(),
+                      const SizedBox(width: 4),
+                      _buildConexaoIndicador(),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 24),

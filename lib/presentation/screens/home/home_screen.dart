@@ -7,6 +7,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/network/connectivity_service.dart';
 import '../../../core/network/sync_engine.dart';
 import '../../../core/utils/session_service.dart';
+import '../../widgets/bug_report_button.dart';
 
 final sessionProvider = FutureProvider<SessionData?>((ref) async => SessionService.getSession());
 
@@ -91,10 +92,12 @@ class _HomeContent extends ConsumerWidget {
         ),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.only(right: 12),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                const BugReportButton(),
+                const SizedBox(width: 4),
                 Container(
                   width: 10, height: 10,
                   decoration: BoxDecoration(
