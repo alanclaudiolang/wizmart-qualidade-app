@@ -35,6 +35,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   Gabarito? _gabarito;
   bool _loading = true;
   String? _error;
+  bool _savingPhoto = false;
 
   // Estado local da visita (máquina de estados)
   String _localState = 'idle';
@@ -192,6 +193,8 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
     if (picked == null) return;
 
+    setState(() => _savingPhoto = true);
+
     try {
       // Captura localização da foto
       final loc = await _capturarLocalizacao();
@@ -236,6 +239,8 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       if (mounted) {
         _showError('Falha ao registrar foto: $e');
       }
+    } finally {
+      if (mounted) setState(() => _savingPhoto = false);
     }
   }
 
@@ -534,7 +539,54 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
           ),
         ],
       ),
-      body: _buildBody(),
+      body: Stack(
+        children: [
+          // SafeArea bottom protege os botões verdes da barra de
+          // navegação nativa do Android (gestos / 3 botões).
+          SafeArea(
+            top: false,
+            left: false,
+            right: false,
+            child: _buildBody(),
+          ),
+          if (_savingPhoto)
+            Positioned.fill(
+              child: AbsorbPointer(
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.7),
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(
+                          color: Color(0xFF4CAF50),
+                          strokeWidth: 3,
+                        ),
+                        SizedBox(height: 20),
+                        Text(
+                          'Salvando foto...',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Aguarde, não toque na tela.',
+                          style: TextStyle(
+                            color: Color(0xFF8892B0),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
