@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../presentation/screens/auth/auth_screen.dart';
+import '../../presentation/screens/bug_report/bug_report_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/visita/visita_screen.dart';
 import 'session_service.dart';
@@ -27,6 +28,13 @@ final appRouter = GoRouter(
       builder: (_, state) {
         final id = int.parse(state.pathParameters['id']!);
         return VisitaScreen(visitaId: id);
+      },
+    ),
+    GoRoute(
+      path: '/bug-report',
+      builder: (_, state) {
+        final gif = state.uri.queryParameters['gif'] ?? '';
+        return BugReportScreen(gifPath: gif);
       },
     ),
   ],

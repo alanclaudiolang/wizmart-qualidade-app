@@ -1,0 +1,215 @@
+// lib/presentation/widgets/bug_report_overlay.dart
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:screen_recorder/screen_recorder.dart';
+import '../../core/utils/bug_report_controller.dart';
+
+/// Envolve o app inteiro com:
+/// - ScreenRecorder (captura widgets quando gravando)
+/// - FAB flutuante de "Reportar bug" (sempre visível, fora do recorder)
+/// - Indicador de gravação no topo
+class BugReportOverlay extends ConsumerWidget {
+  final Widget child;
+  const BugReportOverlay({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(bugReportProvider.notifier);
+    final state = ref.watch(bugReportProvider);
+    final media = MediaQuery.of(context);
+
+    return Stack(
+      children: [
+        // O app real (gravado quando ativo)
+        ScreenRecorder(
+          controller: notifier.controller,
+          width: media.size.width,
+          height: media.size.height,
+          background: Colors.black,
+          child: child,
+        ),
+
+        // Indicador "GRAVANDO" no topo
+        if (state.state == BugRecordingState.recording)
+          Positioned(
+            top: media.padding.top + 8,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: _RecordingBadge(),
+            ),
+          ),
+
+        // Loading durante exportação
+        if (state.state == BugRecordingState.exporting)
+          const _ExportingOverlay(),
+
+        // FAB de bug report (canto superior direito, abaixo do status bar)
+        Positioned(
+          top: media.padding.top + 6,
+          right: 8,
+          child: _BugFab(state: state.state, notifier: notifier),
+        ),
+      ],
+    );
+  }
+}
+
+class _BugFab extends StatelessWidget {
+  final BugRecordingState state;
+  final BugReportNotifier notifier;
+  const _BugFab({required this.state, required this.notifier});
+
+  @override
+  Widget build(BuildContext context) {
+    if (state == BugRecordingState.exporting) {
+      return const SizedBox.shrink();
+    }
+
+    final isRecording = state == BugRecordingState.recording;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: () async {
+          if (isRecording) {
+            final path = await notifier.stopAndExport();
+            if (context.mounted && path != null) {
+              context.push('/bug-report?gif=${Uri.encodeComponent(path)}');
+            } else if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Não foi possível gerar o GIF.'),
+                  backgroundColor: Color(0xFFFF5252),
+                ),
+              );
+            }
+          } else {
+            notifier.start();
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                      'Gravando... reproduza o problema, depois toque novamente em "Parar".'),
+                  duration: Duration(seconds: 4),
+                  backgroundColor: Color(0xFF38A169),
+                ),
+              );
+            }
+          }
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: isRecording
+                ? const Color(0xFFE53E3E)
+                : Colors.black.withOpacity(0.55),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isRecording ? Icons.stop_circle : Icons.bug_report,
+                color: Colors.white,
+                size: 18,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                isRecording ? 'Parar' : 'Reportar',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RecordingBadge extends StatefulWidget {
+  @override
+  State<_RecordingBadge> createState() => _RecordingBadgeState();
+}
+
+class _RecordingBadgeState extends State<_RecordingBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE53E3E).withOpacity(0.92),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FadeTransition(
+            opacity: _ctrl,
+            child: const Icon(Icons.fiber_manual_record,
+                color: Colors.white, size: 12),
+          ),
+          const SizedBox(width: 6),
+          const Text(
+            'GRAVANDO',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExportingOverlay extends StatelessWidget {
+  const _ExportingOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.black.withOpacity(0.6),
+      child: const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Color(0xFF38A169)),
+            SizedBox(height: 16),
+            Text(
+              'Gerando GIF...',
+              style: TextStyle(color: Colors.white, fontSize: 14),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
