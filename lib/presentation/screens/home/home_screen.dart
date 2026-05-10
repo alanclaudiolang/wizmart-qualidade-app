@@ -44,8 +44,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _triggerSync() async {
     final session = await SessionService.getSession();
     if (session == null) return;
-    final isOnline = ref.read(connectivityProvider);
-    if (!isOnline) return;
+    // Não checa connectivityProvider aqui: ele começa como false e só
+    // vira true após o primeiro ping (~1-5s). Tentamos o sync direto;
+    // se estivermos offline o supabase client vai jogar a exceção que o
+    // try/catch abaixo absorve.
     final syncEngine = ref.read(syncEngineProvider);
     try {
       await syncEngine.pullAll(session.userId);
