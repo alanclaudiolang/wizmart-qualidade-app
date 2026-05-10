@@ -42,7 +42,7 @@ dependencies:
   connectivity_plus: ^6.0.3
 
   # Background sync
-  workmanager: ^0.5.2
+  workmanager: ^0.9.0
 
   # HTTP
   dio: ^5.4.3+1
@@ -52,6 +52,9 @@ dependencies:
   intl: ^0.19.0
   collection: ^1.18.0
   shared_preferences: ^2.2.3
+
+  # Bug report (gravação da tela em GIF)
+  screen_recorder: ^0.3.0
 
 dev_dependencies:
   flutter_test:

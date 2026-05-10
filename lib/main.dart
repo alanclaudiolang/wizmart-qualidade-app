@@ -9,6 +9,8 @@ import 'core/constants/app_constants.dart';
 import 'core/utils/app_router.dart';
 import 'core/database/app_database.dart';
 import 'core/network/sync_engine.dart';
+import 'core/utils/sync_logger.dart';
+import 'presentation/widgets/bug_report_overlay.dart';
 
 const _bgSyncTask = 'wizmart_bg_sync';
 
@@ -22,7 +24,8 @@ void callbackDispatcher() {
           anonKey: AppConstants.supabaseAnonKey,
         );
         final db = AppDatabase();
-        final syncEngine = SyncEngine(db, Supabase.instance.client);
+        final logger = SyncLoggerNotifier();
+        final syncEngine = SyncEngine(db, Supabase.instance.client, logger);
         await syncEngine.processOutbox();
         await db.close();
       } catch (_) {}
@@ -59,7 +62,7 @@ void main() async {
         _bgSyncTask,
         frequency: const Duration(minutes: AppConstants.syncIntervalMinutes),
         constraints: Constraints(networkType: NetworkType.connected),
-        existingWorkPolicy: ExistingWorkPolicy.keep,
+        existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
       );
     } catch (e) {
       _initError ??= 'WorkManager falhou:\n$e';
@@ -101,6 +104,9 @@ class WizMartApp extends StatelessWidget {
         useMaterial3: true,
       ),
       routerConfig: appRouter,
+      builder: (context, child) {
+        return BugReportOverlay(child: child ?? const SizedBox.shrink());
+      },
     );
   }
 }
