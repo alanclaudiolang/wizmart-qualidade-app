@@ -8,7 +8,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import 'package:uuid/uuid.dart';
 import 'package:drift/drift.dart' as drift;
 import 'package:gal/gal.dart';
@@ -296,11 +295,12 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
   // ── Reordenar e remover fotos do grid ─────────────────────────────────────
 
-  Future<void> _reorderFoto(String slot, int oldIndex, int newIndex) async {
+  Future<void> _moverFoto(String slot, int from, int to) async {
+    final lista = slot == 'antes' ? _fotosAntes : _fotosDepois;
+    if (to < 0 || to >= lista.length) return;
     setState(() {
-      final lista = slot == 'antes' ? _fotosAntes : _fotosDepois;
-      final item = lista.removeAt(oldIndex);
-      lista.insert(newIndex, item);
+      final item = lista.removeAt(from);
+      lista.insert(to, item);
     });
     await _persistirOrdemFotos(slot);
   }
@@ -408,23 +408,16 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     }
 
     final db = ref.read(appDatabaseProvider);
-    await db.updateVisita(VisitasCompanion(
-      id: drift.Value(widget.visitaId),
-      localState: const drift.Value('em_reposicao'),
-    ));
-
-    if (mounted) context.go('/home');
-  }
-
-  Future<void> _iniciarFotosDepois() async {
-    final db = ref.read(appDatabaseProvider);
+    // Vai direto para 'fotos_depois': quando o usuário voltar à visita,
+    // verá a tela de fotos DEPOIS sem passar por uma tela intermediária.
     await db.updateVisita(VisitasCompanion(
       id: drift.Value(widget.visitaId),
       localState: const drift.Value('fotos_depois'),
     ));
 
-    setState(() => _localState = 'fotos_depois');
+    if (mounted) context.go('/home');
   }
+
 
   Future<void> _concluirFotosDepois() async {
     if (_fotosDepois.isEmpty) {
@@ -670,7 +663,9 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       case 'fotos_antes':
         return _buildFotos('antes');
       case 'em_reposicao':
-        return _buildEmReposicao();
+        // Estado legado de visitas criadas antes do refactor.
+        // Trata como fotos_depois pra não travar o usuário.
+        return _buildFotos('depois');
       case 'fotos_depois':
         return _buildFotos('depois');
       case 'checklist':
@@ -804,7 +799,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                     ],
                   ),
                 )
-              : ReorderableGridView.builder(
+              : GridView.builder(
                   padding: const EdgeInsets.all(12),
                   gridDelegate:
                       const SliverGridDelegateWithFixedCrossAxisCount(
@@ -813,60 +808,14 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                     mainAxisSpacing: 8,
                   ),
                   itemCount: fotos.length,
-                  onReorder: (oldIndex, newIndex) =>
-                      _reorderFoto(slot, oldIndex, newIndex),
-                  itemBuilder: (_, i) => Stack(
-                    key: ValueKey(fotos[i]),
-                    children: [
-                      Positioned.fill(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Image.file(
-                            File(fotos[i]),
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        top: 4,
-                        right: 4,
-                        child: GestureDetector(
-                          onTap: () => _removerFoto(slot, i),
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.65),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.close,
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        bottom: 4,
-                        left: 4,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.65),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '${i + 1}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                  itemBuilder: (_, i) => _PhotoTile(
+                    path: fotos[i],
+                    numero: i + 1,
+                    canMoveLeft: i > 0,
+                    canMoveRight: i < fotos.length - 1,
+                    onRemove: () => _removerFoto(slot, i),
+                    onMoveLeft: () => _moverFoto(slot, i, i - 1),
+                    onMoveRight: () => _moverFoto(slot, i, i + 1),
                   ),
                 ),
         ),
@@ -924,54 +873,6 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  // ── Tela: Em reposição ────────────────────────────────────────────────────
-
-  Widget _buildEmReposicao() {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Icon(Icons.inventory_2,
-              size: 64, color: Color(0xFFFFB74D)),
-          const SizedBox(height: 24),
-          const Text(
-            'Faça a reposição',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Quando terminar, volte aqui e tire as fotos depois.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                color: Color(0xFF8892B0), fontSize: 16),
-          ),
-          const SizedBox(height: 48),
-          ElevatedButton.icon(
-            onPressed: _iniciarFotosDepois,
-            icon: const Icon(Icons.camera_alt, color: Colors.white),
-            label: const Text('Tirar fotos DEPOIS',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4CAF50),
-              padding: const EdgeInsets.symmetric(vertical: 18),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14)),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1185,6 +1086,128 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                       fontWeight: FontWeight.bold)),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PhotoTile extends StatelessWidget {
+  final String path;
+  final int numero;
+  final bool canMoveLeft;
+  final bool canMoveRight;
+  final VoidCallback onRemove;
+  final VoidCallback onMoveLeft;
+  final VoidCallback onMoveRight;
+
+  const _PhotoTile({
+    required this.path,
+    required this.numero,
+    required this.canMoveLeft,
+    required this.canMoveRight,
+    required this.onRemove,
+    required this.onMoveLeft,
+    required this.onMoveRight,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Image.file(File(path), fit: BoxFit.cover),
+        ),
+
+        // Botão X (deletar) - canto superior direito
+        Positioned(
+          top: 4,
+          right: 4,
+          child: _CircleButton(
+            icon: Icons.close,
+            onTap: onRemove,
+            background: const Color(0xFFE53E3E),
+          ),
+        ),
+
+        // Número da foto - canto superior esquerdo
+        Positioned(
+          top: 4,
+          left: 4,
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.65),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '$numero',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+
+        // Setas de mover - canto inferior, lado a lado
+        Positioned(
+          bottom: 4,
+          left: 4,
+          right: 4,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Opacity(
+                opacity: canMoveLeft ? 1.0 : 0.3,
+                child: _CircleButton(
+                  icon: Icons.arrow_back,
+                  onTap: canMoveLeft ? onMoveLeft : null,
+                  background: Colors.black.withValues(alpha: 0.65),
+                ),
+              ),
+              Opacity(
+                opacity: canMoveRight ? 1.0 : 0.3,
+                child: _CircleButton(
+                  icon: Icons.arrow_forward,
+                  onTap: canMoveRight ? onMoveRight : null,
+                  background: Colors.black.withValues(alpha: 0.65),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CircleButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onTap;
+  final Color background;
+  const _CircleButton({
+    required this.icon,
+    required this.onTap,
+    required this.background,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: background,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 30,
+          height: 30,
+          child: Icon(icon, color: Colors.white, size: 18),
         ),
       ),
     );
