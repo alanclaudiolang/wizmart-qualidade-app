@@ -7,8 +7,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 class WatermarkUtil {
-  static const int _padding = 16;
-
   static Future<String> applyWatermark({
     required String sourcePath,
     required String pdvNome,
@@ -45,26 +43,24 @@ class WatermarkUtil {
       throw Exception('Não foi possível decodificar a imagem');
     }
 
-    // Faixa dobrada (240px) com 3 linhas em arial48.
-    // arial48 ≈ 48px altura. lineHeight 72px = 48 + 24 de gap.
-    // Layout: top 24 + linha 72 + linha 72 + linha 48 + bottom 24 = 240
-    const faixaH = 240;
-    const lineHeight = 72;
-    const topPadding = 24;
+    // ─── Estratégia: renderizar a faixa em resolução baixa e escalar
+    // pra largura da foto. Como `arial48` é fixa em pixels, renderizando
+    // numa faixa de 1/4 da largura e depois escalando 4x, o texto vira
+    // efetivamente "arial192" — visível mesmo em foto de 4000px.
+    //
+    // Em foto de 1080×1920: faixaSmall 270×120 → faixaScaled 1080×480
+    // Em foto de 4000×3000: faixaSmall 1000×120 → faixaScaled 4000×480
+    //
+    // Ratio escolhido para que a faixa final fique entre 12-18% da
+    // altura da foto, dependendo do aspect ratio.
 
-    final novaAltura = original.height + faixaH;
-    final novaImagem = img.Image(width: original.width, height: novaAltura);
+    const baseSmallH = 120;
+    const lineHeight = 36; // arial24 (~24px) com gap
+    const topPadding = 12;
+    final smallW = (original.width / 4).round().clamp(400, 2000);
 
-    img.compositeImage(novaImagem, original, dstX: 0, dstY: 0);
-
-    img.fillRect(
-      novaImagem,
-      x1: 0,
-      y1: original.height,
-      x2: original.width - 1,
-      y2: novaAltura - 1,
-      color: img.ColorRgb8(0, 0, 0),
-    );
+    final faixaSmall = img.Image(width: smallW, height: baseSmallH);
+    img.fill(faixaSmall, color: img.ColorRgb8(0, 0, 0));
 
     final dateStr = DateFormat('dd/MM/yyyy HH:mm:ss').format(capturedAt);
     final linhas = [
@@ -72,19 +68,33 @@ class WatermarkUtil {
       'Promotor: $promotorNome',
       'FOTO $slot  -  $dateStr',
     ];
-    final font = img.arial48;
+    final font = img.arial24;
     final corBranca = img.ColorRgb8(255, 255, 255);
 
     for (var i = 0; i < linhas.length; i++) {
       img.drawString(
-        novaImagem,
+        faixaSmall,
         linhas[i],
         font: font,
-        x: _padding,
-        y: original.height + topPadding + (i * lineHeight),
+        x: 12,
+        y: topPadding + (i * lineHeight),
         color: corBranca,
       );
     }
+
+    // Escala 4x — texto fica visualmente 4x maior que arial24 (≈ arial96)
+    final faixaScaled = img.copyResize(
+      faixaSmall,
+      width: original.width,
+      interpolation: img.Interpolation.linear,
+    );
+
+    // Composita: foto original em cima, faixa escalada embaixo
+    final novaAltura = original.height + faixaScaled.height;
+    final novaImagem = img.Image(width: original.width, height: novaAltura);
+    img.compositeImage(novaImagem, original, dstX: 0, dstY: 0);
+    img.compositeImage(novaImagem, faixaScaled,
+        dstX: 0, dstY: original.height);
 
     await File(outPath).writeAsBytes(img.encodeJpg(novaImagem, quality: 90));
     return outPath;
