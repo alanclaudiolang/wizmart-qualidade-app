@@ -52,18 +52,43 @@ jobs:
           echo "flutter.versionName=1.0.0" >> android/local.properties
           echo "flutter.versionCode=${{ github.run_number }}" >> android/local.properties
 
+      - name: Computar metadados do build
+        id: meta
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //;s/+.*//' | tr -d ' \r\n')
+          TIMESTAMP=$(date -u +'%Y%m%d-%H%M')
+          BUILD_TIME=$(date -u +'%Y-%m-%d %H:%M UTC')
+          APK_NAME="wizmart-app-v${VERSION}-build${{ github.run_number }}-${TIMESTAMP}.apk"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
+          echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
+          echo "apk_name=$APK_NAME" >> $GITHUB_OUTPUT
+          echo "Versão: $VERSION | Build: ${{ github.run_number }} | Time: $BUILD_TIME"
+          echo "APK final: $APK_NAME"
+
       - name: Build APK release
         env:
           GITHUB_BUG_TOKEN: ${{ secrets.BUG_REPORT_PAT }}
+          APP_VERSION: ${{ steps.meta.outputs.version }}
+          BUILD_TIME: ${{ steps.meta.outputs.build_time }}
+          BUILD_NUMBER: ${{ github.run_number }}
         run: |
           flutter build apk --release \
-            --dart-define=GITHUB_BUG_TOKEN="$GITHUB_BUG_TOKEN"
+            --dart-define=GITHUB_BUG_TOKEN="$GITHUB_BUG_TOKEN" \
+            --dart-define=APP_VERSION="$APP_VERSION" \
+            --dart-define=BUILD_TIME="$BUILD_TIME" \
+            --dart-define=BUILD_NUMBER="$BUILD_NUMBER"
+
+      - name: Renomear APK
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk \
+             "${{ steps.meta.outputs.apk_name }}"
 
       - name: Upload APK (artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: wizmart-app-${{ github.run_number }}
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: ${{ steps.meta.outputs.apk_name }}
+          path: ${{ steps.meta.outputs.apk_name }}
           retention-days: 30
 
       - name: Publicar release v-latest
@@ -71,10 +96,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp build/app/outputs/flutter-apk/app-release.apk wizmart-app-latest.apk
           gh release delete v-latest --yes --cleanup-tag 2>/dev/null || true
           gh release create v-latest \
-            wizmart-app-latest.apk \
-            --title "WizMart APK — build ${{ github.run_number }}" \
-            --notes "Build automático do commit ${{ github.sha }} em $(date -u +'%Y-%m-%d %H:%M UTC')." \
+            "${{ steps.meta.outputs.apk_name }}" \
+            --title "WizMart v${{ steps.meta.outputs.version }} (build ${{ github.run_number }})" \
+            --notes "Build automático do commit ${{ github.sha }} em ${{ steps.meta.outputs.build_time }}." \
             --target ${{ github.sha }}

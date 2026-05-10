@@ -25,7 +25,8 @@ class _AuthScreenState extends State<AuthScreen> {
   _ConexaoStatus _conexao = _ConexaoStatus.verificando;
   Timer? _pingTimer;
 
-  static const _versao = 'v0.6';
+  static String get _versao =>
+      'v${AppConstants.appVersion} (build ${AppConstants.buildNumber}) — ${AppConstants.buildTime}';
 
   @override
   void initState() {
@@ -247,7 +248,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
               ),
               const SizedBox(height: 40),
-              Text(_versao, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: Color(0xFF38A169))),
+              Text(_versao, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, color: Color(0xFF8892B0))),
             ],
           ),
         ),

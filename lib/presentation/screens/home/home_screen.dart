@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/network/connectivity_service.dart';
 import '../../../core/network/sync_engine.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/session_service.dart';
 import '../../widgets/bug_report_button.dart';
 
@@ -175,6 +176,20 @@ class _HomeContent extends ConsumerWidget {
               },
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 32)),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Center(
+                  child: Text(
+                    'v${AppConstants.appVersion} (build ${AppConstants.buildNumber}) — ${AppConstants.buildTime}',
+                    style: const TextStyle(
+                      color: Color(0xFF4A5568),
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),

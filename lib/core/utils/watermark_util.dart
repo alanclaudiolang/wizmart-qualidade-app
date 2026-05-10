@@ -7,7 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 class WatermarkUtil {
-  static const int _paddingRight = 20;
+  static const int _padding = 16;
 
   static Future<String> applyWatermark({
     required String sourcePath,
@@ -16,8 +16,6 @@ class WatermarkUtil {
     required String slot,
     required DateTime capturedAt,
   }) async {
-    // path_provider é plugin: precisa rodar no isolate principal.
-    // Resolvemos o diretório aqui e passamos para o compute como parâmetro.
     final dir = await getApplicationDocumentsDirectory();
     final outDir = '${dir.path}/wizmart_fotos';
     await Directory(outDir).create(recursive: true);
@@ -34,48 +32,67 @@ class WatermarkUtil {
   }
 
   static Future<String> _processImage(Map<String, dynamic> args) async {
-    final sourcePath   = args['sourcePath']   as String;
-    final outPath      = args['outPath']      as String;
-    final pdvNome      = args['pdvNome']      as String;
+    final sourcePath = args['sourcePath'] as String;
+    final outPath = args['outPath'] as String;
+    final pdvNome = args['pdvNome'] as String;
     final promotorNome = args['promotorNome'] as String;
-    final slot         = args['slot']         as String;
-    final capturedAt   = DateTime.parse(args['capturedAt'] as String);
+    final slot = args['slot'] as String;
+    final capturedAt = DateTime.parse(args['capturedAt'] as String);
 
     final sourceBytes = await File(sourcePath).readAsBytes();
     final original = img.decodeImage(sourceBytes);
-    if (original == null) throw Exception('Não foi possível decodificar a imagem');
+    if (original == null) {
+      throw Exception('Não foi possível decodificar a imagem');
+    }
 
-    const faixaH = 70;
+    // Faixa mais alta com fonte maior (arial48 = ~48px de altura).
+    // 2 linhas + padding = ~120px.
+    const faixaH = 120;
     final novaAltura = original.height + faixaH;
     final novaImagem = img.Image(width: original.width, height: novaAltura);
 
+    // Cola foto original em cima
     img.compositeImage(novaImagem, original, dstX: 0, dstY: 0);
 
-    for (int y = original.height; y < novaAltura; y++) {
-      for (int x = 0; x < original.width; x++) {
-        novaImagem.setPixelRgba(x, y, 0, 0, 0, 220);
-      }
-    }
-
-    final dateStr = DateFormat('dd/MM/yyyy HH:mm:ss').format(capturedAt);
-    final linha1  = 'PDV: $pdvNome  /  Promotor: $promotorNome';
-    final linha2  = 'FOTO $slot  |  $dateStr';
-    final font    = img.arial24;
-
-    final l1W = (linha1.length * 14).clamp(0, original.width - _paddingRight);
-    img.drawString(novaImagem, linha1,
-      font: font,
-      x: (original.width - l1W - _paddingRight).clamp(0, original.width - 1),
-      y: original.height + 6,
-      color: img.ColorRgba8(255, 255, 255, 255),
+    // Faixa preta sólida (sem alpha — JPG não suporta transparência mesmo)
+    img.fillRect(
+      novaImagem,
+      x1: 0,
+      y1: original.height,
+      x2: original.width - 1,
+      y2: novaAltura - 1,
+      color: img.ColorRgb8(0, 0, 0),
     );
 
-    final l2W = (linha2.length * 14).clamp(0, original.width - _paddingRight);
-    img.drawString(novaImagem, linha2,
+    final dateStr = DateFormat('dd/MM/yyyy HH:mm:ss').format(capturedAt);
+    final linha1 = 'PDV: $pdvNome';
+    final linha2 = 'Promotor: $promotorNome';
+    final linha3 = 'FOTO $slot  $dateStr';
+    final font = img.arial48;
+
+    img.drawString(
+      novaImagem,
+      linha1,
       font: font,
-      x: (original.width - l2W - _paddingRight).clamp(0, original.width - 1),
-      y: original.height + 36,
-      color: img.ColorRgba8(200, 200, 200, 255),
+      x: _padding,
+      y: original.height + 4,
+      color: img.ColorRgb8(255, 255, 255),
+    );
+    img.drawString(
+      novaImagem,
+      linha2,
+      font: font,
+      x: _padding,
+      y: original.height + 40,
+      color: img.ColorRgb8(220, 220, 220),
+    );
+    img.drawString(
+      novaImagem,
+      linha3,
+      font: font,
+      x: _padding,
+      y: original.height + 76,
+      color: img.ColorRgb8(180, 220, 180),
     );
 
     await File(outPath).writeAsBytes(img.encodeJpg(novaImagem, quality: 90));

@@ -37,8 +37,8 @@ class BugReportState {
 class BugReportNotifier extends StateNotifier<BugReportState> {
   BugReportNotifier()
       : controller = ScreenRecorderController(
-          pixelRatio: 0.5,
-          skipFramesBetweenCaptures: 5,
+          pixelRatio: 0.65,
+          skipFramesBetweenCaptures: 3,
         ),
         super(const BugReportState());
 

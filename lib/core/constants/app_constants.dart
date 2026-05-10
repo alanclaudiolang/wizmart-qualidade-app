@@ -40,4 +40,13 @@ class AppConstants {
   /// Vazio quando rodando local sem o token.
   static const String githubBugReportToken =
       String.fromEnvironment('GITHUB_BUG_TOKEN');
+
+  /// Versão + datahora do build, injetadas pelo workflow via --dart-define.
+  /// Ex: APP_VERSION=1.0.0 / BUILD_TIME=2026-05-10 13:50 UTC
+  static const String appVersion =
+      String.fromEnvironment('APP_VERSION', defaultValue: 'dev');
+  static const String buildTime =
+      String.fromEnvironment('BUILD_TIME', defaultValue: 'local');
+  static const String buildNumber =
+      String.fromEnvironment('BUILD_NUMBER', defaultValue: '0');
 }
