@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
-import '../../../core/network/bug_report_uploader.dart';
+import '../../../core/network/github_bug_reporter.dart';
 import '../../../core/utils/session_service.dart';
 
 /// Tela de revisão e envio do bug report.
@@ -59,20 +59,21 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
         'promotor_nome': session?.nome,
       };
 
-      // Upload pro Supabase Storage (bucket "bug-reports")
-      final result = await BugReportUploader.upload(
+      // Publica no GitHub: commit do GIF + cria issue automaticamente
+      final result = await GithubBugReporter.publish(
         reportId: id,
         gifLocalPath: widget.gifPath,
         metadata: metadata,
       );
 
-      // Salva metadata local com status do upload
+      // Salva metadata local com status
       final report = {
         ...metadata,
         'gif_path': widget.gifPath,
         'status': result.success ? 'uploaded' : 'pending_upload',
-        'gif_url': result.gifUrl,
-        'json_url': result.jsonUrl,
+        'issue_url': result.issueUrl,
+        'issue_number': result.issueNumber,
+        'gif_raw_url': result.gifRawUrl,
         'upload_error': result.error,
       };
       await File('${reportsDir.path}/$id.json')
@@ -91,9 +92,9 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
     }
   }
 
-  void _showSuccess(BugReportUploadResult result) {
+  void _showSuccess(GithubBugReportResult result) {
     final uploaded = result.success;
-    final url = result.gifUrl;
+    final url = result.issueUrl;
 
     showDialog(
       context: context,
@@ -108,7 +109,9 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
           size: 56,
         ),
         title: Text(
-          uploaded ? 'Report enviado!' : 'Salvo localmente',
+          uploaded
+              ? 'Issue #${result.issueNumber} criada!'
+              : 'Salvo localmente',
           style: const TextStyle(color: Colors.white),
           textAlign: TextAlign.center,
         ),
@@ -117,9 +120,9 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
           children: [
             Text(
               uploaded
-                  ? 'O GIF e a descrição foram enviados ao desenvolvedor. '
-                      'Pode continuar usando o app.'
-                  : 'Sem internet ou bucket não configurado — o report '
+                  ? 'A gravação foi enviada ao GitHub e uma issue '
+                      'automática foi aberta com o GIF embutido.'
+                  : 'Sem internet ou token não configurado — o report '
                       'ficou salvo neste aparelho. '
                       '${result.error != null ? "\n\nDetalhe: ${result.error}" : ""}',
               style: const TextStyle(

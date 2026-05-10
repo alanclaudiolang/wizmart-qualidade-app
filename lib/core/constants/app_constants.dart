@@ -30,4 +30,14 @@ class AppConstants {
 
   // Ping timeout
   static const int pingTimeoutSeconds = 5;
+
+  // Bug report — repo onde os GIFs e issues são publicados.
+  static const String githubRepoOwner = 'alanclaudiolang';
+  static const String githubRepoName = 'wizmart-qualidade-app';
+
+  /// PAT fine-grained com escopos Contents:write + Issues:write neste repo.
+  /// Injetado em build time via --dart-define=GITHUB_BUG_TOKEN=...
+  /// Vazio quando rodando local sem o token.
+  static const String githubBugReportToken =
+      String.fromEnvironment('GITHUB_BUG_TOKEN');
 }
