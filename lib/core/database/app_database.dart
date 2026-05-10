@@ -352,6 +352,17 @@ LazyDatabase _openConnection() {
   return LazyDatabase(() async {
     final dbFolder = await getApplicationDocumentsDirectory();
     final file = File(p.join(dbFolder.path, 'wizmart.sqlite'));
-    return NativeDatabase.createInBackground(file);
+    return NativeDatabase.createInBackground(
+      file,
+      setup: (rawDb) {
+        // WAL permite leitura concorrente com escrita.
+        // busy_timeout faz queries esperarem até 5s antes de retornar locked.
+        // Necessário porque o callbackDispatcher do WorkManager pode abrir
+        // conexão paralela com o app principal.
+        rawDb.execute('PRAGMA journal_mode=WAL');
+        rawDb.execute('PRAGMA busy_timeout=5000');
+        rawDb.execute('PRAGMA synchronous=NORMAL');
+      },
+    );
   });
 }

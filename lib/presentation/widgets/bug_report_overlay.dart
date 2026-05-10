@@ -2,8 +2,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:screen_recorder/screen_recorder.dart';
+import '../../core/utils/app_router.dart';
 import '../../core/utils/bug_report_controller.dart';
 
 /// Envolve o app inteiro com:
@@ -77,71 +77,50 @@ class _BugFab extends StatelessWidget {
     }
 
     final isRecording = state == BugRecordingState.recording;
+    final messenger = ScaffoldMessenger.maybeOf(context);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(24),
-        onTap: () async {
-          if (isRecording) {
-            final path = await notifier.stopAndExport();
-            if (context.mounted && path != null) {
-              context.push('/bug-report?gif=${Uri.encodeComponent(path)}');
-            } else if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
+    return Tooltip(
+      message: isRecording ? 'Parar gravação' : 'Reportar bug',
+      child: Material(
+        color: isRecording
+            ? const Color(0xFFE53E3E)
+            : const Color(0xFF38A169),
+        shape: const CircleBorder(),
+        elevation: 4,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () async {
+            if (isRecording) {
+              final path = await notifier.stopAndExport();
+              if (path != null) {
+                // Usa appRouter direto — o context deste FAB está acima
+                // do Navigator do GoRouter (ele vive no MaterialApp.builder),
+                // então context.push() não funcionaria.
+                appRouter.push('/bug-report?gif=${Uri.encodeComponent(path)}');
+              } else {
+                messenger?.showSnackBar(const SnackBar(
                   content: Text('Não foi possível gerar o GIF.'),
                   backgroundColor: Color(0xFFFF5252),
-                ),
-              );
+                ));
+              }
+            } else {
+              notifier.start();
+              messenger?.showSnackBar(const SnackBar(
+                content: Text(
+                    'Gravando... reproduza o problema e toque no botão vermelho para parar.'),
+                duration: Duration(seconds: 3),
+                backgroundColor: Color(0xFF38A169),
+              ));
             }
-          } else {
-            notifier.start();
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                      'Gravando... reproduza o problema, depois toque novamente em "Parar".'),
-                  duration: Duration(seconds: 4),
-                  backgroundColor: Color(0xFF38A169),
-                ),
-              );
-            }
-          }
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: isRecording
-                ? const Color(0xFFE53E3E)
-                : const Color(0xFF38A169),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.35),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                isRecording ? Icons.stop_circle : Icons.bug_report,
-                color: Colors.white,
-                size: 20,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                isRecording ? 'Parar' : 'Reportar bug',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
+          },
+          child: SizedBox(
+            width: 40,
+            height: 40,
+            child: Icon(
+              isRecording ? Icons.stop : Icons.bug_report_outlined,
+              color: Colors.white,
+              size: 22,
+            ),
           ),
         ),
       ),
