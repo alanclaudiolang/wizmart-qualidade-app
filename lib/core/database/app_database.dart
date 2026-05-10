@@ -62,9 +62,16 @@ class Visitas extends Table {
   TextColumn get diaHoraAgendado => text().nullable()();
   TextColumn get diaHoraRealizado => text().nullable()();
   TextColumn get diaHoraAbertura => text().nullable()();
+
+  // Status local: 1=agendada 2=andamento 3=realizada 5=falta
   IntColumn get statusVisita => integer().nullable()();
   IntColumn get rotaAssociada => integer().nullable()();
   IntColumn get idGabaritoAssociado => integer().nullable()();
+
+  // Campos vindos da Edge Function / Supabase
+  TextColumn get titulo => text().nullable()();
+  TextColumn get previsaoTurnoRealizada => text().nullable()();
+  BoolColumn get visitaAvulsa => boolean().nullable()();
 
   // Localização
   TextColumn get localizacaoAbertura => text().nullable()();
@@ -74,7 +81,7 @@ class Visitas extends Table {
   TextColumn get localizacaoFotosAntes => text().nullable()();
   TextColumn get localizacaoFotosDepois => text().nullable()();
 
-  // Fotos (JSON array de paths locais ou URLs)
+  // Fotos
   TextColumn get fotosAntesJson => text().nullable()();
   TextColumn get fotosDepoisJson => text().nullable()();
 
@@ -94,15 +101,12 @@ class Visitas extends Table {
   BoolColumn get checkPergunta7 => boolean().nullable()();
   TextColumn get obsPergunta7 => text().nullable()();
 
-  // Comentários
   TextColumn get comentariosVisita => text().nullable()();
 
-  // Controle de sync
-  // syncStatus: 'synced' | 'pending' | 'error' | 'rejected'
+  // syncStatus: 'synced' | 'pending' | 'error'
   TextColumn get syncStatus => text().withDefault(const Constant('synced'))();
   TextColumn get syncedAt => text().nullable()();
 
-  // Estado local da visita (para máquina de estados)
   // localState: 'idle' | 'abertura' | 'fotos_antes' | 'em_reposicao' | 'fotos_depois' | 'checklist' | 'finalizada'
   TextColumn get localState => text().withDefault(const Constant('idle'))();
 
@@ -110,17 +114,15 @@ class Visitas extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-// Fila de operações pendentes de sync
 class OutboxItems extends Table {
-  TextColumn get id => text()(); // UUID gerado no cliente
-  TextColumn get entityType => text()(); // 'visita'
-  TextColumn get operation => text()(); // 'open' | 'fotos_antes' | 'fotos_depois' | 'checklist' | 'close'
-  IntColumn get entityId => integer()(); // id da visita no Supabase
-  TextColumn get payloadJson => text()(); // JSON do payload
+  TextColumn get id => text()();
+  TextColumn get entityType => text()();
+  TextColumn get operation => text()();
+  IntColumn get entityId => integer()();
+  TextColumn get payloadJson => text()();
   IntColumn get attempts => integer().withDefault(const Constant(0))();
   TextColumn get nextRetryAt => text()();
   TextColumn get lastError => text().nullable()();
-  // status: 'pending' | 'processing' | 'done' | 'dead'
   TextColumn get status => text().withDefault(const Constant('pending'))();
   TextColumn get createdAt => text()();
 
@@ -128,14 +130,12 @@ class OutboxItems extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-// Fotos pendentes de upload
 class PendingPhotos extends Table {
-  TextColumn get id => text()(); // UUID
+  TextColumn get id => text()();
   IntColumn get visitaId => integer()();
-  TextColumn get slot => text()(); // 'antes' | 'depois'
-  IntColumn get numero => integer()(); // 1..8
-  TextColumn get localPath => text()(); // path no disco
-  // status: 'pending' | 'uploading' | 'uploaded' | 'error'
+  TextColumn get slot => text()();
+  IntColumn get numero => integer()();
+  TextColumn get localPath => text()();
   TextColumn get status => text().withDefault(const Constant('pending'))();
   TextColumn get storageUrl => text().nullable()();
   IntColumn get attempts => integer().withDefault(const Constant(0))();
@@ -146,9 +146,8 @@ class PendingPhotos extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-// Estado de sync por entidade (para pull incremental)
 class SyncState extends Table {
-  TextColumn get entityType => text()(); // 'visitas' | 'pdvs' | 'gabaritos'
+  TextColumn get entityType => text()();
   TextColumn get lastPullAt => text().nullable()();
   TextColumn get lastPushAt => text().nullable()();
 
@@ -171,7 +170,18 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onUpgrade: (migrator, from, to) async {
+      if (from < 2) {
+        await migrator.addColumn(visitas, visitas.titulo);
+        await migrator.addColumn(visitas, visitas.previsaoTurnoRealizada);
+        await migrator.addColumn(visitas, visitas.visitaAvulsa);
+      }
+    },
+  );
 
   // ── Users ──────────────────────────────────────────────────────────────────
 
@@ -210,7 +220,7 @@ class AppDatabase extends _$AppDatabase {
           ..where((v) =>
               v.idPromotorAssociado.equals(promotorId) &
               v.diaHoraAgendado.isBetweenValues(inicioDia, fimDia) &
-              v.statusVisita.isNotIn([5]))) // exclui faltas
+              v.statusVisita.isNotIn([5])))
         .watch();
   }
 
@@ -224,6 +234,39 @@ class AppDatabase extends _$AppDatabase {
                 v.statusVisita.equals(2)))
           .getSingleOrNull();
 
+  /// Busca visita existente por gabarito+pdv+turno dentro de uma janela de data
+  Future<Visita?> getVisitaByGabaritoTurnoData(
+    int gabaritoId,
+    int pdvId,
+    String turno,
+    String inicioDia,
+    String fimDia,
+  ) =>
+      (select(visitas)
+            ..where((v) =>
+                v.idGabaritoAssociado.equals(gabaritoId) &
+                v.idPdvAssociado.equals(pdvId) &
+                v.previsaoTurnoRealizada.equals(turno) &
+                v.diaHoraAgendado.isBetweenValues(inicioDia, fimDia)))
+          .getSingleOrNull();
+
+  /// Remove visitas agendadas do dia que não foram modificadas localmente
+  Future<void> deleteVisitasAgendadasHojeNaoModificadas(int promotorId) {
+    final hoje = DateTime.now();
+    final inicioDia =
+        DateTime(hoje.year, hoje.month, hoje.day).toIso8601String();
+    final fimDia =
+        DateTime(hoje.year, hoje.month, hoje.day, 23, 59, 59).toIso8601String();
+
+    return (delete(visitas)
+          ..where((v) =>
+              v.idPromotorAssociado.equals(promotorId) &
+              v.statusVisita.equals(1) &
+              v.syncStatus.equals('synced') &
+              v.diaHoraAgendado.isBetweenValues(inicioDia, fimDia)))
+        .go();
+  }
+
   Future<void> upsertVisita(VisitasCompanion visita) =>
       into(visitas).insertOnConflictUpdate(visita);
 
@@ -231,7 +274,6 @@ class AppDatabase extends _$AppDatabase {
       (update(visitas)..where((v) => v.id.equals(visita.id.value)))
           .write(visita);
 
-  // Contadores para o totalizador da home
   Future<Map<String, int>> getContadoresHoje(int promotorId) async {
     final hoje = DateTime.now();
     final inicioDia =
@@ -258,7 +300,8 @@ class AppDatabase extends _$AppDatabase {
     final agora = DateTime.now().toIso8601String();
     return (select(outboxItems)
           ..where((o) =>
-              o.status.equals('pending') & o.nextRetryAt.isSmallerOrEqualValue(agora))
+              o.status.equals('pending') &
+              o.nextRetryAt.isSmallerOrEqualValue(agora))
           ..orderBy([(o) => OrderingTerm.asc(o.createdAt)])
           ..limit(10))
         .get();

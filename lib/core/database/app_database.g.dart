@@ -1464,6 +1464,26 @@ class $VisitasTable extends Visitas with TableInfo<$VisitasTable, Visita> {
   late final GeneratedColumn<int> idGabaritoAssociado = GeneratedColumn<int>(
       'id_gabarito_associado', aliasedName, true,
       type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _tituloMeta = const VerificationMeta('titulo');
+  @override
+  late final GeneratedColumn<String> titulo = GeneratedColumn<String>(
+      'titulo', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _previsaoTurnoRealizadaMeta =
+      const VerificationMeta('previsaoTurnoRealizada');
+  @override
+  late final GeneratedColumn<String> previsaoTurnoRealizada =
+      GeneratedColumn<String>('previsao_turno_realizada', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _visitaAvulsaMeta =
+      const VerificationMeta('visitaAvulsa');
+  @override
+  late final GeneratedColumn<bool> visitaAvulsa = GeneratedColumn<bool>(
+      'visita_avulsa', aliasedName, true,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("visita_avulsa" IN (0, 1))'));
   static const VerificationMeta _localizacaoAberturaMeta =
       const VerificationMeta('localizacaoAbertura');
   @override
@@ -1656,6 +1676,9 @@ class $VisitasTable extends Visitas with TableInfo<$VisitasTable, Visita> {
         statusVisita,
         rotaAssociada,
         idGabaritoAssociado,
+        titulo,
+        previsaoTurnoRealizada,
+        visitaAvulsa,
         localizacaoAbertura,
         localizacaoEncerramento,
         diaHoraFotosAntes,
@@ -1743,6 +1766,22 @@ class $VisitasTable extends Visitas with TableInfo<$VisitasTable, Visita> {
           _idGabaritoAssociadoMeta,
           idGabaritoAssociado.isAcceptableOrUnknown(
               data['id_gabarito_associado']!, _idGabaritoAssociadoMeta));
+    }
+    if (data.containsKey('titulo')) {
+      context.handle(_tituloMeta,
+          titulo.isAcceptableOrUnknown(data['titulo']!, _tituloMeta));
+    }
+    if (data.containsKey('previsao_turno_realizada')) {
+      context.handle(
+          _previsaoTurnoRealizadaMeta,
+          previsaoTurnoRealizada.isAcceptableOrUnknown(
+              data['previsao_turno_realizada']!, _previsaoTurnoRealizadaMeta));
+    }
+    if (data.containsKey('visita_avulsa')) {
+      context.handle(
+          _visitaAvulsaMeta,
+          visitaAvulsa.isAcceptableOrUnknown(
+              data['visita_avulsa']!, _visitaAvulsaMeta));
     }
     if (data.containsKey('localizacao_abertura')) {
       context.handle(
@@ -1925,6 +1964,13 @@ class $VisitasTable extends Visitas with TableInfo<$VisitasTable, Visita> {
           .read(DriftSqlType.int, data['${effectivePrefix}rota_associada']),
       idGabaritoAssociado: attachedDatabase.typeMapping.read(
           DriftSqlType.int, data['${effectivePrefix}id_gabarito_associado']),
+      titulo: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}titulo']),
+      previsaoTurnoRealizada: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}previsao_turno_realizada']),
+      visitaAvulsa: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}visita_avulsa']),
       localizacaoAbertura: attachedDatabase.typeMapping.read(
           DriftSqlType.string, data['${effectivePrefix}localizacao_abertura']),
       localizacaoEncerramento: attachedDatabase.typeMapping.read(
@@ -1999,6 +2045,9 @@ class Visita extends DataClass implements Insertable<Visita> {
   final int? statusVisita;
   final int? rotaAssociada;
   final int? idGabaritoAssociado;
+  final String? titulo;
+  final String? previsaoTurnoRealizada;
+  final bool? visitaAvulsa;
   final String? localizacaoAbertura;
   final String? localizacaoEncerramento;
   final String? diaHoraFotosAntes;
@@ -2035,6 +2084,9 @@ class Visita extends DataClass implements Insertable<Visita> {
       this.statusVisita,
       this.rotaAssociada,
       this.idGabaritoAssociado,
+      this.titulo,
+      this.previsaoTurnoRealizada,
+      this.visitaAvulsa,
       this.localizacaoAbertura,
       this.localizacaoEncerramento,
       this.diaHoraFotosAntes,
@@ -2088,6 +2140,16 @@ class Visita extends DataClass implements Insertable<Visita> {
     }
     if (!nullToAbsent || idGabaritoAssociado != null) {
       map['id_gabarito_associado'] = Variable<int>(idGabaritoAssociado);
+    }
+    if (!nullToAbsent || titulo != null) {
+      map['titulo'] = Variable<String>(titulo);
+    }
+    if (!nullToAbsent || previsaoTurnoRealizada != null) {
+      map['previsao_turno_realizada'] =
+          Variable<String>(previsaoTurnoRealizada);
+    }
+    if (!nullToAbsent || visitaAvulsa != null) {
+      map['visita_avulsa'] = Variable<bool>(visitaAvulsa);
     }
     if (!nullToAbsent || localizacaoAbertura != null) {
       map['localizacao_abertura'] = Variable<String>(localizacaoAbertura);
@@ -2195,6 +2257,14 @@ class Visita extends DataClass implements Insertable<Visita> {
       idGabaritoAssociado: idGabaritoAssociado == null && nullToAbsent
           ? const Value.absent()
           : Value(idGabaritoAssociado),
+      titulo:
+          titulo == null && nullToAbsent ? const Value.absent() : Value(titulo),
+      previsaoTurnoRealizada: previsaoTurnoRealizada == null && nullToAbsent
+          ? const Value.absent()
+          : Value(previsaoTurnoRealizada),
+      visitaAvulsa: visitaAvulsa == null && nullToAbsent
+          ? const Value.absent()
+          : Value(visitaAvulsa),
       localizacaoAbertura: localizacaoAbertura == null && nullToAbsent
           ? const Value.absent()
           : Value(localizacaoAbertura),
@@ -2287,6 +2357,10 @@ class Visita extends DataClass implements Insertable<Visita> {
       rotaAssociada: serializer.fromJson<int?>(json['rotaAssociada']),
       idGabaritoAssociado:
           serializer.fromJson<int?>(json['idGabaritoAssociado']),
+      titulo: serializer.fromJson<String?>(json['titulo']),
+      previsaoTurnoRealizada:
+          serializer.fromJson<String?>(json['previsaoTurnoRealizada']),
+      visitaAvulsa: serializer.fromJson<bool?>(json['visitaAvulsa']),
       localizacaoAbertura:
           serializer.fromJson<String?>(json['localizacaoAbertura']),
       localizacaoEncerramento:
@@ -2335,6 +2409,10 @@ class Visita extends DataClass implements Insertable<Visita> {
       'statusVisita': serializer.toJson<int?>(statusVisita),
       'rotaAssociada': serializer.toJson<int?>(rotaAssociada),
       'idGabaritoAssociado': serializer.toJson<int?>(idGabaritoAssociado),
+      'titulo': serializer.toJson<String?>(titulo),
+      'previsaoTurnoRealizada':
+          serializer.toJson<String?>(previsaoTurnoRealizada),
+      'visitaAvulsa': serializer.toJson<bool?>(visitaAvulsa),
       'localizacaoAbertura': serializer.toJson<String?>(localizacaoAbertura),
       'localizacaoEncerramento':
           serializer.toJson<String?>(localizacaoEncerramento),
@@ -2377,6 +2455,9 @@ class Visita extends DataClass implements Insertable<Visita> {
           Value<int?> statusVisita = const Value.absent(),
           Value<int?> rotaAssociada = const Value.absent(),
           Value<int?> idGabaritoAssociado = const Value.absent(),
+          Value<String?> titulo = const Value.absent(),
+          Value<String?> previsaoTurnoRealizada = const Value.absent(),
+          Value<bool?> visitaAvulsa = const Value.absent(),
           Value<String?> localizacaoAbertura = const Value.absent(),
           Value<String?> localizacaoEncerramento = const Value.absent(),
           Value<String?> diaHoraFotosAntes = const Value.absent(),
@@ -2426,6 +2507,12 @@ class Visita extends DataClass implements Insertable<Visita> {
         idGabaritoAssociado: idGabaritoAssociado.present
             ? idGabaritoAssociado.value
             : this.idGabaritoAssociado,
+        titulo: titulo.present ? titulo.value : this.titulo,
+        previsaoTurnoRealizada: previsaoTurnoRealizada.present
+            ? previsaoTurnoRealizada.value
+            : this.previsaoTurnoRealizada,
+        visitaAvulsa:
+            visitaAvulsa.present ? visitaAvulsa.value : this.visitaAvulsa,
         localizacaoAbertura: localizacaoAbertura.present
             ? localizacaoAbertura.value
             : this.localizacaoAbertura,
@@ -2511,6 +2598,13 @@ class Visita extends DataClass implements Insertable<Visita> {
       idGabaritoAssociado: data.idGabaritoAssociado.present
           ? data.idGabaritoAssociado.value
           : this.idGabaritoAssociado,
+      titulo: data.titulo.present ? data.titulo.value : this.titulo,
+      previsaoTurnoRealizada: data.previsaoTurnoRealizada.present
+          ? data.previsaoTurnoRealizada.value
+          : this.previsaoTurnoRealizada,
+      visitaAvulsa: data.visitaAvulsa.present
+          ? data.visitaAvulsa.value
+          : this.visitaAvulsa,
       localizacaoAbertura: data.localizacaoAbertura.present
           ? data.localizacaoAbertura.value
           : this.localizacaoAbertura,
@@ -2600,6 +2694,9 @@ class Visita extends DataClass implements Insertable<Visita> {
           ..write('statusVisita: $statusVisita, ')
           ..write('rotaAssociada: $rotaAssociada, ')
           ..write('idGabaritoAssociado: $idGabaritoAssociado, ')
+          ..write('titulo: $titulo, ')
+          ..write('previsaoTurnoRealizada: $previsaoTurnoRealizada, ')
+          ..write('visitaAvulsa: $visitaAvulsa, ')
           ..write('localizacaoAbertura: $localizacaoAbertura, ')
           ..write('localizacaoEncerramento: $localizacaoEncerramento, ')
           ..write('diaHoraFotosAntes: $diaHoraFotosAntes, ')
@@ -2641,6 +2738,9 @@ class Visita extends DataClass implements Insertable<Visita> {
         statusVisita,
         rotaAssociada,
         idGabaritoAssociado,
+        titulo,
+        previsaoTurnoRealizada,
+        visitaAvulsa,
         localizacaoAbertura,
         localizacaoEncerramento,
         diaHoraFotosAntes,
@@ -2681,6 +2781,9 @@ class Visita extends DataClass implements Insertable<Visita> {
           other.statusVisita == this.statusVisita &&
           other.rotaAssociada == this.rotaAssociada &&
           other.idGabaritoAssociado == this.idGabaritoAssociado &&
+          other.titulo == this.titulo &&
+          other.previsaoTurnoRealizada == this.previsaoTurnoRealizada &&
+          other.visitaAvulsa == this.visitaAvulsa &&
           other.localizacaoAbertura == this.localizacaoAbertura &&
           other.localizacaoEncerramento == this.localizacaoEncerramento &&
           other.diaHoraFotosAntes == this.diaHoraFotosAntes &&
@@ -2719,6 +2822,9 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
   final Value<int?> statusVisita;
   final Value<int?> rotaAssociada;
   final Value<int?> idGabaritoAssociado;
+  final Value<String?> titulo;
+  final Value<String?> previsaoTurnoRealizada;
+  final Value<bool?> visitaAvulsa;
   final Value<String?> localizacaoAbertura;
   final Value<String?> localizacaoEncerramento;
   final Value<String?> diaHoraFotosAntes;
@@ -2755,6 +2861,9 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
     this.statusVisita = const Value.absent(),
     this.rotaAssociada = const Value.absent(),
     this.idGabaritoAssociado = const Value.absent(),
+    this.titulo = const Value.absent(),
+    this.previsaoTurnoRealizada = const Value.absent(),
+    this.visitaAvulsa = const Value.absent(),
     this.localizacaoAbertura = const Value.absent(),
     this.localizacaoEncerramento = const Value.absent(),
     this.diaHoraFotosAntes = const Value.absent(),
@@ -2792,6 +2901,9 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
     this.statusVisita = const Value.absent(),
     this.rotaAssociada = const Value.absent(),
     this.idGabaritoAssociado = const Value.absent(),
+    this.titulo = const Value.absent(),
+    this.previsaoTurnoRealizada = const Value.absent(),
+    this.visitaAvulsa = const Value.absent(),
     this.localizacaoAbertura = const Value.absent(),
     this.localizacaoEncerramento = const Value.absent(),
     this.diaHoraFotosAntes = const Value.absent(),
@@ -2829,6 +2941,9 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
     Expression<int>? statusVisita,
     Expression<int>? rotaAssociada,
     Expression<int>? idGabaritoAssociado,
+    Expression<String>? titulo,
+    Expression<String>? previsaoTurnoRealizada,
+    Expression<bool>? visitaAvulsa,
     Expression<String>? localizacaoAbertura,
     Expression<String>? localizacaoEncerramento,
     Expression<String>? diaHoraFotosAntes,
@@ -2868,6 +2983,10 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
       if (rotaAssociada != null) 'rota_associada': rotaAssociada,
       if (idGabaritoAssociado != null)
         'id_gabarito_associado': idGabaritoAssociado,
+      if (titulo != null) 'titulo': titulo,
+      if (previsaoTurnoRealizada != null)
+        'previsao_turno_realizada': previsaoTurnoRealizada,
+      if (visitaAvulsa != null) 'visita_avulsa': visitaAvulsa,
       if (localizacaoAbertura != null)
         'localizacao_abertura': localizacaoAbertura,
       if (localizacaoEncerramento != null)
@@ -2912,6 +3031,9 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
       Value<int?>? statusVisita,
       Value<int?>? rotaAssociada,
       Value<int?>? idGabaritoAssociado,
+      Value<String?>? titulo,
+      Value<String?>? previsaoTurnoRealizada,
+      Value<bool?>? visitaAvulsa,
       Value<String?>? localizacaoAbertura,
       Value<String?>? localizacaoEncerramento,
       Value<String?>? diaHoraFotosAntes,
@@ -2948,6 +3070,10 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
       statusVisita: statusVisita ?? this.statusVisita,
       rotaAssociada: rotaAssociada ?? this.rotaAssociada,
       idGabaritoAssociado: idGabaritoAssociado ?? this.idGabaritoAssociado,
+      titulo: titulo ?? this.titulo,
+      previsaoTurnoRealizada:
+          previsaoTurnoRealizada ?? this.previsaoTurnoRealizada,
+      visitaAvulsa: visitaAvulsa ?? this.visitaAvulsa,
       localizacaoAbertura: localizacaoAbertura ?? this.localizacaoAbertura,
       localizacaoEncerramento:
           localizacaoEncerramento ?? this.localizacaoEncerramento,
@@ -3009,6 +3135,16 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
     }
     if (idGabaritoAssociado.present) {
       map['id_gabarito_associado'] = Variable<int>(idGabaritoAssociado.value);
+    }
+    if (titulo.present) {
+      map['titulo'] = Variable<String>(titulo.value);
+    }
+    if (previsaoTurnoRealizada.present) {
+      map['previsao_turno_realizada'] =
+          Variable<String>(previsaoTurnoRealizada.value);
+    }
+    if (visitaAvulsa.present) {
+      map['visita_avulsa'] = Variable<bool>(visitaAvulsa.value);
     }
     if (localizacaoAbertura.present) {
       map['localizacao_abertura'] = Variable<String>(localizacaoAbertura.value);
@@ -3106,6 +3242,9 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
           ..write('statusVisita: $statusVisita, ')
           ..write('rotaAssociada: $rotaAssociada, ')
           ..write('idGabaritoAssociado: $idGabaritoAssociado, ')
+          ..write('titulo: $titulo, ')
+          ..write('previsaoTurnoRealizada: $previsaoTurnoRealizada, ')
+          ..write('visitaAvulsa: $visitaAvulsa, ')
           ..write('localizacaoAbertura: $localizacaoAbertura, ')
           ..write('localizacaoEncerramento: $localizacaoEncerramento, ')
           ..write('diaHoraFotosAntes: $diaHoraFotosAntes, ')
@@ -5093,6 +5232,9 @@ typedef $$VisitasTableCreateCompanionBuilder = VisitasCompanion Function({
   Value<int?> statusVisita,
   Value<int?> rotaAssociada,
   Value<int?> idGabaritoAssociado,
+  Value<String?> titulo,
+  Value<String?> previsaoTurnoRealizada,
+  Value<bool?> visitaAvulsa,
   Value<String?> localizacaoAbertura,
   Value<String?> localizacaoEncerramento,
   Value<String?> diaHoraFotosAntes,
@@ -5130,6 +5272,9 @@ typedef $$VisitasTableUpdateCompanionBuilder = VisitasCompanion Function({
   Value<int?> statusVisita,
   Value<int?> rotaAssociada,
   Value<int?> idGabaritoAssociado,
+  Value<String?> titulo,
+  Value<String?> previsaoTurnoRealizada,
+  Value<bool?> visitaAvulsa,
   Value<String?> localizacaoAbertura,
   Value<String?> localizacaoEncerramento,
   Value<String?> diaHoraFotosAntes,
@@ -5199,6 +5344,16 @@ class $$VisitasTableFilterComposer
   ColumnFilters<int> get idGabaritoAssociado => $composableBuilder(
       column: $table.idGabaritoAssociado,
       builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get titulo => $composableBuilder(
+      column: $table.titulo, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get previsaoTurnoRealizada => $composableBuilder(
+      column: $table.previsaoTurnoRealizada,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get visitaAvulsa => $composableBuilder(
+      column: $table.visitaAvulsa, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get localizacaoAbertura => $composableBuilder(
       column: $table.localizacaoAbertura,
@@ -5339,6 +5494,17 @@ class $$VisitasTableOrderingComposer
       column: $table.idGabaritoAssociado,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get titulo => $composableBuilder(
+      column: $table.titulo, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get previsaoTurnoRealizada => $composableBuilder(
+      column: $table.previsaoTurnoRealizada,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get visitaAvulsa => $composableBuilder(
+      column: $table.visitaAvulsa,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get localizacaoAbertura => $composableBuilder(
       column: $table.localizacaoAbertura,
       builder: (column) => ColumnOrderings(column));
@@ -5477,6 +5643,15 @@ class $$VisitasTableAnnotationComposer
   GeneratedColumn<int> get idGabaritoAssociado => $composableBuilder(
       column: $table.idGabaritoAssociado, builder: (column) => column);
 
+  GeneratedColumn<String> get titulo =>
+      $composableBuilder(column: $table.titulo, builder: (column) => column);
+
+  GeneratedColumn<String> get previsaoTurnoRealizada => $composableBuilder(
+      column: $table.previsaoTurnoRealizada, builder: (column) => column);
+
+  GeneratedColumn<bool> get visitaAvulsa => $composableBuilder(
+      column: $table.visitaAvulsa, builder: (column) => column);
+
   GeneratedColumn<String> get localizacaoAbertura => $composableBuilder(
       column: $table.localizacaoAbertura, builder: (column) => column);
 
@@ -5588,6 +5763,9 @@ class $$VisitasTableTableManager extends RootTableManager<
             Value<int?> statusVisita = const Value.absent(),
             Value<int?> rotaAssociada = const Value.absent(),
             Value<int?> idGabaritoAssociado = const Value.absent(),
+            Value<String?> titulo = const Value.absent(),
+            Value<String?> previsaoTurnoRealizada = const Value.absent(),
+            Value<bool?> visitaAvulsa = const Value.absent(),
             Value<String?> localizacaoAbertura = const Value.absent(),
             Value<String?> localizacaoEncerramento = const Value.absent(),
             Value<String?> diaHoraFotosAntes = const Value.absent(),
@@ -5625,6 +5803,9 @@ class $$VisitasTableTableManager extends RootTableManager<
             statusVisita: statusVisita,
             rotaAssociada: rotaAssociada,
             idGabaritoAssociado: idGabaritoAssociado,
+            titulo: titulo,
+            previsaoTurnoRealizada: previsaoTurnoRealizada,
+            visitaAvulsa: visitaAvulsa,
             localizacaoAbertura: localizacaoAbertura,
             localizacaoEncerramento: localizacaoEncerramento,
             diaHoraFotosAntes: diaHoraFotosAntes,
@@ -5662,6 +5843,9 @@ class $$VisitasTableTableManager extends RootTableManager<
             Value<int?> statusVisita = const Value.absent(),
             Value<int?> rotaAssociada = const Value.absent(),
             Value<int?> idGabaritoAssociado = const Value.absent(),
+            Value<String?> titulo = const Value.absent(),
+            Value<String?> previsaoTurnoRealizada = const Value.absent(),
+            Value<bool?> visitaAvulsa = const Value.absent(),
             Value<String?> localizacaoAbertura = const Value.absent(),
             Value<String?> localizacaoEncerramento = const Value.absent(),
             Value<String?> diaHoraFotosAntes = const Value.absent(),
@@ -5699,6 +5883,9 @@ class $$VisitasTableTableManager extends RootTableManager<
             statusVisita: statusVisita,
             rotaAssociada: rotaAssociada,
             idGabaritoAssociado: idGabaritoAssociado,
+            titulo: titulo,
+            previsaoTurnoRealizada: previsaoTurnoRealizada,
+            visitaAvulsa: visitaAvulsa,
             localizacaoAbertura: localizacaoAbertura,
             localizacaoEncerramento: localizacaoEncerramento,
             diaHoraFotosAntes: diaHoraFotosAntes,
