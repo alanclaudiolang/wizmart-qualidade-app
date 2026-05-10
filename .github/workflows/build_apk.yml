@@ -54,16 +54,18 @@ jobs:
 
       - name: Computar metadados do build
         id: meta
+        env:
+          TZ: America/Sao_Paulo
         run: |
           VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //;s/+.*//' | tr -d ' \r\n')
-          TIMESTAMP=$(date -u +'%Y%m%d-%H%M')
-          BUILD_TIME=$(date -u +'%Y-%m-%d %H:%M UTC')
+          TIMESTAMP=$(date +'%Y%m%d-%H%M')
+          BUILD_TIME=$(date +'%d/%m/%Y %H:%M')
           APK_NAME="wizmart-app-v${VERSION}-build${{ github.run_number }}-${TIMESTAMP}.apk"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
           echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
           echo "apk_name=$APK_NAME" >> $GITHUB_OUTPUT
-          echo "Versão: $VERSION | Build: ${{ github.run_number }} | Time: $BUILD_TIME"
+          echo "Versão: $VERSION | Build: ${{ github.run_number }} | Time: $BUILD_TIME (BRT)"
           echo "APK final: $APK_NAME"
 
       - name: Build APK release

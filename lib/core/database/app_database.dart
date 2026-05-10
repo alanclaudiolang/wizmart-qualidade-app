@@ -337,6 +337,12 @@ class AppDatabase extends _$AppDatabase {
       (update(pendingPhotos)..where((p) => p.id.equals(photo.id.value)))
           .write(photo);
 
+  /// Apaga registros de upload pendente para a foto cujo path local foi
+  /// removido pelo usuário no grid. Usado pelo botão "X" da grade de fotos.
+  Future<void> deletePendingPhotosByPath(String localPath) =>
+      (delete(pendingPhotos)..where((p) => p.localPath.equals(localPath)))
+          .go();
+
   // ── Sync State ─────────────────────────────────────────────────────────────
 
   Future<SyncStateData?> getSyncState(String entityType) =>

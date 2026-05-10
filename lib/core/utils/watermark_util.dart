@@ -45,16 +45,18 @@ class WatermarkUtil {
       throw Exception('Não foi possível decodificar a imagem');
     }
 
-    // Faixa mais alta com fonte maior (arial48 = ~48px de altura).
-    // 2 linhas + padding = ~120px.
-    const faixaH = 120;
+    // Faixa dobrada (240px) com 3 linhas em arial48.
+    // arial48 ≈ 48px altura. lineHeight 72px = 48 + 24 de gap.
+    // Layout: top 24 + linha 72 + linha 72 + linha 48 + bottom 24 = 240
+    const faixaH = 240;
+    const lineHeight = 72;
+    const topPadding = 24;
+
     final novaAltura = original.height + faixaH;
     final novaImagem = img.Image(width: original.width, height: novaAltura);
 
-    // Cola foto original em cima
     img.compositeImage(novaImagem, original, dstX: 0, dstY: 0);
 
-    // Faixa preta sólida (sem alpha — JPG não suporta transparência mesmo)
     img.fillRect(
       novaImagem,
       x1: 0,
@@ -65,35 +67,24 @@ class WatermarkUtil {
     );
 
     final dateStr = DateFormat('dd/MM/yyyy HH:mm:ss').format(capturedAt);
-    final linha1 = 'PDV: $pdvNome';
-    final linha2 = 'Promotor: $promotorNome';
-    final linha3 = 'FOTO $slot  $dateStr';
+    final linhas = [
+      'PDV: $pdvNome',
+      'Promotor: $promotorNome',
+      'FOTO $slot  -  $dateStr',
+    ];
     final font = img.arial48;
+    final corBranca = img.ColorRgb8(255, 255, 255);
 
-    img.drawString(
-      novaImagem,
-      linha1,
-      font: font,
-      x: _padding,
-      y: original.height + 4,
-      color: img.ColorRgb8(255, 255, 255),
-    );
-    img.drawString(
-      novaImagem,
-      linha2,
-      font: font,
-      x: _padding,
-      y: original.height + 40,
-      color: img.ColorRgb8(220, 220, 220),
-    );
-    img.drawString(
-      novaImagem,
-      linha3,
-      font: font,
-      x: _padding,
-      y: original.height + 76,
-      color: img.ColorRgb8(180, 220, 180),
-    );
+    for (var i = 0; i < linhas.length; i++) {
+      img.drawString(
+        novaImagem,
+        linhas[i],
+        font: font,
+        x: _padding,
+        y: original.height + topPadding + (i * lineHeight),
+        color: corBranca,
+      );
+    }
 
     await File(outPath).writeAsBytes(img.encodeJpg(novaImagem, quality: 90));
     return outPath;

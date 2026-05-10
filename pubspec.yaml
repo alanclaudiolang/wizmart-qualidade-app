@@ -57,6 +57,9 @@ dependencies:
   # Bug report (gravação da tela em GIF)
   screen_recorder: ^0.3.0
 
+  # Grid de fotos com drag-and-drop
+  reorderable_grid_view: ^2.2.8
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

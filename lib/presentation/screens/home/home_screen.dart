@@ -47,8 +47,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final isOnline = ref.read(connectivityProvider);
     if (!isOnline) return;
     final syncEngine = ref.read(syncEngineProvider);
-    await syncEngine.pullAll(session.userId);
-    await syncEngine.processOutbox();
+    try {
+      await syncEngine.pullAll(session.userId);
+      await syncEngine.processOutbox();
+    } catch (e) {
+      debugPrint('Auto-sync falhou: $e');
+    }
+    // Força UI a buscar dados atualizados após o sync
+    if (mounted) {
+      ref.invalidate(contadoresProvider(session.userId));
+      ref.invalidate(pdvsProvider);
+    }
   }
 
   @override

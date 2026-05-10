@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import 'package:uuid/uuid.dart';
 import 'package:drift/drift.dart' as drift;
 import 'package:gal/gal.dart';
@@ -293,6 +294,78 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     }
   }
 
+  // ── Reordenar e remover fotos do grid ─────────────────────────────────────
+
+  Future<void> _reorderFoto(String slot, int oldIndex, int newIndex) async {
+    setState(() {
+      final lista = slot == 'antes' ? _fotosAntes : _fotosDepois;
+      final item = lista.removeAt(oldIndex);
+      lista.insert(newIndex, item);
+    });
+    await _persistirOrdemFotos(slot);
+  }
+
+  Future<void> _removerFoto(String slot, int index) async {
+    final confirma = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF16213E),
+        title: const Text('Remover foto?',
+            style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'A foto será apagada deste celular e do envio para o servidor.',
+          style: TextStyle(color: Color(0xFF8892B0)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar',
+                style: TextStyle(color: Color(0xFF8892B0))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Remover',
+                style: TextStyle(color: Color(0xFFFF5252))),
+          ),
+        ],
+      ),
+    );
+    if (confirma != true) return;
+
+    final lista = slot == 'antes' ? _fotosAntes : _fotosDepois;
+    final path = lista[index];
+
+    setState(() => lista.removeAt(index));
+    await _persistirOrdemFotos(slot);
+
+    // Cancela upload pendente desta foto, se ainda não foi enviado
+    final db = ref.read(appDatabaseProvider);
+    await db.deletePendingPhotosByPath(path);
+
+    // Remove arquivo local
+    try {
+      final f = File(path);
+      if (await f.exists()) await f.delete();
+    } catch (_) {}
+  }
+
+  Future<void> _persistirOrdemFotos(String slot) async {
+    final db = ref.read(appDatabaseProvider);
+    if (slot == 'antes') {
+      await db.updateVisita(VisitasCompanion(
+        id: drift.Value(widget.visitaId),
+        fotosAntesJson: drift.Value(jsonEncode(_fotosAntes)),
+        syncStatus: const drift.Value('pending'),
+      ));
+    } else {
+      await db.updateVisita(VisitasCompanion(
+        id: drift.Value(widget.visitaId),
+        fotosDepoisJson: drift.Value(jsonEncode(_fotosDepois)),
+        syncStatus: const drift.Value('pending'),
+      ));
+    }
+  }
+
   // ── Ações da máquina de estados ────────────────────────────────────────────
 
   Future<void> _iniciarVisita() async {
@@ -340,7 +413,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       localState: const drift.Value('em_reposicao'),
     ));
 
-    setState(() => _localState = 'em_reposicao');
+    if (mounted) context.go('/home');
   }
 
   Future<void> _iniciarFotosDepois() async {
@@ -731,7 +804,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                     ],
                   ),
                 )
-              : GridView.builder(
+              : ReorderableGridView.builder(
                   padding: const EdgeInsets.all(12),
                   gridDelegate:
                       const SliverGridDelegateWithFixedCrossAxisCount(
@@ -740,12 +813,60 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                     mainAxisSpacing: 8,
                   ),
                   itemCount: fotos.length,
-                  itemBuilder: (_, i) => ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.file(
-                      File(fotos[i]),
-                      fit: BoxFit.cover,
-                    ),
+                  onReorder: (oldIndex, newIndex) =>
+                      _reorderFoto(slot, oldIndex, newIndex),
+                  itemBuilder: (_, i) => Stack(
+                    key: ValueKey(fotos[i]),
+                    children: [
+                      Positioned.fill(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.file(
+                            File(fotos[i]),
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: GestureDetector(
+                          onTap: () => _removerFoto(slot, i),
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.65),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.close,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 4,
+                        left: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.65),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '${i + 1}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
         ),
@@ -785,8 +906,8 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                     icon: const Icon(Icons.check, color: Colors.white),
                     label: Text(
                       slot == 'antes'
-                          ? 'Concluído — ir para reposição'
-                          : 'Concluído — ir para checklist',
+                          ? 'Concluir'
+                          : 'Concluir — ir para checklist',
                       style: const TextStyle(
                           color: Colors.white, fontSize: 16),
                     ),
