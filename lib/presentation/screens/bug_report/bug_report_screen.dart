@@ -3,10 +3,12 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
+import '../../../core/network/bug_report_uploader.dart';
 import '../../../core/utils/session_service.dart';
 
 /// Tela de revisão e envio do bug report.
@@ -49,21 +51,35 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
       await reportsDir.create(recursive: true);
 
       final id = const Uuid().v4();
-      final report = {
+      final metadata = {
         'id': id,
         'descricao': _descCtrl.text.trim(),
-        'gif_path': widget.gifPath,
         'created_at': DateTime.now().toIso8601String(),
         'promotor_id': session?.userId,
         'promotor_nome': session?.nome,
-        'status': 'pending_upload',
       };
 
+      // Upload pro Supabase Storage (bucket "bug-reports")
+      final result = await BugReportUploader.upload(
+        reportId: id,
+        gifLocalPath: widget.gifPath,
+        metadata: metadata,
+      );
+
+      // Salva metadata local com status do upload
+      final report = {
+        ...metadata,
+        'gif_path': widget.gifPath,
+        'status': result.success ? 'uploaded' : 'pending_upload',
+        'gif_url': result.gifUrl,
+        'json_url': result.jsonUrl,
+        'upload_error': result.error,
+      };
       await File('${reportsDir.path}/$id.json')
           .writeAsString(jsonEncode(report));
 
       if (!mounted) return;
-      _showSuccess();
+      _showSuccess(result);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -75,25 +91,67 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
     }
   }
 
-  void _showSuccess() {
+  void _showSuccess(BugReportUploadResult result) {
+    final uploaded = result.success;
+    final url = result.gifUrl;
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF16213E),
-        icon: const Icon(Icons.check_circle,
-            color: Color(0xFF4CAF50), size: 56),
-        title: const Text(
-          'Report salvo!',
-          style: TextStyle(color: Colors.white),
+        icon: Icon(
+          uploaded ? Icons.cloud_done : Icons.cloud_off,
+          color: uploaded
+              ? const Color(0xFF4CAF50)
+              : const Color(0xFFFFB74D),
+          size: 56,
+        ),
+        title: Text(
+          uploaded ? 'Report enviado!' : 'Salvo localmente',
+          style: const TextStyle(color: Colors.white),
           textAlign: TextAlign.center,
         ),
-        content: const Text(
-          'O report ficou salvo neste celular. Quando tiver internet, '
-          'ele será enviado automaticamente para o desenvolvedor.\n\n'
-          '(Envio automático ainda em desenvolvimento — fase 1)',
-          style: TextStyle(color: Color(0xFF8892B0), fontSize: 13),
-          textAlign: TextAlign.center,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              uploaded
+                  ? 'O GIF e a descrição foram enviados ao desenvolvedor. '
+                      'Pode continuar usando o app.'
+                  : 'Sem internet ou bucket não configurado — o report '
+                      'ficou salvo neste aparelho. '
+                      '${result.error != null ? "\n\nDetalhe: ${result.error}" : ""}',
+              style: const TextStyle(
+                  color: Color(0xFF8892B0), fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+            if (uploaded && url != null) ...[
+              const SizedBox(height: 12),
+              SelectableText(
+                url,
+                style: const TextStyle(
+                  color: Color(0xFF4CAF50),
+                  fontSize: 11,
+                  fontFamily: 'monospace',
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                icon: const Icon(Icons.copy,
+                    size: 16, color: Color(0xFF4CAF50)),
+                label: const Text('Copiar link',
+                    style: TextStyle(color: Color(0xFF4CAF50))),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: url));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Link copiado.')),
+                  );
+                },
+              ),
+            ],
+          ],
         ),
         actions: [
           TextButton(

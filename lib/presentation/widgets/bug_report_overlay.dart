@@ -31,27 +31,35 @@ class BugReportOverlay extends ConsumerWidget {
           child: child,
         ),
 
-        // Indicador "GRAVANDO" no topo
-        if (state.state == BugRecordingState.recording)
-          Positioned(
-            top: media.padding.top + 8,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: _RecordingBadge(),
+        // Indicador "GRAVANDO" + FAB ficam dentro de SafeArea
+        // pra respeitar status bar, notch e edge-to-edge automaticamente.
+        Positioned.fill(
+          child: SafeArea(
+            child: Stack(
+              children: [
+                if (state.state == BugRecordingState.recording)
+                  const Align(
+                    alignment: Alignment.topCenter,
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: _RecordingBadge(),
+                    ),
+                  ),
+                Align(
+                  alignment: Alignment.topRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 8, right: 8),
+                    child: _BugFab(state: state.state, notifier: notifier),
+                  ),
+                ),
+              ],
             ),
           ),
+        ),
 
-        // Loading durante exportação
+        // Loading durante exportação (cobre tudo)
         if (state.state == BugRecordingState.exporting)
           const _ExportingOverlay(),
-
-        // FAB de bug report (canto superior direito, abaixo do status bar)
-        Positioned(
-          top: media.padding.top + 6,
-          right: 8,
-          child: _BugFab(state: state.state, notifier: notifier),
-        ),
       ],
     );
   }
@@ -102,12 +110,19 @@ class _BugFab extends StatelessWidget {
           }
         },
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
             color: isRecording
                 ? const Color(0xFFE53E3E)
-                : Colors.black.withOpacity(0.55),
-            borderRadius: BorderRadius.circular(20),
+                : const Color(0xFF38A169),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -115,14 +130,14 @@ class _BugFab extends StatelessWidget {
               Icon(
                 isRecording ? Icons.stop_circle : Icons.bug_report,
                 color: Colors.white,
-                size: 18,
+                size: 20,
               ),
               const SizedBox(width: 6),
               Text(
-                isRecording ? 'Parar' : 'Reportar',
+                isRecording ? 'Parar' : 'Reportar bug',
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 12,
+                  fontSize: 13,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -135,6 +150,8 @@ class _BugFab extends StatelessWidget {
 }
 
 class _RecordingBadge extends StatefulWidget {
+  const _RecordingBadge();
+
   @override
   State<_RecordingBadge> createState() => _RecordingBadgeState();
 }
