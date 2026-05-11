@@ -140,11 +140,14 @@ class _HomeContent extends ConsumerWidget {
                       ],
                     ),
                     const SizedBox(height: 1),
-                    Text(
-                      'v${AppConstants.appVersion}.${AppConstants.buildNumber}',
-                      style: const TextStyle(
-                        color: Color(0xFF8892B0),
-                        fontSize: 9,
+                    GestureDetector(
+                      onTap: () => context.push('/sync-logs'),
+                      child: Text(
+                        'v${AppConstants.appVersion}.${AppConstants.buildNumber}',
+                        style: const TextStyle(
+                          color: Color(0xFF8892B0),
+                          fontSize: 9,
+                        ),
                       ),
                     ),
                   ],
