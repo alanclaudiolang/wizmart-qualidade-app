@@ -404,11 +404,18 @@ class SyncEngine {
       final payload =
           await _buildVisitaPayload(visita, operation: item.operation);
 
+      // Log do payload completo pra debug
+      final fotosAntesNoPayload = payload['fotos_antes'];
+      final fotosDepoisNoPayload = payload['fotos_depois'];
+      _logger.log(
+          'outbox',
+          'Payload visita id=${item.entityId} op=${item.operation} '
+          'campos=${payload.keys.length} '
+          'fotos_antes=${fotosAntesNoPayload is List ? fotosAntesNoPayload.length : 0}urls '
+          'fotos_depois=${fotosDepoisNoPayload is List ? fotosDepoisNoPayload.length : 0}urls');
+
       if (item.entityId < 0) {
-        // ID negativo = visita criada offline. INSERT pra obter ID real
-        // e migra todas as referências locais.
-        _logger.log('outbox',
-            'INSERT visita local id=${item.entityId} (campos=${payload.keys.length})');
+        _logger.log('outbox', 'INSERT visita local id=${item.entityId}');
         final res = await _supabase
             .from('visitas')
             .insert(payload)
@@ -419,12 +426,18 @@ class SyncEngine {
             'INSERT OK: novo id=$novoId (era ${item.entityId})');
         await _db.migrateVisitaId(item.entityId, novoId);
       } else {
-        _logger.log('outbox',
-            'UPDATE visita id=${item.entityId} op=${item.operation} (campos=${payload.keys.length})');
-        await _supabase
+        final res = await _supabase
             .from('visitas')
             .update(payload)
-            .eq('id', item.entityId);
+            .eq('id', item.entityId)
+            .select();
+        _logger.log('outbox',
+            'UPDATE OK id=${item.entityId} op=${item.operation} rowsAfetadas=${res.length}');
+        if (res.isEmpty) {
+          _logger.log('outbox',
+              'AVISO: UPDATE não afetou nenhuma linha. ID ${item.entityId} pode não existir no servidor.',
+              erro: true);
+        }
         await _db.updateVisita(VisitasCompanion(
           id: Value(item.entityId),
           syncStatus: const Value('synced'),

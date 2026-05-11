@@ -107,12 +107,29 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     final fotosAntesJson = visita.fotosAntesJson;
     final fotosDepoisJson = visita.fotosDepoisJson;
 
+    // Se a visita já está EM ANDAMENTO no servidor mas localState ainda
+    // está em fase de fotos antes (ou pior, 'idle'/'abertura'),
+    // significa que já passamos da etapa de antes. Pula direto pra fotos depois.
+    String localState = visita.localState;
+    if (visita.statusVisita == AppConstants.statusEmAndamento &&
+        (localState == 'idle' ||
+            localState == 'abertura' ||
+            localState == 'fotos_antes' ||
+            localState == 'em_reposicao')) {
+      localState = 'fotos_depois';
+      // Persiste pro DB local pra não voltar pra antes em próximos loads
+      await db.updateVisita(VisitasCompanion(
+        id: drift.Value(widget.visitaId),
+        localState: const drift.Value('fotos_depois'),
+      ));
+    }
+
     setState(() {
       _promotorNome = promotorNome;
       _visita = visita;
       _pdv = pdv;
       _gabarito = gabarito;
-      _localState = visita.localState;
+      _localState = localState;
       _fotosAntes = fotosAntesJson != null
           ? List<String>.from(jsonDecode(fotosAntesJson))
           : [];
