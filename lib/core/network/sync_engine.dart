@@ -7,6 +7,7 @@ import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../database/app_database.dart';
 import '../constants/app_constants.dart';
 import '../utils/sync_logger.dart';
@@ -327,9 +328,28 @@ class SyncEngine {
     return appStatus ?? AppConstants.statusEmAndamento;
   }
 
+  /// Extrai apenas as URLs (que começam com 'http') de um JSON array que pode
+  /// conter mistura de paths locais e URLs já uploadadas.
+  List<String> _extractUrlsFromJson(String? jsonStr) {
+    if (jsonStr == null || jsonStr.isEmpty) return const [];
+    try {
+      final list = jsonDecode(jsonStr) as List?;
+      if (list == null) return const [];
+      return list
+          .map((e) => e.toString())
+          .where((s) => s.startsWith('http'))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// Monta o payload completo da visita para enviar ao Supabase, replicando
   /// fielmente o que o app FlutterFlow antigo enviava em insert/update.
   Map<String, dynamic> _buildVisitaPayload(Visita v, {required String operation}) {
+    final fotosAntesUrls = _extractUrlsFromJson(v.fotosAntesJson);
+    final fotosDepoisUrls = _extractUrlsFromJson(v.fotosDepoisJson);
+
     final payload = <String, dynamic>{
       'status_visita': _toServerStatus(v.statusVisita),
       'id_pdv_associado': v.idPdvAssociado,
@@ -344,6 +364,8 @@ class SyncEngine {
       'localizacao_abertura': v.localizacaoAbertura,
       'dia_hora_fotos_antes': v.diaHoraFotosAntes,
       'localizacao_fotos_antes': v.localizacaoFotosAntes,
+      // Array de URLs públicas — só inclui se houver pelo menos uma
+      if (fotosAntesUrls.isNotEmpty) 'fotos_antes': fotosAntesUrls,
     };
 
     if (operation == 'close') {
@@ -367,6 +389,7 @@ class SyncEngine {
         'obs_pergunta_6': v.obsPergunta6,
         'check_pergunta_7': v.checkPergunta7,
         'obs_pergunta_7': v.obsPergunta7,
+        if (fotosDepoisUrls.isNotEmpty) 'fotos_depois': fotosDepoisUrls,
       });
     }
 
@@ -438,6 +461,17 @@ class SyncEngine {
     }
   }
 
+  /// Limpa texto pra usar em nome de arquivo (replica _limparTexto do app antigo).
+  String _limparNomeArquivo(String texto) {
+    final limpo = texto
+        .replaceAll(RegExp(r'[^\p{L}\p{N}\s-]', unicode: true), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    final palavras =
+        limpo.split(' ').where((p) => p.trim().isNotEmpty).take(6).join(' ');
+    return palavras.isEmpty ? 'foto' : palavras;
+  }
+
   Future<void> _processPhotoUpload(PendingPhoto photo) async {
     await _db.updatePendingPhoto(PendingPhotosCompanion(
       id: Value(photo.id),
@@ -446,38 +480,125 @@ class SyncEngine {
     try {
       final file = File(photo.localPath);
       if (!await file.exists()) {
+        _logger.log('photo',
+            'Arquivo local sumiu: ${photo.localPath}', erro: true);
         await _db.updatePendingPhoto(PendingPhotosCompanion(
           id: Value(photo.id),
           status: const Value('error'),
         ));
         return;
       }
-      final bytes = await file.readAsBytes();
+
+      // Reconstrói path no padrão do app antigo FF:
+      //   abastecimentos/{userId}/{dataAgendado}/{nomePDV}-{slot}-{numero}.{ext}
+      final visita = await _db.getVisitaById(photo.visitaId);
+      final userId = visita?.idPromotorAssociado ?? 0;
+      final dataAgendado = (visita?.diaHoraAgendado ?? '')
+          .replaceAll(':', '-')
+          .replaceAll('T', ' ')
+          .split('.')
+          .first;
+      final nomeBase = _limparNomeArquivo(visita?.titulo ?? 'visita');
       final ext = photo.localPath.split('.').last;
-      final storagePath = 'visitas/${photo.visitaId}/${photo.slot}_${photo.numero}_${photo.id}.$ext';
+      final storagePath =
+          'abastecimentos/$userId/$dataAgendado/$nomeBase-${photo.slot}-${photo.numero}.$ext';
+
+      _logger.log('photo',
+          'Upload photo id=${photo.id} path=$storagePath bytes=${(await file.length())}');
+
+      final bytes = await file.readAsBytes();
       await _supabase.storage.from('Arquivos').uploadBinary(
-        storagePath, bytes,
-        fileOptions: FileOptions(contentType: 'image/jpeg', upsert: true),
-      );
-      final url = _supabase.storage.from('Arquivos').getPublicUrl(storagePath);
-      final fotosKey = photo.slot == 'antes' ? 'fotos_antes' : 'fotos_depois';
-      final fotosAtuais = (await _supabase.from('visitas').select(fotosKey).eq('id', photo.visitaId).single())[fotosKey] as List? ?? [];
-      await _supabase.from('visitas').update({fotosKey: [...fotosAtuais, url]}).eq('id', photo.visitaId);
+            storagePath,
+            bytes,
+            fileOptions: FileOptions(
+              contentType: _contentTypeFromExt(ext),
+              upsert: true,
+            ),
+          );
+      final url =
+          _supabase.storage.from('Arquivos').getPublicUrl(storagePath);
+      _logger.log('photo', 'Upload OK url=$url');
+
+      // Substitui o path local pela URL no fotosAntesJson/fotosDepoisJson da
+      // visita local. O próximo _processOutboxItem inclui o array no payload.
+      if (visita != null) {
+        final jsonKey =
+            photo.slot == 'antes' ? visita.fotosAntesJson : visita.fotosDepoisJson;
+        final list = (jsonKey != null && jsonKey.isNotEmpty)
+            ? (jsonDecode(jsonKey) as List).cast<String>()
+            : <String>[];
+        final idx = list.indexOf(photo.localPath);
+        if (idx >= 0) {
+          list[idx] = url;
+        } else if (!list.contains(url)) {
+          list.add(url);
+        }
+        final novoJson = jsonEncode(list);
+        if (photo.slot == 'antes') {
+          await _db.updateVisita(VisitasCompanion(
+            id: Value(photo.visitaId),
+            fotosAntesJson: Value(novoJson),
+            syncStatus: const Value('pending'),
+          ));
+        } else {
+          await _db.updateVisita(VisitasCompanion(
+            id: Value(photo.visitaId),
+            fotosDepoisJson: Value(novoJson),
+            syncStatus: const Value('pending'),
+          ));
+        }
+
+        // Enfileira UPDATE da visita pra que o array fotos_antes/depois
+        // chegue no servidor no próximo processOutbox.
+        final outboxId = const Uuid().v4();
+        await _db.insertOutboxItem(OutboxItemsCompanion(
+          id: Value(outboxId),
+          entityType: const Value('visita'),
+          operation: Value(photo.slot == 'antes' ? 'photos_antes' : 'photos_depois'),
+          entityId: Value(photo.visitaId),
+          payloadJson: const Value('{}'),
+          attempts: const Value(0),
+          nextRetryAt: Value(DateTime.now().toIso8601String()),
+          status: const Value('pending'),
+          createdAt: Value(DateTime.now().toIso8601String()),
+        ));
+      }
+
       await _db.updatePendingPhoto(PendingPhotosCompanion(
         id: Value(photo.id),
         status: const Value('uploaded'),
         storageUrl: Value(url),
       ));
-    } catch (e) {
+    } catch (e, st) {
+      _logger.log('photo',
+          'Falha upload photo id=${photo.id}: $e\n$st', erro: true);
       final attempts = photo.attempts + 1;
       final delaySeconds = min(pow(2, attempts).toInt() * 30, 1800);
-      final nextRetry = DateTime.now().add(Duration(seconds: delaySeconds)).toIso8601String();
+      final nextRetry =
+          DateTime.now().add(Duration(seconds: delaySeconds)).toIso8601String();
       await _db.updatePendingPhoto(PendingPhotosCompanion(
         id: Value(photo.id),
         status: const Value('pending'),
         attempts: Value(attempts),
         nextRetryAt: Value(nextRetry),
       ));
+    }
+  }
+
+  String _contentTypeFromExt(String ext) {
+    switch (ext.toLowerCase()) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'webp':
+        return 'image/webp';
+      case 'gif':
+        return 'image/gif';
+      case 'heic':
+        return 'image/heic';
+      case 'png':
+      default:
+        return 'image/png';
     }
   }
 }
