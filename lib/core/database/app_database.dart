@@ -343,6 +343,24 @@ class AppDatabase extends _$AppDatabase {
       (delete(pendingPhotos)..where((p) => p.localPath.equals(localPath)))
           .go();
 
+  /// Retorna URLs públicas das fotos já uploadadas para uma visita+slot,
+  /// ordenadas pelo número da foto. Usado pelo sync engine para preencher
+  /// fotos_antes/fotos_depois no payload da visita.
+  Future<List<String>> getUploadedPhotoUrls(int visitaId, String slot) async {
+    final rows = await (select(pendingPhotos)
+          ..where((p) =>
+              p.visitaId.equals(visitaId) &
+              p.slot.equals(slot) &
+              p.status.equals('uploaded'))
+          ..orderBy([(p) => OrderingTerm(expression: p.numero)]))
+        .get();
+    return rows
+        .map((r) => r.storageUrl)
+        .where((u) => u != null && u.isNotEmpty)
+        .cast<String>()
+        .toList();
+  }
+
   /// Migra todas as referências de uma visita criada offline (id negativo)
   /// para o id real recebido do servidor após o primeiro INSERT.
   /// Atualiza: Visitas (PK), OutboxItems.entityId, PendingPhotos.visitaId.

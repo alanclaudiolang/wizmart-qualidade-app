@@ -328,27 +328,13 @@ class SyncEngine {
     return appStatus ?? AppConstants.statusEmAndamento;
   }
 
-  /// Extrai apenas as URLs (que começam com 'http') de um JSON array que pode
-  /// conter mistura de paths locais e URLs já uploadadas.
-  List<String> _extractUrlsFromJson(String? jsonStr) {
-    if (jsonStr == null || jsonStr.isEmpty) return const [];
-    try {
-      final list = jsonDecode(jsonStr) as List?;
-      if (list == null) return const [];
-      return list
-          .map((e) => e.toString())
-          .where((s) => s.startsWith('http'))
-          .toList();
-    } catch (_) {
-      return const [];
-    }
-  }
-
   /// Monta o payload completo da visita para enviar ao Supabase, replicando
   /// fielmente o que o app FlutterFlow antigo enviava em insert/update.
-  Map<String, dynamic> _buildVisitaPayload(Visita v, {required String operation}) {
-    final fotosAntesUrls = _extractUrlsFromJson(v.fotosAntesJson);
-    final fotosDepoisUrls = _extractUrlsFromJson(v.fotosDepoisJson);
+  Future<Map<String, dynamic>> _buildVisitaPayload(Visita v,
+      {required String operation}) async {
+    // URLs vêm de PendingPhotos.storageUrl (preenchido pelo upload).
+    final fotosAntesUrls = await _db.getUploadedPhotoUrls(v.id, 'antes');
+    final fotosDepoisUrls = await _db.getUploadedPhotoUrls(v.id, 'depois');
 
     final payload = <String, dynamic>{
       'status_visita': _toServerStatus(v.statusVisita),
@@ -415,7 +401,8 @@ class SyncEngine {
         return;
       }
 
-      final payload = _buildVisitaPayload(visita, operation: item.operation);
+      final payload =
+          await _buildVisitaPayload(visita, operation: item.operation);
 
       if (item.entityId < 0) {
         // ID negativo = visita criada offline. INSERT pra obter ID real
@@ -519,55 +506,37 @@ class SyncEngine {
           _supabase.storage.from('Arquivos').getPublicUrl(storagePath);
       _logger.log('photo', 'Upload OK url=$url');
 
-      // Substitui o path local pela URL no fotosAntesJson/fotosDepoisJson da
-      // visita local. O próximo _processOutboxItem inclui o array no payload.
-      if (visita != null) {
-        final jsonKey =
-            photo.slot == 'antes' ? visita.fotosAntesJson : visita.fotosDepoisJson;
-        final list = (jsonKey != null && jsonKey.isNotEmpty)
-            ? (jsonDecode(jsonKey) as List).cast<String>()
-            : <String>[];
-        final idx = list.indexOf(photo.localPath);
-        if (idx >= 0) {
-          list[idx] = url;
-        } else if (!list.contains(url)) {
-          list.add(url);
-        }
-        final novoJson = jsonEncode(list);
-        if (photo.slot == 'antes') {
-          await _db.updateVisita(VisitasCompanion(
-            id: Value(photo.visitaId),
-            fotosAntesJson: Value(novoJson),
-            syncStatus: const Value('pending'),
-          ));
-        } else {
-          await _db.updateVisita(VisitasCompanion(
-            id: Value(photo.visitaId),
-            fotosDepoisJson: Value(novoJson),
-            syncStatus: const Value('pending'),
-          ));
-        }
-
-        // Enfileira UPDATE da visita pra que o array fotos_antes/depois
-        // chegue no servidor no próximo processOutbox.
-        final outboxId = const Uuid().v4();
-        await _db.insertOutboxItem(OutboxItemsCompanion(
-          id: Value(outboxId),
-          entityType: const Value('visita'),
-          operation: Value(photo.slot == 'antes' ? 'photos_antes' : 'photos_depois'),
-          entityId: Value(photo.visitaId),
-          payloadJson: const Value('{}'),
-          attempts: const Value(0),
-          nextRetryAt: Value(DateTime.now().toIso8601String()),
-          status: const Value('pending'),
-          createdAt: Value(DateTime.now().toIso8601String()),
-        ));
-      }
-
+      // IMPORTANTE: NÃO mexe em fotosAntesJson/fotosDepoisJson local.
+      // Aquele JSON é a fonte de verdade dos PATHS LOCAIS pro app exibir
+      // no grid (Image.file). As URLs do servidor ficam em
+      // PendingPhotos.storageUrl e são lidas via getUploadedPhotoUrls()
+      // ao montar o payload da visita.
       await _db.updatePendingPhoto(PendingPhotosCompanion(
         id: Value(photo.id),
         status: const Value('uploaded'),
         storageUrl: Value(url),
+      ));
+
+      // Marca visita como pending pra sync engine enviar UPDATE com fotos
+      await _db.updateVisita(VisitasCompanion(
+        id: Value(photo.visitaId),
+        syncStatus: const Value('pending'),
+      ));
+
+      // Enfileira UPDATE da visita pra que o array fotos_antes/depois
+      // chegue no servidor no próximo processOutbox.
+      final outboxId = const Uuid().v4();
+      await _db.insertOutboxItem(OutboxItemsCompanion(
+        id: Value(outboxId),
+        entityType: const Value('visita'),
+        operation:
+            Value(photo.slot == 'antes' ? 'photos_antes' : 'photos_depois'),
+        entityId: Value(photo.visitaId),
+        payloadJson: const Value('{}'),
+        attempts: const Value(0),
+        nextRetryAt: Value(DateTime.now().toIso8601String()),
+        status: const Value('pending'),
+        createdAt: Value(DateTime.now().toIso8601String()),
       ));
     } catch (e, st) {
       _logger.log('photo',
