@@ -110,20 +110,44 @@ class _HomeContent extends ConsumerWidget {
               children: [
                 const BugReportButton(),
                 const SizedBox(width: 4),
-                Container(
-                  width: 10, height: 10,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isOnline ? const Color(0xFF4CAF50) : const Color(0xFFFF5252),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  isOnline ? 'Online' : 'Offline',
-                  style: TextStyle(
-                    color: isOnline ? const Color(0xFF4CAF50) : const Color(0xFFFF5252),
-                    fontSize: 13, fontWeight: FontWeight.w600,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8, height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isOnline
+                                ? const Color(0xFF4CAF50)
+                                : const Color(0xFFFF5252),
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          isOnline ? 'Online' : 'Offline',
+                          style: TextStyle(
+                            color: isOnline
+                                ? const Color(0xFF4CAF50)
+                                : const Color(0xFFFF5252),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      'v${AppConstants.appVersion}.${AppConstants.buildNumber}',
+                      style: const TextStyle(
+                        color: Color(0xFF8892B0),
+                        fontSize: 9,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -309,8 +333,13 @@ class _VisitaCard extends StatelessWidget {
   }
 
   String get _nomePdv {
-    if (pdv == null) return 'PDV ${visita.idPdvAssociado ?? '?'}';
-    return pdv!.apiLocalName ?? pdv!.apiLocalCustomerName ?? 'PDV ${pdv!.id}';
+    // App antigo usa visita.titulo como nome do PDV exibido
+    final tituloVisita = visita.titulo;
+    if (tituloVisita != null && tituloVisita.isNotEmpty) return tituloVisita;
+    if (pdv != null) {
+      return pdv!.apiLocalName ?? pdv!.apiLocalCustomerName ?? 'PDV ${pdv!.id}';
+    }
+    return 'PDV ${visita.idPdvAssociado ?? '?'}';
   }
 
   String? get _infoLinha {
