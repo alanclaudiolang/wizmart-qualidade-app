@@ -477,18 +477,32 @@ class SyncEngine {
       }
 
       // Reconstrói path no padrão do app antigo FF:
-      //   abastecimentos/{userId}/{dataAgendado}/{nomePDV}-{slot}-{numero}.{ext}
+      //   abastecimentos/{currentUserUid}/{dataAgendadoBrasil}/{nomePDV}-{slot}-{numero}.{ext}
+      // currentUserUid = auth.users.id (UUID) — necessário pra passar policies
+      // do bucket que comparam com auth.uid().
       final visita = await _db.getVisitaById(photo.visitaId);
-      final userId = visita?.idPromotorAssociado ?? 0;
-      final dataAgendado = (visita?.diaHoraAgendado ?? '')
-          .replaceAll(':', '-')
-          .replaceAll('T', ' ')
-          .split('.')
-          .first;
+      final authUid = _supabase.auth.currentUser?.id ?? '';
+      if (authUid.isEmpty) {
+        _logger.log('photo',
+            'Sem auth.uid — upload vai falhar (faça login Supabase Auth)',
+            erro: true);
+      }
+      // Converte dia_hora_agendado UTC -> Brasil e formata 'yyyy-MM-dd HH:mm:ss'
+      String dataAgendadoBr;
+      try {
+        final dtUtc =
+            DateTime.parse(visita?.diaHoraAgendado ?? '').toUtc();
+        final dtBr = dtUtc.subtract(const Duration(hours: 3));
+        dataAgendadoBr =
+            '${dtBr.year.toString().padLeft(4, '0')}-${dtBr.month.toString().padLeft(2, '0')}-${dtBr.day.toString().padLeft(2, '0')} '
+            '${dtBr.hour.toString().padLeft(2, '0')}:${dtBr.minute.toString().padLeft(2, '0')}:${dtBr.second.toString().padLeft(2, '0')}';
+      } catch (_) {
+        dataAgendadoBr = visita?.diaHoraAgendado ?? '';
+      }
       final nomeBase = _limparNomeArquivo(visita?.titulo ?? 'visita');
       final ext = photo.localPath.split('.').last;
       final storagePath =
-          'abastecimentos/$userId/$dataAgendado/$nomeBase-${photo.slot}-${photo.numero}.$ext';
+          'abastecimentos/$authUid/$dataAgendadoBr/$nomeBase-${photo.slot}-${photo.numero}.$ext';
 
       _logger.log('photo',
           'Upload photo id=${photo.id} path=$storagePath bytes=${(await file.length())}');
