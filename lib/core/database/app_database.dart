@@ -343,6 +343,69 @@ class AppDatabase extends _$AppDatabase {
       (delete(pendingPhotos)..where((p) => p.localPath.equals(localPath)))
           .go();
 
+  /// Migra todas as referências de uma visita criada offline (id negativo)
+  /// para o id real recebido do servidor após o primeiro INSERT.
+  /// Atualiza: Visitas (PK), OutboxItems.entityId, PendingPhotos.visitaId.
+  Future<void> migrateVisitaId(int oldId, int newId) async {
+    await transaction(() async {
+      // Não dá para fazer UPDATE em coluna PK no SQLite via Drift.
+      // Estratégia: insere nova linha com id real, depois apaga a antiga.
+      final old = await (select(visitas)..where((v) => v.id.equals(oldId)))
+          .getSingleOrNull();
+      if (old != null) {
+        await into(visitas).insertOnConflictUpdate(
+          VisitasCompanion.insert(
+            id: Value(newId),
+            idPdvAssociado: Value(old.idPdvAssociado),
+            idPromotorAssociado: Value(old.idPromotorAssociado),
+            diaHoraAgendado: Value(old.diaHoraAgendado),
+            diaHoraRealizado: Value(old.diaHoraRealizado),
+            diaHoraAbertura: Value(old.diaHoraAbertura),
+            statusVisita: Value(old.statusVisita),
+            rotaAssociada: Value(old.rotaAssociada),
+            idGabaritoAssociado: Value(old.idGabaritoAssociado),
+            titulo: Value(old.titulo),
+            previsaoTurnoRealizada: Value(old.previsaoTurnoRealizada),
+            visitaAvulsa: Value(old.visitaAvulsa),
+            localizacaoAbertura: Value(old.localizacaoAbertura),
+            localizacaoEncerramento: Value(old.localizacaoEncerramento),
+            localizacaoFotosAntes: Value(old.localizacaoFotosAntes),
+            localizacaoFotosDepois: Value(old.localizacaoFotosDepois),
+            diaHoraFotosAntes: Value(old.diaHoraFotosAntes),
+            diaHoraFotosDepois: Value(old.diaHoraFotosDepois),
+            fotosAntesJson: Value(old.fotosAntesJson),
+            fotosDepoisJson: Value(old.fotosDepoisJson),
+            checkPergunta1: Value(old.checkPergunta1),
+            obsPergunta1: Value(old.obsPergunta1),
+            checkPergunta2: Value(old.checkPergunta2),
+            obsPergunta2: Value(old.obsPergunta2),
+            checkPergunta3: Value(old.checkPergunta3),
+            obsPergunta3: Value(old.obsPergunta3),
+            checkPergunta4: Value(old.checkPergunta4),
+            obsPergunta4: Value(old.obsPergunta4),
+            checkPergunta5: Value(old.checkPergunta5),
+            obsPergunta5: Value(old.obsPergunta5),
+            checkPergunta6: Value(old.checkPergunta6),
+            obsPergunta6: Value(old.obsPergunta6),
+            checkPergunta7: Value(old.checkPergunta7),
+            obsPergunta7: Value(old.obsPergunta7),
+            localState: Value(old.localState),
+            syncStatus: const Value('synced'),
+            syncedAt: Value(DateTime.now().toIso8601String()),
+          ),
+        );
+        await (delete(visitas)..where((v) => v.id.equals(oldId))).go();
+      }
+      // Migra fotos pendentes
+      await (update(pendingPhotos)..where((p) => p.visitaId.equals(oldId)))
+          .write(PendingPhotosCompanion(visitaId: Value(newId)));
+      // Migra outbox items
+      await (update(outboxItems)
+            ..where((o) => o.entityId.equals(oldId)))
+          .write(OutboxItemsCompanion(entityId: Value(newId)));
+    });
+  }
+
   // ── Sync State ─────────────────────────────────────────────────────────────
 
   Future<SyncStateData?> getSyncState(String entityType) =>

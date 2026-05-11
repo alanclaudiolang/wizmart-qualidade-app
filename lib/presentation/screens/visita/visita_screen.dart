@@ -399,6 +399,11 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       _localizacaoAbertura = loc;
       _localState = 'fotos_antes';
     });
+
+    // Dispara envio imediato pro servidor
+    if (ref.read(connectivityProvider)) {
+      ref.read(syncEngineProvider).processOutbox();
+    }
   }
 
   Future<void> _concluirFotosAntes() async {
@@ -413,7 +418,18 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     await db.updateVisita(VisitasCompanion(
       id: drift.Value(widget.visitaId),
       localState: const drift.Value('fotos_depois'),
+      syncStatus: const drift.Value('pending'),
     ));
+
+    // Enfileira atualização das fotos antes pro servidor
+    await _enfileirarVisita('photos_antes', {
+      'id': widget.visitaId,
+      'fotos_antes_count': _fotosAntes.length,
+    });
+
+    if (ref.read(connectivityProvider)) {
+      ref.read(syncEngineProvider).processOutbox();
+    }
 
     if (mounted) context.go('/home');
   }

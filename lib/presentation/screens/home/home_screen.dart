@@ -174,12 +174,22 @@ class _HomeContent extends ConsumerWidget {
                   if (b.diaHoraAgendado == null) return -1;
                   return a.diaHoraAgendado!.compareTo(b.diaHoraAgendado!);
                 });
+                // Bloqueio: se há alguma visita em andamento, só ela pode ser aberta
+                final emAndamento = sorted.where((v) => v.statusVisita == 2).toList();
+                final temEmAndamento = emAndamento.isNotEmpty;
+                final idEmAndamento = temEmAndamento ? emAndamento.first.id : null;
                 return SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
                       final v = sorted[index];
                       final pdv = v.idPdvAssociado != null ? pdvs[v.idPdvAssociado!] : null;
-                      return _VisitaCard(visita: v, pdv: pdv, onTap: () => context.push('/visita/${v.id}'));
+                      final bloqueada = temEmAndamento && v.id != idEmAndamento && v.statusVisita == 1;
+                      return _VisitaCard(
+                        visita: v,
+                        pdv: pdv,
+                        bloqueada: bloqueada,
+                        onTap: () => context.push('/visita/${v.id}'),
+                      );
                     },
                     childCount: sorted.length,
                   ),
@@ -259,8 +269,14 @@ class _ContadoresLoading extends StatelessWidget {
 class _VisitaCard extends StatelessWidget {
   final Visita visita;
   final Pdv? pdv;
+  final bool bloqueada;
   final VoidCallback onTap;
-  const _VisitaCard({required this.visita, required this.pdv, required this.onTap});
+  const _VisitaCard({
+    required this.visita,
+    required this.pdv,
+    required this.onTap,
+    this.bloqueada = false,
+  });
 
   Color get _statusColor {
     switch (visita.statusVisita) {
@@ -319,66 +335,107 @@ class _VisitaCard extends StatelessWidget {
     final finalizada = visita.statusVisita == 3;
     final info = _infoLinha;
     final idReal = _idReal;
+    final clicavel = !finalizada && !bloqueada;
 
-    return GestureDetector(
-      onTap: finalizada ? null : onTap,
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        decoration: BoxDecoration(
-          color: const Color(0xFF16213E),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: emAndamento ? const Color(0xFFFFB74D).withOpacity(0.5) : Colors.transparent,
-            width: 1.5,
+    return Opacity(
+      opacity: bloqueada ? 0.45 : 1.0,
+      child: GestureDetector(
+        onTap: clicavel ? onTap : null,
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          decoration: BoxDecoration(
+            color: bloqueada
+                ? const Color(0xFF0F1626)
+                : const Color(0xFF16213E),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: emAndamento
+                  ? const Color(0xFFFFB74D).withValues(alpha: 0.5)
+                  : Colors.transparent,
+              width: 1.5,
+            ),
           ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 4, height: 56,
-                decoration: BoxDecoration(color: _statusColor, borderRadius: BorderRadius.circular(2)),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(_nomePdv, style: TextStyle(
-                      color: finalizada ? const Color(0xFF4A5568) : Colors.white,
-                      fontSize: 16, fontWeight: FontWeight.w600,
-                    )),
-                    if (pdv?.endereco != null) ...[
-                      const SizedBox(height: 2),
-                      Text(pdv!.endereco!, style: const TextStyle(color: Color(0xFF8892B0), fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
-                    ],
-                    const SizedBox(height: 8),
-                    Row(children: [
-                      Icon(_statusIcon, size: 14, color: _statusColor),
-                      const SizedBox(width: 4),
-                      Text(_statusLabel, style: TextStyle(color: _statusColor, fontSize: 13, fontWeight: FontWeight.w600)),
-                      if (visita.syncStatus == 'pending') ...[
-                        const SizedBox(width: 8),
-                        const Icon(Icons.cloud_upload, size: 14, color: Color(0xFFFFB74D)),
-                      ],
-                    ]),
-                    if (info != null) ...[
-                      const SizedBox(height: 4),
-                      Row(children: [
-                        Text(info, style: const TextStyle(color: Color(0xFF8892B0), fontSize: 12)),
-                        if (idReal != null) ...[
-                          const SizedBox(width: 6),
-                          Text('· #$idReal', style: const TextStyle(color: Color(0xFF4A5568), fontSize: 12)),
-                        ],
-                      ]),
-                    ],
-                  ],
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 56,
+                  decoration: BoxDecoration(
+                      color: _statusColor,
+                      borderRadius: BorderRadius.circular(2)),
                 ),
-              ),
-              if (!finalizada)
-                Icon(emAndamento ? Icons.arrow_forward_ios : Icons.play_arrow, color: _statusColor, size: 20),
-            ],
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(_nomePdv,
+                          style: TextStyle(
+                            color: finalizada
+                                ? const Color(0xFF4A5568)
+                                : Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          )),
+                      if (pdv?.endereco != null) ...[
+                        const SizedBox(height: 2),
+                        Text(pdv!.endereco!,
+                            style: const TextStyle(
+                                color: Color(0xFF8892B0), fontSize: 12),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                      ],
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        Icon(_statusIcon, size: 14, color: _statusColor),
+                        const SizedBox(width: 4),
+                        Text(_statusLabel,
+                            style: TextStyle(
+                                color: _statusColor,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600)),
+                        const SizedBox(width: 8),
+                        if (visita.syncStatus == 'pending')
+                          const Icon(Icons.cloud_upload,
+                              size: 14, color: Color(0xFFFFB74D))
+                        else if (visita.syncStatus == 'synced')
+                          const Icon(Icons.cloud_done,
+                              size: 14, color: Color(0xFF4CAF50)),
+                      ]),
+                      if (info != null) ...[
+                        const SizedBox(height: 4),
+                        Text(info,
+                            style: const TextStyle(
+                                color: Color(0xFF8892B0), fontSize: 12)),
+                      ],
+                      if (idReal != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          '#$idReal',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.25),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (bloqueada)
+                  const Icon(Icons.lock_outline,
+                      color: Color(0xFF4A5568), size: 20)
+                else if (!finalizada)
+                  Icon(
+                      emAndamento
+                          ? Icons.arrow_forward_ios
+                          : Icons.play_arrow,
+                      color: _statusColor,
+                      size: 20),
+              ],
+            ),
           ),
         ),
       ),

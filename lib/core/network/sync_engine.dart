@@ -325,17 +325,38 @@ class SyncEngine {
     try {
       final payload = jsonDecode(item.payloadJson) as Map<String, dynamic>;
       final updatePayload = Map<String, dynamic>.from(payload)..remove('id');
-      await _supabase.from('visitas').update(updatePayload).eq('id', item.entityId);
+
+      if (item.entityId < 0) {
+        // ID negativo = visita criada offline. Faz INSERT pra obter ID real
+        // e migra todas as referências locais para esse novo ID.
+        _logger.log('outbox', 'INSERT visita local id=${item.entityId}');
+        final res = await _supabase
+            .from('visitas')
+            .insert(updatePayload)
+            .select()
+            .single();
+        final novoId = res['id'] as int;
+        _logger.log('outbox', 'INSERT OK: novo id=$novoId (era ${item.entityId})');
+        await _db.migrateVisitaId(item.entityId, novoId);
+      } else {
+        _logger.log('outbox', 'UPDATE visita id=${item.entityId} (op=${item.operation})');
+        await _supabase
+            .from('visitas')
+            .update(updatePayload)
+            .eq('id', item.entityId);
+        await _db.updateVisita(VisitasCompanion(
+          id: Value(item.entityId),
+          syncStatus: const Value('synced'),
+          syncedAt: Value(DateTime.now().toIso8601String()),
+        ));
+      }
       await _db.deleteOutboxItem(item.id);
-      await _db.updateVisita(VisitasCompanion(
-        id: Value(item.entityId),
-        syncStatus: const Value('synced'),
-        syncedAt: Value(DateTime.now().toIso8601String()),
-      ));
     } catch (e) {
+      _logger.log('outbox', 'Falha entityId=${item.entityId}: $e', erro: true);
       final attempts = item.attempts + 1;
       final delaySeconds = min(pow(2, attempts).toInt() * 30, 1800);
-      final nextRetry = DateTime.now().add(Duration(seconds: delaySeconds)).toIso8601String();
+      final nextRetry =
+          DateTime.now().add(Duration(seconds: delaySeconds)).toIso8601String();
       await _db.updateOutboxItem(OutboxItemsCompanion(
         id: Value(item.id),
         status: const Value('pending'),
