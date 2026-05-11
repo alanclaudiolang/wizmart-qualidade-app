@@ -317,32 +317,103 @@ class SyncEngine {
     }
   }
 
+  /// Converte status interno do app novo para o status_visita do Supabase
+  /// (mesmos códigos do app FlutterFlow antigo).
+  ///
+  /// App novo: 1=agendada, 2=andamento, 3=realizada, 5=falta
+  /// Servidor: 1=realizada, 2=andamento, 5=falta (não há 'agendada' no servidor)
+  int _toServerStatus(int? appStatus) {
+    if (appStatus == AppConstants.statusRealizada) return 1; // 3 -> 1
+    return appStatus ?? AppConstants.statusEmAndamento;
+  }
+
+  /// Monta o payload completo da visita para enviar ao Supabase, replicando
+  /// fielmente o que o app FlutterFlow antigo enviava em insert/update.
+  Map<String, dynamic> _buildVisitaPayload(Visita v, {required String operation}) {
+    final payload = <String, dynamic>{
+      'status_visita': _toServerStatus(v.statusVisita),
+      'id_pdv_associado': v.idPdvAssociado,
+      'id_promotor_associado': v.idPromotorAssociado,
+      'dia_hora_agendado': v.diaHoraAgendado,
+      'rota_associada': v.rotaAssociada,
+      'id_gabarito_associado': v.idGabaritoAssociado,
+      'titulo': v.titulo,
+      'previsao_turno_realizada': v.previsaoTurnoRealizada,
+      'visita_avulsa': v.visitaAvulsa ?? false,
+      'dia_hora_abertura': v.diaHoraAbertura,
+      'localizacao_abertura': v.localizacaoAbertura,
+      'dia_hora_fotos_antes': v.diaHoraFotosAntes,
+      'localizacao_fotos_antes': v.localizacaoFotosAntes,
+    };
+
+    if (operation == 'close') {
+      payload.addAll(<String, dynamic>{
+        'dia_hora_realizado': v.diaHoraRealizado,
+        'dia_hora_fotos_depois': v.diaHoraFotosDepois,
+        'localizacao_fotos_depois': v.localizacaoFotosDepois,
+        'localizacao_encerramento': v.localizacaoEncerramento,
+        'comentarios_visita': v.comentariosVisita,
+        'check_pergunta_1': v.checkPergunta1,
+        'obs_pergunta_1': v.obsPergunta1,
+        'check_pergunta_2': v.checkPergunta2,
+        'obs_pergunta_2': v.obsPergunta2,
+        'check_pergunta_3': v.checkPergunta3,
+        'obs_pergunta_3': v.obsPergunta3,
+        'check_pergunta_4': v.checkPergunta4,
+        'obs_pergunta_4': v.obsPergunta4,
+        'check_pergunta_5': v.checkPergunta5,
+        'obs_pergunta_5': v.obsPergunta5,
+        'check_pergunta_6': v.checkPergunta6,
+        'obs_pergunta_6': v.obsPergunta6,
+        'check_pergunta_7': v.checkPergunta7,
+        'obs_pergunta_7': v.obsPergunta7,
+      });
+    }
+
+    // Remove campos null para não sobrescrever dados existentes no UPDATE
+    payload.removeWhere((key, value) => value == null);
+    return payload;
+  }
+
   Future<void> _processOutboxItem(OutboxItem item) async {
     await _db.updateOutboxItem(OutboxItemsCompanion(
       id: Value(item.id),
       status: const Value('processing'),
     ));
     try {
-      final payload = jsonDecode(item.payloadJson) as Map<String, dynamic>;
-      final updatePayload = Map<String, dynamic>.from(payload)..remove('id');
+      // Lê estado completo e atual da visita no SQLite e monta payload com
+      // todos os campos relevantes (replicando o app FlutterFlow antigo).
+      final visita = await _db.getVisitaById(item.entityId);
+      if (visita == null) {
+        _logger.log('outbox',
+            'Visita local id=${item.entityId} não encontrada — descartando outbox',
+            erro: true);
+        await _db.deleteOutboxItem(item.id);
+        return;
+      }
+
+      final payload = _buildVisitaPayload(visita, operation: item.operation);
 
       if (item.entityId < 0) {
-        // ID negativo = visita criada offline. Faz INSERT pra obter ID real
-        // e migra todas as referências locais para esse novo ID.
-        _logger.log('outbox', 'INSERT visita local id=${item.entityId}');
+        // ID negativo = visita criada offline. INSERT pra obter ID real
+        // e migra todas as referências locais.
+        _logger.log('outbox',
+            'INSERT visita local id=${item.entityId} (campos=${payload.keys.length})');
         final res = await _supabase
             .from('visitas')
-            .insert(updatePayload)
+            .insert(payload)
             .select()
             .single();
         final novoId = res['id'] as int;
-        _logger.log('outbox', 'INSERT OK: novo id=$novoId (era ${item.entityId})');
+        _logger.log('outbox',
+            'INSERT OK: novo id=$novoId (era ${item.entityId})');
         await _db.migrateVisitaId(item.entityId, novoId);
       } else {
-        _logger.log('outbox', 'UPDATE visita id=${item.entityId} (op=${item.operation})');
+        _logger.log('outbox',
+            'UPDATE visita id=${item.entityId} op=${item.operation} (campos=${payload.keys.length})');
         await _supabase
             .from('visitas')
-            .update(updatePayload)
+            .update(payload)
             .eq('id', item.entityId);
         await _db.updateVisita(VisitasCompanion(
           id: Value(item.entityId),
