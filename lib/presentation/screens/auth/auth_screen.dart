@@ -197,7 +197,11 @@ class _AuthScreenState extends State<AuthScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('WizMart', style: TextStyle(color: Color(0xFF38A169), fontSize: 32, fontWeight: FontWeight.bold)),
+                  Image.asset(
+                    'assets/images/logo_wizmart.webp',
+                    height: 40,
+                    fit: BoxFit.contain,
+                  ),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [

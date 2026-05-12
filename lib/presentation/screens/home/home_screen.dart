@@ -90,6 +90,22 @@ class _HomeContent extends ConsumerWidget {
     final visitasAsync = ref.watch(visitasHojeProvider(session.userId));
     final pdvsAsync = ref.watch(pdvsProvider);
 
+    // Quando a rede volta (offline → online) enquanto a home está aberta,
+    // dispara um sync completo (pullAll + processOutbox). Sem isso, o
+    // promotor que terminou uma etapa offline e ativou a rede precisava
+    // arrastar a lista pra baixo manualmente pra ver dados sincronizados.
+    ref.listen<bool>(connectivityProvider, (prev, next) async {
+      if (prev == false && next == true) {
+        final engine = ref.read(syncEngineProvider);
+        try {
+          await engine.pullAll(session.userId);
+          await engine.processOutbox();
+        } catch (_) {}
+        ref.invalidate(contadoresProvider(session.userId));
+        ref.invalidate(pdvsProvider);
+      }
+    });
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(

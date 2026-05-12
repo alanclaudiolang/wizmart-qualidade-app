@@ -101,13 +101,95 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     }
   }
 
-  /// Saída explícita pra home. As fotos já estão persistidas no DB local
-  /// e na galeria — voltar não perde nada, ao reabrir a visita o estado
-  /// é restaurado pelo `_loadVisita`. Limpa o `lastVisitaId` para que o
-  /// SplashRedirect mande pra home no próximo cold start.
+  /// Saída pra home. Se há fotos não concluídas na etapa atual, pergunta
+  /// se quer descartar — voltar = abandonar a etapa. Galeria nem foi
+  /// tocada (só recebe fotos ao concluir a etapa), e os arquivos locais
+  /// + entradas no DB são limpos.
   Future<void> _sairParaHome() async {
+    final temFotosAntes =
+        _localState == 'fotos_antes' && _fotosAntes.isNotEmpty;
+    final temFotosDepois =
+        _localState == 'fotos_depois' && _fotosDepois.isNotEmpty;
+
+    if (temFotosAntes || temFotosDepois) {
+      final qtd = temFotosAntes ? _fotosAntes.length : _fotosDepois.length;
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: AppColors.card,
+          title: const Text(
+            'Descartar fotos?',
+            style: TextStyle(color: AppColors.textPrimary),
+          ),
+          content: Text(
+            'Você tem $qtd foto${qtd == 1 ? '' : 's'} desta etapa. '
+            'Voltar agora vai apagá-las do aplicativo. Tem certeza?',
+            style: const TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar',
+                  style: TextStyle(color: AppColors.textSecondary)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Descartar',
+                  style: TextStyle(color: AppColors.danger)),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      await _descartarFotosDaEtapa();
+    }
+
     await LastVisitaService.clear();
     if (mounted) context.go('/home');
+  }
+
+  /// Apaga os arquivos locais das fotos da etapa atual, remove as
+  /// entradas de PendingPhotos e limpa o JSON na visita. Se for
+  /// 'fotos_antes', também reverte a abertura (volta a 'idle'), pra que
+  /// a próxima abertura da visita comece do zero.
+  Future<void> _descartarFotosDaEtapa() async {
+    final db = ref.read(appDatabaseProvider);
+    final paths = _localState == 'fotos_antes'
+        ? List<String>.from(_fotosAntes)
+        : List<String>.from(_fotosDepois);
+
+    // Arquivos locais (a galeria não foi tocada — só recebe ao concluir).
+    for (final p in paths) {
+      try {
+        final f = File(p);
+        if (await f.exists()) await f.delete();
+      } catch (_) {}
+      try {
+        await db.deletePendingPhotosByPath(p);
+      } catch (_) {}
+    }
+
+    if (_localState == 'fotos_antes') {
+      // Reverte a abertura: como se nunca tivesse clicado em iniciar.
+      await db.updateVisita(VisitasCompanion(
+        id: drift.Value(widget.visitaId),
+        fotosAntesJson: const drift.Value(null),
+        diaHoraAbertura: const drift.Value(null),
+        localizacaoAbertura: const drift.Value(null),
+        diaHoraFotosAntes: const drift.Value(null),
+        localizacaoFotosAntes: const drift.Value(null),
+        localState: const drift.Value('idle'),
+      ));
+    } else {
+      // Mantém status 2 (em andamento) e localState 'fotos_depois':
+      // próxima vez já volta direto pra grid de fotos depois vazio.
+      await db.updateVisita(VisitasCompanion(
+        id: drift.Value(widget.visitaId),
+        fotosDepoisJson: const drift.Value(null),
+        diaHoraFotosDepois: const drift.Value(null),
+        localizacaoFotosDepois: const drift.Value(null),
+      ));
+    }
   }
 
   Future<void> _loadVisita() async {
@@ -294,9 +376,14 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       final loc = await _capturarLocalizacao();
       final capturedAt = DateTime.now();
 
-      final pdvNome = _pdv?.apiLocalName ??
-          _pdv?.apiLocalCustomerName ??
-          'PDV ${_visita?.idPdvAssociado ?? '?'}';
+      // Mesma fonte da home: `visita.titulo` (campo descritivo do FF).
+      // Cai pra api_local_name / api_local_customer_name só como fallback.
+      final tituloVisita = _visita?.titulo;
+      final pdvNome = (tituloVisita != null && tituloVisita.trim().isNotEmpty)
+          ? tituloVisita
+          : (_pdv?.apiLocalName ??
+              _pdv?.apiLocalCustomerName ??
+              'PDV ${_visita?.idPdvAssociado ?? '?'}');
 
       // Aplica watermark com timeout — em devices fracos com baixa memória
       // o isolate pode travar. 30s é o ceiling absoluto antes de desistir.
@@ -308,11 +395,9 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         capturedAt: capturedAt,
       ).timeout(const Duration(seconds: 30));
 
-      // Salva cópia na galeria (não crítico — se falhar o path local basta).
-      try {
-        await Gal.putImage(watermarkedPath)
-            .timeout(const Duration(seconds: 5));
-      } catch (_) {}
+      // Não salva na galeria aqui. Galeria só recebe as fotos quando o
+      // promotor CONCLUI a etapa (em `_concluirFotosAntes`/`_concluirFotosDepois`),
+      // pra que voltar antes de concluir não polua a galeria.
 
       setState(() {
         if (slot == 'antes') {
@@ -491,6 +576,16 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     _updateSyncPause('fotos_antes');
   }
 
+  /// Salva todas as fotos da etapa na galeria do dispositivo. Cada chamada
+  /// individual tem timeout curto — galeria não é crítica, falha silenciosa.
+  Future<void> _salvarFotosNaGaleria(List<String> paths) async {
+    for (final p in paths) {
+      try {
+        await Gal.putImage(p).timeout(const Duration(seconds: 5));
+      } catch (_) {}
+    }
+  }
+
   Future<void> _concluirFotosAntes() async {
     if (_fotosAntes.isEmpty) {
       _showError('Tire pelo menos uma foto antes da reposição.');
@@ -502,6 +597,9 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     });
 
     try {
+      // Persiste as fotos na galeria agora que a etapa foi concluída.
+      await _salvarFotosNaGaleria(_fotosAntes);
+
       final db = ref.read(appDatabaseProvider);
       final session = await SessionService.getSession();
       final atual = await db.getVisitaById(widget.visitaId);
@@ -525,8 +623,11 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         'fotos_antes_count': _fotosAntes.length,
       });
 
-      // Dispara sync no foreground se online (background já foi agendado
-      // pelo _enfileirarVisita via scheduleOneOffSync).
+      // Sai do estado de captura ANTES de chamar processOutbox: se o
+      // SyncPause ainda estiver ativo (porque viemos de 'fotos_antes'),
+      // o processOutbox aborta sem fazer nada. Resume aqui garante que
+      // o sync de fato rode.
+      await SyncPause.resume();
       if (ref.read(connectivityProvider)) {
         ref.read(syncEngineProvider).processOutbox();
       }
@@ -552,6 +653,9 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       _busy = true;
       _busyLabel = 'Obtendo localização...';
     });
+
+    // Persiste as fotos depois na galeria agora que a etapa foi concluída.
+    await _salvarFotosNaGaleria(_fotosDepois);
 
     final loc = await _capturarLocalizacao();
 
@@ -643,6 +747,9 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         'obs_pergunta_7': _obsControllers[6].text,
       });
 
+      // _finalizarVisita vem do 'checklist' (não captura), então o
+      // SyncPause já está liberado — mas garantimos defensivamente.
+      await SyncPause.resume();
       if (ref.read(connectivityProvider)) {
         ref.read(syncEngineProvider).processOutbox();
       }
