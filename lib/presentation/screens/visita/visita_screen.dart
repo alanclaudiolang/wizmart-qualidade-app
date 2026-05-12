@@ -55,6 +55,8 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   final List<bool?> _checks = List.filled(7, null);
   final List<TextEditingController> _obsControllers =
       List.generate(7, (_) => TextEditingController());
+  // Comentário geral da visita (mapeia pra coluna comentarios_visita)
+  final TextEditingController _comentarioGeralCtrl = TextEditingController();
 
   final _picker = ImagePicker();
 
@@ -69,6 +71,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     for (final c in _obsControllers) {
       c.dispose();
     }
+    _comentarioGeralCtrl.dispose();
     super.dispose();
   }
 
@@ -152,6 +155,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       _obsControllers[4].text = visita.obsPergunta5 ?? '';
       _obsControllers[5].text = visita.obsPergunta6 ?? '';
       _obsControllers[6].text = visita.obsPergunta7 ?? '';
+      _comentarioGeralCtrl.text = visita.comentariosVisita ?? '';
 
       _loading = false;
     });
@@ -484,6 +488,14 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         return;
       }
     }
+    // Valida obs obrigatórias (1-5 quando NÃO, 6-7 quando SIM)
+    for (int i = 0; i < 7; i++) {
+      if (_obsObrigatoria(i, _checks[i]) &&
+          _obsControllers[i].text.trim().isEmpty) {
+        _showError('Justificativa obrigatória na pergunta ${i + 1}.');
+        return;
+      }
+    }
 
     final agora = DateTime.now();
     final db = ref.read(appDatabaseProvider);
@@ -506,6 +518,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       obsPergunta6: drift.Value(_obsControllers[5].text),
       checkPergunta7: drift.Value(_checks[6]),
       obsPergunta7: drift.Value(_obsControllers[6].text),
+      comentariosVisita: drift.Value(_comentarioGeralCtrl.text),
       localState: const drift.Value('finalizada'),
       syncStatus: const drift.Value('pending'),
     ));
@@ -905,16 +918,27 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
   // ── Tela: Checklist ────────────────────────────────────────────────────────
 
-  // Perguntas padrão (fallback se não tiver gabarito)
+  // Perguntas do checklist (mesma ordem do app antigo FF):
+  // - Perguntas 1..5: resposta esperada é SIM. NÃO → obs obrigatória.
+  // - Perguntas 6 e 7: resposta esperada é NÃO. SIM → obs obrigatória.
   static const _perguntasPadrao = [
-    'Produtos estão dentro da validade?',
-    'A precificação está correta?',
-    'O espaço está limpo e organizado?',
-    'Os produtos estão bem expostos?',
-    'Estoque mínimo respeitado?',
-    'Material de PDV está em bom estado?',
-    'Equipamento funcionando corretamente?',
+    'Você atualizou a máquina de pagamento?',
+    'Você verificou validades?',
+    'As sacolas estão adequadas?',
+    'TOP10 bem abastecido?',
+    'Foi feito inventário no TOP10?',
+    'Faltou algum produto?',
+    'Produto em excesso?',
   ];
+
+  /// Para qual resposta (true=SIM ou false=NÃO) a observação é obrigatória
+  /// em cada pergunta. Perguntas 1-5 (índices 0-4): obs obrigatória quando NÃO.
+  /// Perguntas 6-7 (índices 5-6): obs obrigatória quando SIM.
+  bool _obsObrigatoria(int index, bool? resposta) {
+    if (resposta == null) return false;
+    if (index >= 5) return resposta == true; // 6 e 7: SIM → obrigatória
+    return resposta == false; // 1-5: NÃO → obrigatória
+  }
 
   Widget _buildChecklist() {
     return Column(
@@ -937,10 +961,53 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
           ),
         ),
         Expanded(
-          child: ListView.builder(
+          child: ListView(
             padding: const EdgeInsets.all(16),
-            itemCount: 7,
-            itemBuilder: (_, i) => _buildPergunta(i),
+            children: [
+              for (var i = 0; i < 7; i++) _buildPergunta(i),
+              const SizedBox(height: 8),
+              // Comentário geral da visita (opcional)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF16213E),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Comentário geral sobre a visita',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _comentarioGeralCtrl,
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 13),
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        hintText: 'Opcional',
+                        hintStyle: TextStyle(
+                            color: Color(0xFF4A5568), fontSize: 13),
+                        filled: true,
+                        fillColor: Color(0xFF0F0F23),
+                        border: OutlineInputBorder(
+                            borderSide: BorderSide.none,
+                            borderRadius:
+                                BorderRadius.all(Radius.circular(8))),
+                        contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        isDense: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
         Padding(
@@ -970,6 +1037,8 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
   Widget _buildPergunta(int index) {
     final pergunta = _perguntasPadrao[index];
+    final resposta = _checks[index];
+    final obsObrigatoria = _obsObrigatoria(index, resposta);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -978,9 +1047,9 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         color: const Color(0xFF16213E),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: _checks[index] == null
+          color: resposta == null
               ? Colors.transparent
-              : _checks[index]!
+              : resposta
                   ? const Color(0xFF4CAF50).withOpacity(0.4)
                   : const Color(0xFFFF5252).withOpacity(0.4),
           width: 1.5,
@@ -996,14 +1065,14 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
           const SizedBox(height: 12),
           Row(
             children: [
-              // OK
+              // SIM
               Expanded(
                 child: GestureDetector(
                   onTap: () => setState(() => _checks[index] = true),
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
-                      color: _checks[index] == true
+                      color: resposta == true
                           ? const Color(0xFF4CAF50)
                           : const Color(0xFF2D3748),
                       borderRadius: BorderRadius.circular(8),
@@ -1013,7 +1082,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                       children: [
                         Icon(Icons.check, size: 18, color: Colors.white),
                         SizedBox(width: 6),
-                        Text('OK',
+                        Text('SIM',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold)),
@@ -1023,14 +1092,14 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              // NOK
+              // NÃO
               Expanded(
                 child: GestureDetector(
                   onTap: () => setState(() => _checks[index] = false),
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
-                      color: _checks[index] == false
+                      color: resposta == false
                           ? const Color(0xFFFF5252)
                           : const Color(0xFF2D3748),
                       borderRadius: BorderRadius.circular(8),
@@ -1040,7 +1109,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                       children: [
                         Icon(Icons.close, size: 18, color: Colors.white),
                         SizedBox(width: 6),
-                        Text('NOK',
+                        Text('NÃO',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold)),
@@ -1051,26 +1120,39 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
               ),
             ],
           ),
-          // Observação opcional
+          // Observação — opcional ou obrigatória dependendo da resposta
           const SizedBox(height: 8),
           TextField(
             controller: _obsControllers[index],
-            style: const TextStyle(
-                color: Colors.white, fontSize: 13),
-            decoration: const InputDecoration(
-              hintText: 'Observação (opcional)',
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: obsObrigatoria
+                  ? 'Justificativa obrigatória'
+                  : 'Observação (opcional)',
               hintStyle: TextStyle(
-                  color: Color(0xFF4A5568), fontSize: 13),
+                color: obsObrigatoria
+                    ? const Color(0xFFFFB4B4)
+                    : const Color(0xFF4A5568),
+                fontSize: 13,
+              ),
               filled: true,
-              fillColor: Color(0xFF0F0F23),
-              border: OutlineInputBorder(
-                  borderSide: BorderSide.none,
-                  borderRadius:
-                      BorderRadius.all(Radius.circular(8))),
-              contentPadding: EdgeInsets.symmetric(
+              fillColor: const Color(0xFF0F0F23),
+              border: const OutlineInputBorder(
+                borderSide: BorderSide.none,
+                borderRadius: BorderRadius.all(Radius.circular(8)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderSide: obsObrigatoria &&
+                        _obsControllers[index].text.trim().isEmpty
+                    ? const BorderSide(color: Color(0xFFFF5252), width: 1)
+                    : BorderSide.none,
+                borderRadius: const BorderRadius.all(Radius.circular(8)),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
                   horizontal: 12, vertical: 8),
               isDense: true,
             ),
+            onChanged: (_) => setState(() {}),
           ),
         ],
       ),
