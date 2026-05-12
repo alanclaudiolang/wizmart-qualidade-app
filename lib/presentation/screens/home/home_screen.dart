@@ -87,7 +87,6 @@ class _HomeContent extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isOnline = ref.watch(connectivityProvider);
     final visitasAsync = ref.watch(visitasHojeProvider(session.userId));
-    final contadoresAsync = ref.watch(contadoresProvider(session.userId));
     final pdvsAsync = ref.watch(pdvsProvider);
 
     return Scaffold(
@@ -170,11 +169,38 @@ class _HomeContent extends ConsumerWidget {
         },
         child: CustomScrollView(
           slivers: [
+            // Contadores calculados em memória sobre a lista atual de visitas
+            // (sempre atualizado conforme status muda; não depende do DB).
             SliverToBoxAdapter(
-              child: contadoresAsync.when(
+              child: visitasAsync.when(
                 loading: () => const _ContadoresLoading(),
                 error: (_, __) => const SizedBox(),
-                data: (c) => _ContadoresCard(contadores: c),
+                data: (visitas) {
+                  int agendadas = 0;
+                  int andamento = 0;
+                  int realizadas = 0;
+                  for (final v in visitas) {
+                    switch (v.statusVisita) {
+                      case 1:
+                        agendadas++;
+                        break;
+                      case 2:
+                        andamento++;
+                        break;
+                      case 3:
+                        realizadas++;
+                        break;
+                    }
+                  }
+                  final total = agendadas + andamento + realizadas;
+                  final pct =
+                      total == 0 ? 0 : (realizadas * 100 / total).round();
+                  return _ContadoresCard(
+                    agendadas: agendadas,
+                    realizadas: realizadas,
+                    percentual: pct,
+                  );
+                },
               ),
             ),
             SliverToBoxAdapter(
@@ -196,10 +222,26 @@ class _HomeContent extends ConsumerWidget {
               data: (visitas) {
                 if (visitas.isEmpty) return const SliverToBoxAdapter(child: _EmptyState());
                 final pdvs = pdvsAsync.value ?? {};
+                // Ordem: em andamento (2) → agendadas (1, por dia_hora_agendado asc)
+                // → realizadas (3, por dia_hora_realizado desc) → outros
+                int statusPriority(int? s) {
+                  if (s == 2) return 0;
+                  if (s == 1) return 1;
+                  if (s == 3) return 2;
+                  return 3;
+                }
                 final sorted = [...visitas]..sort((a, b) {
-                  if (a.diaHoraAgendado == null) return 1;
-                  if (b.diaHoraAgendado == null) return -1;
-                  return a.diaHoraAgendado!.compareTo(b.diaHoraAgendado!);
+                  final pa = statusPriority(a.statusVisita);
+                  final pb = statusPriority(b.statusVisita);
+                  if (pa != pb) return pa.compareTo(pb);
+                  if (a.statusVisita == 3) {
+                    // realizadas: mais recente primeiro
+                    return (b.diaHoraRealizado ?? '')
+                        .compareTo(a.diaHoraRealizado ?? '');
+                  }
+                  // demais: por horário agendado crescente
+                  return (a.diaHoraAgendado ?? '')
+                      .compareTo(b.diaHoraAgendado ?? '');
                 });
                 // Bloqueio: se há alguma visita em andamento, só ela pode ser aberta
                 final emAndamento = sorted.where((v) => v.statusVisita == 2).toList();
@@ -246,22 +288,39 @@ class _HomeContent extends ConsumerWidget {
 }
 
 class _ContadoresCard extends StatelessWidget {
-  final Map<String, int> contadores;
-  const _ContadoresCard({required this.contadores});
+  final int agendadas;
+  final int realizadas;
+  final int percentual;
+  const _ContadoresCard({
+    required this.agendadas,
+    required this.realizadas,
+    required this.percentual,
+  });
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       padding: const EdgeInsets.symmetric(vertical: 16),
-      decoration: BoxDecoration(color: const Color(0xFF16213E), borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(
+          color: const Color(0xFF16213E),
+          borderRadius: BorderRadius.circular(16)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _CounterItem(label: 'Agendadas', value: contadores['agendadas'] ?? 0, color: const Color(0xFF64B5F6)),
+          _CounterItem(
+              label: 'Agendadas',
+              value: '$agendadas',
+              color: const Color(0xFF64B5F6)),
           Container(width: 1, height: 40, color: const Color(0xFF2D3748)),
-          _CounterItem(label: 'Realizadas', value: contadores['realizadas'] ?? 0, color: const Color(0xFF4CAF50)),
+          _CounterItem(
+              label: 'Realizadas',
+              value: '$realizadas',
+              color: const Color(0xFF4CAF50)),
           Container(width: 1, height: 40, color: const Color(0xFF2D3748)),
-          _CounterItem(label: 'Faltas', value: contadores['faltas'] ?? 0, color: const Color(0xFFFF5252)),
+          _CounterItem(
+              label: '% Realizado',
+              value: '$percentual%',
+              color: const Color(0xFFFFB74D)),
         ],
       ),
     );
@@ -269,14 +328,20 @@ class _ContadoresCard extends StatelessWidget {
 }
 
 class _CounterItem extends StatelessWidget {
-  final String label; final int value; final Color color;
-  const _CounterItem({required this.label, required this.value, required this.color});
+  final String label;
+  final String value;
+  final Color color;
+  const _CounterItem(
+      {required this.label, required this.value, required this.color});
   @override
   Widget build(BuildContext context) {
     return Column(mainAxisSize: MainAxisSize.min, children: [
-      Text('$value', style: TextStyle(color: color, fontSize: 28, fontWeight: FontWeight.bold)),
+      Text(value,
+          style: TextStyle(
+              color: color, fontSize: 26, fontWeight: FontWeight.bold)),
       const SizedBox(height: 4),
-      Text(label, style: const TextStyle(color: Color(0xFF8892B0), fontSize: 12)),
+      Text(label,
+          style: const TextStyle(color: Color(0xFF8892B0), fontSize: 12)),
     ]);
   }
 }
@@ -359,7 +424,14 @@ class _VisitaCard extends StatelessWidget {
     return null;
   }
 
-  int? get _idReal => visita.id > 0 ? visita.id : null;
+  /// Só mostra o id quando a visita está em andamento ou realizada
+  /// (não em agendadas/faltas) e quando já foi sincronizada com o servidor.
+  int? get _idReal {
+    final isStatusComId =
+        visita.statusVisita == 2 || visita.statusVisita == 3;
+    if (!isStatusComId) return null;
+    return visita.serverId;
+  }
 
   @override
   Widget build(BuildContext context) {

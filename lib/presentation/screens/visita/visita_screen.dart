@@ -598,9 +598,12 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       );
     }
 
-    final pdvNome = _pdv?.apiLocalName ??
-        _pdv?.apiLocalCustomerName ??
-        'PDV ${_visita?.idPdvAssociado ?? '?'}';
+    // Mesma hierarquia do app antigo: visita.titulo é a fonte preferida
+    final pdvNome = (_visita?.titulo?.isNotEmpty ?? false)
+        ? _visita!.titulo!
+        : _pdv?.apiLocalName ??
+            _pdv?.apiLocalCustomerName ??
+            'PDV ${_visita?.idPdvAssociado ?? '?'}';
 
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A2E),
@@ -713,11 +716,6 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   // ── Tela: Iniciar visita ───────────────────────────────────────────────────
 
   Widget _buildIniciar() {
-    final horario = _visita?.diaHoraAgendado != null
-        ? DateFormat('HH:mm').format(
-            DateTime.parse(_visita!.diaHoraAgendado!).toLocal())
-        : '--:--';
-
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -733,13 +731,6 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                 color: Colors.white,
                 fontSize: 24,
                 fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Horário previsto: $horario',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-                color: Color(0xFF8892B0), fontSize: 16),
           ),
           const SizedBox(height: 48),
           const Text(
@@ -776,39 +767,39 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     final limite = slot == 'antes'
         ? AppConstants.maxFotosAntes
         : AppConstants.maxFotosDepois;
-    final label = slot == 'antes' ? 'ANTES' : 'DEPOIS';
     final cor = slot == 'antes'
         ? const Color(0xFF64B5F6)
         : const Color(0xFF4CAF50);
 
+    final tituloLabel = slot == 'antes' ? 'Foto Antes' : 'Foto Depois';
+
     return Column(
       children: [
-        // Header
+        // Header com título centralizado + destacado e contador no canto
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           color: const Color(0xFF16213E),
-          child: Row(
+          child: Stack(
+            alignment: Alignment.center,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: cor.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(20),
-                ),
+              Center(
                 child: Text(
-                  'Foto $label',
+                  tituloLabel,
                   style: TextStyle(
-                      color: cor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14),
+                    color: cor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                    letterSpacing: 0.5,
+                  ),
                 ),
               ),
-              const Spacer(),
-              Text(
-                '${fotos.length}/$limite',
-                style: const TextStyle(
-                    color: Color(0xFF8892B0), fontSize: 14),
+              Positioned(
+                right: 0,
+                child: Text(
+                  '${fotos.length}/$limite',
+                  style: const TextStyle(
+                      color: Color(0xFF8892B0), fontSize: 14),
+                ),
               ),
             ],
           ),
@@ -825,7 +816,10 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                           size: 64, color: cor.withOpacity(0.3)),
                       const SizedBox(height: 16),
                       Text(
-                        'Tire a(s) foto(s) $label',
+                        slot == 'antes'
+                            ? 'Tire a(s) foto(s) antes da reposição'
+                            : 'Tire a(s) foto(s) depois da reposição',
+                        textAlign: TextAlign.center,
                         style: const TextStyle(
                             color: Color(0xFF4A5568), fontSize: 16),
                       ),
@@ -865,7 +859,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                   child: OutlinedButton.icon(
                     onPressed: () => _tirarFoto(slot),
                     icon: Icon(Icons.camera_alt, color: cor),
-                    label: Text('Tirar foto $label',
+                    label: Text('Tirar foto',
                         style: TextStyle(color: cor, fontSize: 16)),
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(color: cor),
