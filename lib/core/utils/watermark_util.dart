@@ -1,12 +1,20 @@
 // lib/core/utils/watermark_util.dart
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 class WatermarkUtil {
+  /// Resize moderado antes do watermark: max 2560px no lado maior.
+  /// Foto típica de celular é 3000–4000px; reduzir para 2560 corta ~40-60%
+  /// do tamanho do arquivo sem perda visual perceptível, e acelera muito o
+  /// decode/encode em Dart puro que vem depois.
+  static const _maxSide = 2560;
+  static const _jpegQuality = 90;
+
   static Future<String> applyWatermark({
     required String sourcePath,
     required String pdvNome,
@@ -18,14 +26,31 @@ class WatermarkUtil {
     final outDir = '${dir.path}/wizmart_fotos';
     await Directory(outDir).create(recursive: true);
     final outPath = '$outDir/${const Uuid().v4()}.jpg';
+    final preCompressedPath = '$outDir/${const Uuid().v4()}_pre.jpg';
+
+    // Pre-compress nativo (libjpeg-turbo no Android, ImageIO no iOS) na main
+    // isolate — o plugin não funciona dentro de compute(). Resultado: arquivo
+    // já redimensionado e recomprimido que o `package:image` vai abrir muito
+    // mais rápido para desenhar o watermark.
+    final preResult = await FlutterImageCompress.compressAndGetFile(
+      sourcePath,
+      preCompressedPath,
+      minWidth: _maxSide,
+      minHeight: _maxSide,
+      quality: _jpegQuality,
+      keepExif: false,
+    );
+    final inputPath = preResult?.path ?? sourcePath;
+    final usedPreCompressed = preResult != null;
 
     return compute(_processImage, {
-      'sourcePath': sourcePath,
+      'sourcePath': inputPath,
       'outPath': outPath,
       'pdvNome': pdvNome,
       'promotorNome': promotorNome,
       'slot': slot,
       'capturedAt': capturedAt.toIso8601String(),
+      'isTempInput': usedPreCompressed,
     });
   }
 
@@ -96,7 +121,19 @@ class WatermarkUtil {
     img.compositeImage(novaImagem, faixaScaled,
         dstX: 0, dstY: original.height);
 
-    await File(outPath).writeAsBytes(img.encodeJpg(novaImagem, quality: 90));
+    await File(outPath).writeAsBytes(
+      img.encodeJpg(novaImagem, quality: _jpegQuality),
+    );
+
+    // Remove arquivo intermediário do pre-compress.
+    final isTempInput = (args['isTempInput'] as bool?) ?? false;
+    if (isTempInput) {
+      try {
+        final f = File(sourcePath);
+        if (await f.exists()) await f.delete();
+      } catch (_) {}
+    }
+
     return outPath;
   }
 }

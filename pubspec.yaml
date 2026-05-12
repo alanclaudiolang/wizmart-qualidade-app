@@ -29,6 +29,7 @@ dependencies:
   # Câmera e fotos
   image_picker: ^1.1.2
   image: ^4.1.7
+  flutter_image_compress: ^2.3.0
   permission_handler: ^11.3.1
   gal: ^1.1.0
 
