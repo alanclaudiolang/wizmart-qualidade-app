@@ -8,12 +8,31 @@ import 'package:workmanager/workmanager.dart';
 import 'core/constants/app_constants.dart';
 import 'core/utils/app_router.dart';
 import 'core/database/app_database.dart';
+import 'core/network/connectivity_service.dart';
 import 'core/network/sync_engine.dart';
 import 'core/network/sync_pause.dart';
 import 'core/utils/sync_logger.dart';
 import 'presentation/widgets/bug_report_overlay.dart';
 
 const _bgSyncTask = 'wizmart_bg_sync';
+const _oneOffSyncName = 'wizmart_oneoff_sync';
+
+/// Enfileira uma tentativa de sync com constraint de rede. O Android dispara
+/// quando houver conectividade — mesmo com app fechado ou em Doze Mode.
+/// Pequeno custo, granted pelo SO. Único gatilho de background dependável
+/// quando o app não está rodando.
+Future<void> scheduleOneOffSync() async {
+  try {
+    await Workmanager().registerOneOffTask(
+      _oneOffSyncName,
+      _bgSyncTask,
+      constraints: Constraints(networkType: NetworkType.connected),
+      existingWorkPolicy: ExistingWorkPolicy.keep,
+      backoffPolicy: BackoffPolicy.exponential,
+      backoffPolicyDelay: const Duration(seconds: 30),
+    );
+  } catch (_) {}
+}
 
 @pragma('vm:entry-point')
 void callbackDispatcher() {
@@ -87,18 +106,60 @@ void main() async {
   });
 }
 
-class WizMartApp extends StatelessWidget {
+class WizMartApp extends ConsumerStatefulWidget {
   final String? initError;
   const WizMartApp({super.key, this.initError});
 
   @override
+  ConsumerState<WizMartApp> createState() => _WizMartAppState();
+}
+
+class _WizMartAppState extends ConsumerState<WizMartApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Gatilho universal — dispara sync. O `processOutbox` checa `SyncPause`
+  /// internamente, então durante captura este kick é absorvido sem efeito.
+  void _kickSync() {
+    if (!mounted) return;
+    if (!ref.read(connectivityProvider)) return;
+    ref.read(syncEngineProvider).processOutbox();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // Gatilho: app voltou pro foreground → tenta sincronizar.
+    if (state == AppLifecycleState.resumed) {
+      _kickSync();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Se houve erro de inicialização, mostra tela de erro em vez do app
-    if (initError != null) {
+    if (widget.initError != null) {
       return MaterialApp(
-        home: _ErrorScreen(title: 'Erro de inicialização', error: initError!),
+        home: _ErrorScreen(
+            title: 'Erro de inicialização', error: widget.initError!),
       );
     }
+
+    // Gatilho: conectividade ficou online → tenta sincronizar.
+    ref.listen<bool>(connectivityProvider, (prev, next) {
+      if (prev == false && next == true) {
+        _kickSync();
+      }
+    });
 
     return MaterialApp.router(
       title: 'WizMart',

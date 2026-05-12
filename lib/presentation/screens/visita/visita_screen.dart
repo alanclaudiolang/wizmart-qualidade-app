@@ -16,6 +16,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/network/sync_engine.dart';
 import '../../../core/network/sync_pause.dart';
 import '../../../core/network/connectivity_service.dart';
+import '../../../main.dart' show scheduleOneOffSync;
 import '../../../core/utils/watermark_util.dart';
 import '../../../core/utils/session_service.dart';
 import '../../widgets/bug_report_button.dart';
@@ -64,11 +65,6 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   @override
   void initState() {
     super.initState();
-    // Pausa o sync periódico (WorkManager) enquanto o usuário está nesta
-    // tela. Sync só dispara nas transições de status — `_iniciarVisita`
-    // (1→2) e `_finalizarVisita` (2→3) — para não consumir recursos
-    // durante a captura de fotos.
-    SyncPause.pause();
     _loadVisita();
   }
 
@@ -78,8 +74,20 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       c.dispose();
     }
     _comentarioGeralCtrl.dispose();
+    // Garante resume ao sair da tela, mesmo se ainda estiver em estado
+    // de captura (defensivo — em fluxo normal já foi resumido).
     SyncPause.resume();
     super.dispose();
+  }
+
+  /// Pausa sync apenas em estados de captura (grid de fotos antes/depois).
+  /// Em outros estados (idle, checklist, finalizada) o sync roda normal.
+  void _updateSyncPause(String localState) {
+    if (localState == 'fotos_antes' || localState == 'fotos_depois') {
+      SyncPause.pause();
+    } else {
+      SyncPause.resume();
+    }
   }
 
   Future<void> _loadVisita() async {
@@ -166,6 +174,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
       _loading = false;
     });
+    _updateSyncPause(localState);
   }
 
   // ── Localização ────────────────────────────────────────────────────────────
@@ -213,13 +222,21 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       return;
     }
 
+    // Pausa sync enquanto a câmera estiver aberta — câmera consome CPU/RAM
+    // e qualquer upload concorrente em device de baixa memória pode travar.
+    await SyncPause.pause();
     final picked = await _picker.pickImage(
       source: ImageSource.camera,
       imageQuality: 85,
       preferredCameraDevice: CameraDevice.rear,
     );
 
-    if (picked == null) return;
+    if (picked == null) {
+      // Voltou pra grid de fotos — mantém pausado (grid também não
+      // sincroniza). _updateSyncPause já cobre o estado atual.
+      _updateSyncPause(_localState);
+      return;
+    }
 
     setState(() => _savingPhoto = true);
 
@@ -313,9 +330,11 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       nextRetryAt: drift.Value(DateTime.now().toIso8601String()),
       createdAt: drift.Value(capturedAt.toIso8601String()),
     ));
-    // Sem trigger de sync aqui: a foto fica na fila local. O envio só
-    // dispara nas transições de status (1→2 em `_iniciarVisita` e 2→3
-    // em `_finalizarVisita`).
+    // Não dispara sync no foreground (estamos em captura = pausado).
+    // Mas enfileira um gatilho de background com constraint de rede:
+    // quando o usuário sair da captura, ou em outro evento, o
+    // OneOffWorker tentará processar.
+    scheduleOneOffSync();
   }
 
   // ── Reordenar e remover fotos do grid ─────────────────────────────────────
@@ -420,15 +439,17 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       'id_promotor_associado': session?.userId,
     });
 
+    // Dispara sync ANTES de pausar — transição 1→2 ("em andamento") é
+    // um dos pontos em que queremos enviar imediatamente.
+    if (ref.read(connectivityProvider)) {
+      ref.read(syncEngineProvider).processOutbox();
+    }
+
     setState(() {
       _localizacaoAbertura = loc;
       _localState = 'fotos_antes';
     });
-
-    // Dispara envio imediato pro servidor
-    if (ref.read(connectivityProvider)) {
-      ref.read(syncEngineProvider).processOutbox();
-    }
+    _updateSyncPause('fotos_antes');
   }
 
   Future<void> _concluirFotosAntes() async {
@@ -481,6 +502,8 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       _localizacaoEncerramento = loc;
       _localState = 'checklist';
     });
+    // Saída do estado de captura → libera sync.
+    _updateSyncPause('checklist');
   }
 
   Future<void> _finalizarVisita() async {
@@ -575,6 +598,9 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       status: const drift.Value('pending'),
       createdAt: drift.Value(DateTime.now().toIso8601String()),
     ));
+    // Gatilho de background: o sistema executa esta task quando houver
+    // rede, mesmo se o app for fechado.
+    scheduleOneOffSync();
   }
 
   // ── UI Helpers ─────────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ import 'package:uuid/uuid.dart';
 import '../database/app_database.dart';
 import '../constants/app_constants.dart';
 import '../utils/sync_logger.dart';
+import 'sync_pause.dart';
 
 class SyncEngine {
   final AppDatabase _db;
@@ -306,6 +307,13 @@ class SyncEngine {
 
   Future<void> processOutbox() async {
     if (_running) return;
+    // Bloqueio único pra TODOS os gatilhos: durante captura (grid de fotos
+    // ou câmera aberta), nada sincroniza, independentemente da origem
+    // do trigger (foreground, WorkManager, listener, etc.).
+    if (await SyncPause.isPaused()) {
+      _logger.log('sync', 'Pausado (captura ativa) — pulando ciclo.');
+      return;
+    }
     _running = true;
     try {
       final items = await _db.getPendingOutboxItems();
