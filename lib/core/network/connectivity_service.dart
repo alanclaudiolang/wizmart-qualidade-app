@@ -7,6 +7,9 @@ import '../constants/app_constants.dart';
 
 class ConnectivityService extends Notifier<bool> {
   Timer? _pingTimer;
+  // Anti-flicker: só marca offline após 2 falhas consecutivas. Um ping
+  // lento ou falha pontual não vai bagunçar a UI piscando Online/Offline.
+  int _consecutiveOffline = 0;
   final _dio = Dio(BaseOptions(
     connectTimeout:
         Duration(seconds: AppConstants.pingTimeoutSeconds),
@@ -33,19 +36,27 @@ class ConnectivityService extends Notifier<bool> {
   }
 
   Future<void> _ping() async {
+    bool ok;
     try {
       await _dio.head(
         '${AppConstants.supabaseUrl}/rest/v1/',
         options: Options(
-          headers: {
-            'apikey': AppConstants.supabaseAnonKey,
-          },
+          headers: {'apikey': AppConstants.supabaseAnonKey},
           validateStatus: (_) => true,
         ),
       );
-      if (state != true) state = true;
+      ok = true;
     } catch (_) {
-      if (state != false) state = false;
+      ok = false;
+    }
+
+    if (ok) {
+      _consecutiveOffline = 0;
+      if (state != true) state = true;
+    } else {
+      _consecutiveOffline++;
+      // 2 falhas em sequência pra confirmar offline.
+      if (_consecutiveOffline >= 2 && state != false) state = false;
     }
   }
 

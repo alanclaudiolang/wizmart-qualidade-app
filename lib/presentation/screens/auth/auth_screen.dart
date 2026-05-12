@@ -78,7 +78,8 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() { _loading = true; _error = null; });
     try {
       final authResponse = await Supabase.instance.client.auth
-          .signInWithPassword(email: email, password: senha);
+          .signInWithPassword(email: email, password: senha)
+          .timeout(const Duration(seconds: 15));
       if (authResponse.user == null) {
         setState(() { _error = 'Usuário ou senha incorretos.'; _loading = false; });
         return;
@@ -111,9 +112,35 @@ class _AuthScreenState extends State<AuthScreen> {
       );
       if (mounted) context.go('/home');
     } on AuthException catch (e) {
-      setState(() { _error = 'AuthException: ${e.message}'; _loading = false; });
+      // Mensagens canônicas do Supabase em PT-BR.
+      final msg = e.message.toLowerCase();
+      String friendly;
+      if (msg.contains('invalid login') ||
+          msg.contains('invalid credentials')) {
+        friendly = 'Email ou senha incorretos.';
+      } else if (msg.contains('email not confirmed')) {
+        friendly = 'Email ainda não confirmado.';
+      } else {
+        friendly = e.message;
+      }
+      setState(() { _error = friendly; _loading = false; });
     } catch (e) {
-      setState(() { _error = 'Erro: ${e.runtimeType}: $e'; _loading = false; });
+      final txt = e.toString().toLowerCase();
+      String friendly;
+      if (txt.contains('socketexception') ||
+          txt.contains('failed host lookup') ||
+          txt.contains('network is unreachable') ||
+          txt.contains('connection refused') ||
+          e is TimeoutException) {
+        friendly =
+            'Sem internet. Verifique sua conexão e tente novamente.';
+      } else if (txt.contains('timeout')) {
+        friendly =
+            'O servidor demorou para responder. Tente novamente em alguns instantes.';
+      } else {
+        friendly = 'Não foi possível entrar agora. Tente novamente.';
+      }
+      setState(() { _error = friendly; _loading = false; });
     }
   }
 

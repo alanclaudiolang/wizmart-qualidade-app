@@ -118,16 +118,18 @@ $descricao
 _Issue criada automaticamente pelo botão "Reportar bug" do app._
 ''';
 
-      final issueRes = await http.post(
-        Uri.parse('$_apiBase/repos/$owner/$repo/issues'),
-        headers: _headers(token),
-        body: jsonEncode({
-          'title':
-              '[BUG] ${descricao.length > 60 ? '${descricao.substring(0, 60)}…' : descricao}',
-          'body': issueBody,
-          'labels': ['bug', 'auto-reportado'],
-        }),
-      );
+      final issueRes = await http
+          .post(
+            Uri.parse('$_apiBase/repos/$owner/$repo/issues'),
+            headers: _headers(token),
+            body: jsonEncode({
+              'title':
+                  '[BUG] ${descricao.length > 60 ? '${descricao.substring(0, 60)}…' : descricao}',
+              'body': issueBody,
+              'labels': ['bug', 'auto-reportado'],
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (issueRes.statusCode < 200 || issueRes.statusCode >= 300) {
         return GithubBugReportResult(
@@ -161,15 +163,17 @@ _Issue criada automaticamente pelo botão "Reportar bug" do app._
     required String contentBase64,
     required String commitMessage,
   }) async {
-    final res = await http.put(
-      Uri.parse('$_apiBase/repos/$owner/$repo/contents/$path'),
-      headers: _headers(token),
-      body: jsonEncode({
-        'message': commitMessage,
-        'content': contentBase64,
-        'branch': 'main',
-      }),
-    );
+    final res = await http
+        .put(
+          Uri.parse('$_apiBase/repos/$owner/$repo/contents/$path'),
+          headers: _headers(token),
+          body: jsonEncode({
+            'message': commitMessage,
+            'content': contentBase64,
+            'branch': 'main',
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw Exception(
           'PUT /contents/$path falhou: ${res.statusCode} ${res.body}');

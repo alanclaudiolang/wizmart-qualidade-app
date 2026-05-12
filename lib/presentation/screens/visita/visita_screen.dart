@@ -3,6 +3,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
@@ -258,15 +259,30 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     // Pausa sync enquanto a câmera estiver aberta — câmera consome CPU/RAM
     // e qualquer upload concorrente em device de baixa memória pode travar.
     await SyncPause.pause();
-    final picked = await _picker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 85,
-      preferredCameraDevice: CameraDevice.rear,
-    );
+    XFile? picked;
+    try {
+      picked = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        preferredCameraDevice: CameraDevice.rear,
+      );
+    } on PlatformException catch (e) {
+      // Distingue permissão negada de outras falhas — no Android, o code
+      // costuma ser 'camera_access_denied' ou 'photo_access_denied'.
+      _updateSyncPause(_localState);
+      final code = e.code.toLowerCase();
+      if (code.contains('denied') || code.contains('permission')) {
+        _showError(
+          'Permissão de câmera negada. Ative nas configurações do app.',
+        );
+      } else {
+        _showError('Não foi possível abrir a câmera. Tente novamente.');
+      }
+      return;
+    }
 
     if (picked == null) {
-      // Voltou pra grid de fotos — mantém pausado (grid também não
-      // sincroniza). _updateSyncPause já cobre o estado atual.
+      // Cancelamento normal (usuário fechou a câmera sem foto).
       _updateSyncPause(_localState);
       return;
     }
@@ -485,42 +501,44 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       _busyLabel = 'Salvando...';
     });
 
-    final db = ref.read(appDatabaseProvider);
-    final session = await SessionService.getSession();
-    // Recarrega visita para pegar diaHoraAbertura/localizacaoAbertura
-    // persistidos no _iniciarVisita.
-    final atual = await db.getVisitaById(widget.visitaId);
+    try {
+      final db = ref.read(appDatabaseProvider);
+      final session = await SessionService.getSession();
+      final atual = await db.getVisitaById(widget.visitaId);
 
-    // É AQUI que a transição 1→2 (agendada → em andamento) acontece:
-    // só depois que o promotor concluiu as fotos antes. Se ele desistir
-    // no meio, o status no servidor continua "agendada" — sem fantasma.
-    await db.updateVisita(VisitasCompanion(
-      id: drift.Value(widget.visitaId),
-      statusVisita: const drift.Value(AppConstants.statusEmAndamento),
-      localState: const drift.Value('fotos_depois'),
-      syncStatus: const drift.Value('pending'),
-    ));
+      // Transição 1→2 (agendada → em andamento) acontece AQUI: só depois
+      // que o promotor concluiu as fotos antes. Se ele desistir no meio,
+      // o status no servidor continua "agendada" — sem fantasma.
+      await db.updateVisita(VisitasCompanion(
+        id: drift.Value(widget.visitaId),
+        statusVisita: const drift.Value(AppConstants.statusEmAndamento),
+        localState: const drift.Value('fotos_depois'),
+        syncStatus: const drift.Value('pending'),
+      ));
 
-    // Enfileira no outbox: open (status 1→2) + dados das fotos antes,
-    // tudo num único item — o sync engine constrói o payload completo
-    // a partir do estado atual da visita no DB local.
-    await _enfileirarVisita('open', {
-      'id': widget.visitaId,
-      'status_visita': AppConstants.statusEmAndamento,
-      'dia_hora_abertura': atual?.diaHoraAbertura,
-      'localizacao_abertura': atual?.localizacaoAbertura,
-      'id_promotor_associado': session?.userId,
-      'fotos_antes_count': _fotosAntes.length,
-    });
+      await _enfileirarVisita('open', {
+        'id': widget.visitaId,
+        'status_visita': AppConstants.statusEmAndamento,
+        'dia_hora_abertura': atual?.diaHoraAbertura,
+        'localizacao_abertura': atual?.localizacaoAbertura,
+        'id_promotor_associado': session?.userId,
+        'fotos_antes_count': _fotosAntes.length,
+      });
 
-    // Dispara sync no foreground se online (background já foi agendado
-    // pelo _enfileirarVisita via scheduleOneOffSync).
-    if (ref.read(connectivityProvider)) {
-      ref.read(syncEngineProvider).processOutbox();
+      // Dispara sync no foreground se online (background já foi agendado
+      // pelo _enfileirarVisita via scheduleOneOffSync).
+      if (ref.read(connectivityProvider)) {
+        ref.read(syncEngineProvider).processOutbox();
+      }
+
+      await LastVisitaService.clear();
+      if (mounted) context.go('/home');
+    } catch (e) {
+      if (mounted) {
+        setState(() => _busy = false);
+        _showError('Não foi possível salvar. Tente novamente.');
+      }
     }
-
-    await LastVisitaService.clear();
-    if (mounted) context.go('/home');
   }
 
 
@@ -572,64 +590,74 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       }
     }
 
-    final agora = DateTime.now();
-    final db = ref.read(appDatabaseProvider);
-
-    await db.updateVisita(VisitasCompanion(
-      id: drift.Value(widget.visitaId),
-      statusVisita: const drift.Value(AppConstants.statusRealizada),
-      diaHoraRealizado: drift.Value(agora.toIso8601String()),
-      checkPergunta1: drift.Value(_checks[0]),
-      obsPergunta1: drift.Value(_obsControllers[0].text),
-      checkPergunta2: drift.Value(_checks[1]),
-      obsPergunta2: drift.Value(_obsControllers[1].text),
-      checkPergunta3: drift.Value(_checks[2]),
-      obsPergunta3: drift.Value(_obsControllers[2].text),
-      checkPergunta4: drift.Value(_checks[3]),
-      obsPergunta4: drift.Value(_obsControllers[3].text),
-      checkPergunta5: drift.Value(_checks[4]),
-      obsPergunta5: drift.Value(_obsControllers[4].text),
-      checkPergunta6: drift.Value(_checks[5]),
-      obsPergunta6: drift.Value(_obsControllers[5].text),
-      checkPergunta7: drift.Value(_checks[6]),
-      obsPergunta7: drift.Value(_obsControllers[6].text),
-      comentariosVisita: drift.Value(_comentarioGeralCtrl.text),
-      localState: const drift.Value('finalizada'),
-      syncStatus: const drift.Value('pending'),
-    ));
-
-    await _enfileirarVisita('close', {
-      'id': widget.visitaId,
-      'status_visita': AppConstants.statusRealizada,
-      'dia_hora_realizado': agora.toIso8601String(),
-      'localizacao_encerramento': _localizacaoEncerramento,
-      'check_pergunta_1': _checks[0],
-      'obs_pergunta_1': _obsControllers[0].text,
-      'check_pergunta_2': _checks[1],
-      'obs_pergunta_2': _obsControllers[1].text,
-      'check_pergunta_3': _checks[2],
-      'obs_pergunta_3': _obsControllers[2].text,
-      'check_pergunta_4': _checks[3],
-      'obs_pergunta_4': _obsControllers[3].text,
-      'check_pergunta_5': _checks[4],
-      'obs_pergunta_5': _obsControllers[4].text,
-      'check_pergunta_6': _checks[5],
-      'obs_pergunta_6': _obsControllers[5].text,
-      'check_pergunta_7': _checks[6],
-      'obs_pergunta_7': _obsControllers[6].text,
+    setState(() {
+      _busy = true;
+      _busyLabel = 'Finalizando...';
     });
 
-    // Tenta sync imediato
-    final isOnline = ref.read(connectivityProvider);
-    if (isOnline) {
-      ref.read(syncEngineProvider).processOutbox();
-    }
+    try {
+      final agora = DateTime.now();
+      final db = ref.read(appDatabaseProvider);
 
-    await LastVisitaService.clear();
-    if (mounted) {
-      _showSuccess('Visita finalizada com sucesso!');
-      await Future.delayed(const Duration(seconds: 1));
-      if (mounted) context.go('/home');
+      await db.updateVisita(VisitasCompanion(
+        id: drift.Value(widget.visitaId),
+        statusVisita: const drift.Value(AppConstants.statusRealizada),
+        diaHoraRealizado: drift.Value(agora.toIso8601String()),
+        checkPergunta1: drift.Value(_checks[0]),
+        obsPergunta1: drift.Value(_obsControllers[0].text),
+        checkPergunta2: drift.Value(_checks[1]),
+        obsPergunta2: drift.Value(_obsControllers[1].text),
+        checkPergunta3: drift.Value(_checks[2]),
+        obsPergunta3: drift.Value(_obsControllers[2].text),
+        checkPergunta4: drift.Value(_checks[3]),
+        obsPergunta4: drift.Value(_obsControllers[3].text),
+        checkPergunta5: drift.Value(_checks[4]),
+        obsPergunta5: drift.Value(_obsControllers[4].text),
+        checkPergunta6: drift.Value(_checks[5]),
+        obsPergunta6: drift.Value(_obsControllers[5].text),
+        checkPergunta7: drift.Value(_checks[6]),
+        obsPergunta7: drift.Value(_obsControllers[6].text),
+        comentariosVisita: drift.Value(_comentarioGeralCtrl.text),
+        localState: const drift.Value('finalizada'),
+        syncStatus: const drift.Value('pending'),
+      ));
+
+      await _enfileirarVisita('close', {
+        'id': widget.visitaId,
+        'status_visita': AppConstants.statusRealizada,
+        'dia_hora_realizado': agora.toIso8601String(),
+        'localizacao_encerramento': _localizacaoEncerramento,
+        'check_pergunta_1': _checks[0],
+        'obs_pergunta_1': _obsControllers[0].text,
+        'check_pergunta_2': _checks[1],
+        'obs_pergunta_2': _obsControllers[1].text,
+        'check_pergunta_3': _checks[2],
+        'obs_pergunta_3': _obsControllers[2].text,
+        'check_pergunta_4': _checks[3],
+        'obs_pergunta_4': _obsControllers[3].text,
+        'check_pergunta_5': _checks[4],
+        'obs_pergunta_5': _obsControllers[4].text,
+        'check_pergunta_6': _checks[5],
+        'obs_pergunta_6': _obsControllers[5].text,
+        'check_pergunta_7': _checks[6],
+        'obs_pergunta_7': _obsControllers[6].text,
+      });
+
+      if (ref.read(connectivityProvider)) {
+        ref.read(syncEngineProvider).processOutbox();
+      }
+
+      await LastVisitaService.clear();
+      if (mounted) {
+        _showSuccess('Visita finalizada com sucesso!');
+        await Future.delayed(const Duration(seconds: 1));
+        if (mounted) context.go('/home');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _busy = false);
+        _showError('Não foi possível finalizar. Tente novamente.');
+      }
     }
   }
 
