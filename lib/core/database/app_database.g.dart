@@ -1484,6 +1484,12 @@ class $VisitasTable extends Visitas with TableInfo<$VisitasTable, Visita> {
       requiredDuringInsert: false,
       defaultConstraints: GeneratedColumn.constraintIsAlways(
           'CHECK ("visita_avulsa" IN (0, 1))'));
+  static const VerificationMeta _serverIdMeta =
+      const VerificationMeta('serverId');
+  @override
+  late final GeneratedColumn<int> serverId = GeneratedColumn<int>(
+      'server_id', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
   static const VerificationMeta _localizacaoAberturaMeta =
       const VerificationMeta('localizacaoAbertura');
   @override
@@ -1679,6 +1685,7 @@ class $VisitasTable extends Visitas with TableInfo<$VisitasTable, Visita> {
         titulo,
         previsaoTurnoRealizada,
         visitaAvulsa,
+        serverId,
         localizacaoAbertura,
         localizacaoEncerramento,
         diaHoraFotosAntes,
@@ -1782,6 +1789,10 @@ class $VisitasTable extends Visitas with TableInfo<$VisitasTable, Visita> {
           _visitaAvulsaMeta,
           visitaAvulsa.isAcceptableOrUnknown(
               data['visita_avulsa']!, _visitaAvulsaMeta));
+    }
+    if (data.containsKey('server_id')) {
+      context.handle(_serverIdMeta,
+          serverId.isAcceptableOrUnknown(data['server_id']!, _serverIdMeta));
     }
     if (data.containsKey('localizacao_abertura')) {
       context.handle(
@@ -1971,6 +1982,8 @@ class $VisitasTable extends Visitas with TableInfo<$VisitasTable, Visita> {
           data['${effectivePrefix}previsao_turno_realizada']),
       visitaAvulsa: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}visita_avulsa']),
+      serverId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}server_id']),
       localizacaoAbertura: attachedDatabase.typeMapping.read(
           DriftSqlType.string, data['${effectivePrefix}localizacao_abertura']),
       localizacaoEncerramento: attachedDatabase.typeMapping.read(
@@ -2048,6 +2061,7 @@ class Visita extends DataClass implements Insertable<Visita> {
   final String? titulo;
   final String? previsaoTurnoRealizada;
   final bool? visitaAvulsa;
+  final int? serverId;
   final String? localizacaoAbertura;
   final String? localizacaoEncerramento;
   final String? diaHoraFotosAntes;
@@ -2087,6 +2101,7 @@ class Visita extends DataClass implements Insertable<Visita> {
       this.titulo,
       this.previsaoTurnoRealizada,
       this.visitaAvulsa,
+      this.serverId,
       this.localizacaoAbertura,
       this.localizacaoEncerramento,
       this.diaHoraFotosAntes,
@@ -2150,6 +2165,9 @@ class Visita extends DataClass implements Insertable<Visita> {
     }
     if (!nullToAbsent || visitaAvulsa != null) {
       map['visita_avulsa'] = Variable<bool>(visitaAvulsa);
+    }
+    if (!nullToAbsent || serverId != null) {
+      map['server_id'] = Variable<int>(serverId);
     }
     if (!nullToAbsent || localizacaoAbertura != null) {
       map['localizacao_abertura'] = Variable<String>(localizacaoAbertura);
@@ -2265,6 +2283,9 @@ class Visita extends DataClass implements Insertable<Visita> {
       visitaAvulsa: visitaAvulsa == null && nullToAbsent
           ? const Value.absent()
           : Value(visitaAvulsa),
+      serverId: serverId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverId),
       localizacaoAbertura: localizacaoAbertura == null && nullToAbsent
           ? const Value.absent()
           : Value(localizacaoAbertura),
@@ -2361,6 +2382,7 @@ class Visita extends DataClass implements Insertable<Visita> {
       previsaoTurnoRealizada:
           serializer.fromJson<String?>(json['previsaoTurnoRealizada']),
       visitaAvulsa: serializer.fromJson<bool?>(json['visitaAvulsa']),
+      serverId: serializer.fromJson<int?>(json['serverId']),
       localizacaoAbertura:
           serializer.fromJson<String?>(json['localizacaoAbertura']),
       localizacaoEncerramento:
@@ -2413,6 +2435,7 @@ class Visita extends DataClass implements Insertable<Visita> {
       'previsaoTurnoRealizada':
           serializer.toJson<String?>(previsaoTurnoRealizada),
       'visitaAvulsa': serializer.toJson<bool?>(visitaAvulsa),
+      'serverId': serializer.toJson<int?>(serverId),
       'localizacaoAbertura': serializer.toJson<String?>(localizacaoAbertura),
       'localizacaoEncerramento':
           serializer.toJson<String?>(localizacaoEncerramento),
@@ -2458,6 +2481,7 @@ class Visita extends DataClass implements Insertable<Visita> {
           Value<String?> titulo = const Value.absent(),
           Value<String?> previsaoTurnoRealizada = const Value.absent(),
           Value<bool?> visitaAvulsa = const Value.absent(),
+          Value<int?> serverId = const Value.absent(),
           Value<String?> localizacaoAbertura = const Value.absent(),
           Value<String?> localizacaoEncerramento = const Value.absent(),
           Value<String?> diaHoraFotosAntes = const Value.absent(),
@@ -2513,6 +2537,7 @@ class Visita extends DataClass implements Insertable<Visita> {
             : this.previsaoTurnoRealizada,
         visitaAvulsa:
             visitaAvulsa.present ? visitaAvulsa.value : this.visitaAvulsa,
+        serverId: serverId.present ? serverId.value : this.serverId,
         localizacaoAbertura: localizacaoAbertura.present
             ? localizacaoAbertura.value
             : this.localizacaoAbertura,
@@ -2605,6 +2630,7 @@ class Visita extends DataClass implements Insertable<Visita> {
       visitaAvulsa: data.visitaAvulsa.present
           ? data.visitaAvulsa.value
           : this.visitaAvulsa,
+      serverId: data.serverId.present ? data.serverId.value : this.serverId,
       localizacaoAbertura: data.localizacaoAbertura.present
           ? data.localizacaoAbertura.value
           : this.localizacaoAbertura,
@@ -2697,6 +2723,7 @@ class Visita extends DataClass implements Insertable<Visita> {
           ..write('titulo: $titulo, ')
           ..write('previsaoTurnoRealizada: $previsaoTurnoRealizada, ')
           ..write('visitaAvulsa: $visitaAvulsa, ')
+          ..write('serverId: $serverId, ')
           ..write('localizacaoAbertura: $localizacaoAbertura, ')
           ..write('localizacaoEncerramento: $localizacaoEncerramento, ')
           ..write('diaHoraFotosAntes: $diaHoraFotosAntes, ')
@@ -2741,6 +2768,7 @@ class Visita extends DataClass implements Insertable<Visita> {
         titulo,
         previsaoTurnoRealizada,
         visitaAvulsa,
+        serverId,
         localizacaoAbertura,
         localizacaoEncerramento,
         diaHoraFotosAntes,
@@ -2784,6 +2812,7 @@ class Visita extends DataClass implements Insertable<Visita> {
           other.titulo == this.titulo &&
           other.previsaoTurnoRealizada == this.previsaoTurnoRealizada &&
           other.visitaAvulsa == this.visitaAvulsa &&
+          other.serverId == this.serverId &&
           other.localizacaoAbertura == this.localizacaoAbertura &&
           other.localizacaoEncerramento == this.localizacaoEncerramento &&
           other.diaHoraFotosAntes == this.diaHoraFotosAntes &&
@@ -2825,6 +2854,7 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
   final Value<String?> titulo;
   final Value<String?> previsaoTurnoRealizada;
   final Value<bool?> visitaAvulsa;
+  final Value<int?> serverId;
   final Value<String?> localizacaoAbertura;
   final Value<String?> localizacaoEncerramento;
   final Value<String?> diaHoraFotosAntes;
@@ -2864,6 +2894,7 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
     this.titulo = const Value.absent(),
     this.previsaoTurnoRealizada = const Value.absent(),
     this.visitaAvulsa = const Value.absent(),
+    this.serverId = const Value.absent(),
     this.localizacaoAbertura = const Value.absent(),
     this.localizacaoEncerramento = const Value.absent(),
     this.diaHoraFotosAntes = const Value.absent(),
@@ -2904,6 +2935,7 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
     this.titulo = const Value.absent(),
     this.previsaoTurnoRealizada = const Value.absent(),
     this.visitaAvulsa = const Value.absent(),
+    this.serverId = const Value.absent(),
     this.localizacaoAbertura = const Value.absent(),
     this.localizacaoEncerramento = const Value.absent(),
     this.diaHoraFotosAntes = const Value.absent(),
@@ -2944,6 +2976,7 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
     Expression<String>? titulo,
     Expression<String>? previsaoTurnoRealizada,
     Expression<bool>? visitaAvulsa,
+    Expression<int>? serverId,
     Expression<String>? localizacaoAbertura,
     Expression<String>? localizacaoEncerramento,
     Expression<String>? diaHoraFotosAntes,
@@ -2987,6 +3020,7 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
       if (previsaoTurnoRealizada != null)
         'previsao_turno_realizada': previsaoTurnoRealizada,
       if (visitaAvulsa != null) 'visita_avulsa': visitaAvulsa,
+      if (serverId != null) 'server_id': serverId,
       if (localizacaoAbertura != null)
         'localizacao_abertura': localizacaoAbertura,
       if (localizacaoEncerramento != null)
@@ -3034,6 +3068,7 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
       Value<String?>? titulo,
       Value<String?>? previsaoTurnoRealizada,
       Value<bool?>? visitaAvulsa,
+      Value<int?>? serverId,
       Value<String?>? localizacaoAbertura,
       Value<String?>? localizacaoEncerramento,
       Value<String?>? diaHoraFotosAntes,
@@ -3074,6 +3109,7 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
       previsaoTurnoRealizada:
           previsaoTurnoRealizada ?? this.previsaoTurnoRealizada,
       visitaAvulsa: visitaAvulsa ?? this.visitaAvulsa,
+      serverId: serverId ?? this.serverId,
       localizacaoAbertura: localizacaoAbertura ?? this.localizacaoAbertura,
       localizacaoEncerramento:
           localizacaoEncerramento ?? this.localizacaoEncerramento,
@@ -3145,6 +3181,9 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
     }
     if (visitaAvulsa.present) {
       map['visita_avulsa'] = Variable<bool>(visitaAvulsa.value);
+    }
+    if (serverId.present) {
+      map['server_id'] = Variable<int>(serverId.value);
     }
     if (localizacaoAbertura.present) {
       map['localizacao_abertura'] = Variable<String>(localizacaoAbertura.value);
@@ -3245,6 +3284,7 @@ class VisitasCompanion extends UpdateCompanion<Visita> {
           ..write('titulo: $titulo, ')
           ..write('previsaoTurnoRealizada: $previsaoTurnoRealizada, ')
           ..write('visitaAvulsa: $visitaAvulsa, ')
+          ..write('serverId: $serverId, ')
           ..write('localizacaoAbertura: $localizacaoAbertura, ')
           ..write('localizacaoEncerramento: $localizacaoEncerramento, ')
           ..write('diaHoraFotosAntes: $diaHoraFotosAntes, ')
@@ -5235,6 +5275,7 @@ typedef $$VisitasTableCreateCompanionBuilder = VisitasCompanion Function({
   Value<String?> titulo,
   Value<String?> previsaoTurnoRealizada,
   Value<bool?> visitaAvulsa,
+  Value<int?> serverId,
   Value<String?> localizacaoAbertura,
   Value<String?> localizacaoEncerramento,
   Value<String?> diaHoraFotosAntes,
@@ -5275,6 +5316,7 @@ typedef $$VisitasTableUpdateCompanionBuilder = VisitasCompanion Function({
   Value<String?> titulo,
   Value<String?> previsaoTurnoRealizada,
   Value<bool?> visitaAvulsa,
+  Value<int?> serverId,
   Value<String?> localizacaoAbertura,
   Value<String?> localizacaoEncerramento,
   Value<String?> diaHoraFotosAntes,
@@ -5354,6 +5396,9 @@ class $$VisitasTableFilterComposer
 
   ColumnFilters<bool> get visitaAvulsa => $composableBuilder(
       column: $table.visitaAvulsa, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get serverId => $composableBuilder(
+      column: $table.serverId, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get localizacaoAbertura => $composableBuilder(
       column: $table.localizacaoAbertura,
@@ -5505,6 +5550,9 @@ class $$VisitasTableOrderingComposer
       column: $table.visitaAvulsa,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get serverId => $composableBuilder(
+      column: $table.serverId, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get localizacaoAbertura => $composableBuilder(
       column: $table.localizacaoAbertura,
       builder: (column) => ColumnOrderings(column));
@@ -5652,6 +5700,9 @@ class $$VisitasTableAnnotationComposer
   GeneratedColumn<bool> get visitaAvulsa => $composableBuilder(
       column: $table.visitaAvulsa, builder: (column) => column);
 
+  GeneratedColumn<int> get serverId =>
+      $composableBuilder(column: $table.serverId, builder: (column) => column);
+
   GeneratedColumn<String> get localizacaoAbertura => $composableBuilder(
       column: $table.localizacaoAbertura, builder: (column) => column);
 
@@ -5766,6 +5817,7 @@ class $$VisitasTableTableManager extends RootTableManager<
             Value<String?> titulo = const Value.absent(),
             Value<String?> previsaoTurnoRealizada = const Value.absent(),
             Value<bool?> visitaAvulsa = const Value.absent(),
+            Value<int?> serverId = const Value.absent(),
             Value<String?> localizacaoAbertura = const Value.absent(),
             Value<String?> localizacaoEncerramento = const Value.absent(),
             Value<String?> diaHoraFotosAntes = const Value.absent(),
@@ -5806,6 +5858,7 @@ class $$VisitasTableTableManager extends RootTableManager<
             titulo: titulo,
             previsaoTurnoRealizada: previsaoTurnoRealizada,
             visitaAvulsa: visitaAvulsa,
+            serverId: serverId,
             localizacaoAbertura: localizacaoAbertura,
             localizacaoEncerramento: localizacaoEncerramento,
             diaHoraFotosAntes: diaHoraFotosAntes,
@@ -5846,6 +5899,7 @@ class $$VisitasTableTableManager extends RootTableManager<
             Value<String?> titulo = const Value.absent(),
             Value<String?> previsaoTurnoRealizada = const Value.absent(),
             Value<bool?> visitaAvulsa = const Value.absent(),
+            Value<int?> serverId = const Value.absent(),
             Value<String?> localizacaoAbertura = const Value.absent(),
             Value<String?> localizacaoEncerramento = const Value.absent(),
             Value<String?> diaHoraFotosAntes = const Value.absent(),
@@ -5886,6 +5940,7 @@ class $$VisitasTableTableManager extends RootTableManager<
             titulo: titulo,
             previsaoTurnoRealizada: previsaoTurnoRealizada,
             visitaAvulsa: visitaAvulsa,
+            serverId: serverId,
             localizacaoAbertura: localizacaoAbertura,
             localizacaoEncerramento: localizacaoEncerramento,
             diaHoraFotosAntes: diaHoraFotosAntes,

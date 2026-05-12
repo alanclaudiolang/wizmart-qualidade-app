@@ -170,6 +170,7 @@ class SyncEngine {
         if (idVisita != null) {
           await _db.upsertVisita(VisitasCompanion(
             id: Value(idVisita),
+            serverId: Value(idVisita),
             idPdvAssociado: Value(pdvId),
             idPromotorAssociado: Value(promotorId),
             rotaAssociada: Value(item['rota_associada'] as int? ?? rotaId),
@@ -188,6 +189,7 @@ class SyncEngine {
           final idTemp = -(gabaritoId * 10000 + pdvId + turno.hashCode.abs() % 1000);
           await _db.upsertVisita(VisitasCompanion(
             id: Value(idTemp),
+            // serverId fica null — sync_engine vai criar no servidor depois
             idPdvAssociado: Value(pdvId),
             idPromotorAssociado: Value(promotorId),
             rotaAssociada: Value(item['rota_associada'] as int? ?? rotaId),
@@ -215,6 +217,7 @@ class SyncEngine {
 
         await _db.upsertVisita(VisitasCompanion(
           id: Value(id),
+          serverId: Value(id),
           idPdvAssociado: Value(row['id_pdv_associado'] as int?),
           idPromotorAssociado: Value(row['id_promotor_associado'] as int?),
           diaHoraAgendado: Value(row['dia_hora_agendado'] as String?),
@@ -414,28 +417,42 @@ class SyncEngine {
           'fotos_antes=${fotosAntesNoPayload is List ? fotosAntesNoPayload.length : 0}urls '
           'fotos_depois=${fotosDepoisNoPayload is List ? fotosDepoisNoPayload.length : 0}urls');
 
-      if (item.entityId < 0) {
-        _logger.log('outbox', 'INSERT visita local id=${item.entityId}');
+      // Decide INSERT vs UPDATE pelo serverId, não pelo id local.
+      // - serverId == null: visita ainda não existe no servidor → INSERT
+      // - serverId != null: já existe → UPDATE eq('id', serverId)
+      // O id local NUNCA muda — PendingPhotos/OutboxItems sempre referenciam
+      // o mesmo id estável.
+      if (visita.serverId == null) {
+        _logger.log('outbox',
+            'INSERT visita local id=${item.entityId} (sem serverId)');
         final res = await _supabase
             .from('visitas')
             .insert(payload)
             .select()
             .single();
-        final novoId = res['id'] as int;
+        final novoServerId = res['id'] as int;
         _logger.log('outbox',
-            'INSERT OK: novo id=$novoId (era ${item.entityId})');
-        await _db.migrateVisitaId(item.entityId, novoId);
+            'INSERT OK: serverId=$novoServerId pra local id=${item.entityId}');
+        await _db.updateVisita(VisitasCompanion(
+          id: Value(item.entityId),
+          serverId: Value(novoServerId),
+          syncStatus: const Value('synced'),
+          syncedAt: Value(DateTime.now().toIso8601String()),
+        ));
       } else {
         final res = await _supabase
             .from('visitas')
             .update(payload)
-            .eq('id', item.entityId)
+            .eq('id', visita.serverId!)
             .select();
-        _logger.log('outbox',
-            'UPDATE OK id=${item.entityId} op=${item.operation} rowsAfetadas=${res.length}');
+        _logger.log(
+            'outbox',
+            'UPDATE OK localId=${item.entityId} serverId=${visita.serverId} '
+            'op=${item.operation} rowsAfetadas=${res.length}');
         if (res.isEmpty) {
-          _logger.log('outbox',
-              'AVISO: UPDATE não afetou nenhuma linha. ID ${item.entityId} pode não existir no servidor.',
+          _logger.log(
+              'outbox',
+              'AVISO: UPDATE 0 rows. serverId=${visita.serverId} pode não existir no servidor.',
               erro: true);
         }
         await _db.updateVisita(VisitasCompanion(
