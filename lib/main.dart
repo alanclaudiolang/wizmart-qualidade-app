@@ -38,9 +38,14 @@ Future<void> scheduleOneOffSync() async {
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     if (task == _bgSyncTask) {
-      // Pausado enquanto o usuário está dentro da tela da visita (captura
-      // de fotos ou checklist) para não consumir CPU/memória do device.
+      // Pausado durante captura — independe de rede.
       if (await SyncPause.isPaused()) {
+        return Future.value(true);
+      }
+      // Ping real no Supabase: "ter rede" no Android não significa que o
+      // servidor responde (captive portal, DNS quebrado, etc). Se o ping
+      // falha, não inicializa nada — fica leve.
+      if (!await pingSupabase()) {
         return Future.value(true);
       }
       try {

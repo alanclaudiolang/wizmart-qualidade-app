@@ -54,3 +54,26 @@ class ConnectivityService extends Notifier<bool> {
 
 final connectivityProvider =
     NotifierProvider<ConnectivityService, bool>(ConnectivityService.new);
+
+/// Ping standalone — útil no isolate do WorkManager onde não há providers
+/// Riverpod ativos. Retorna `true` SOMENTE se o servidor Supabase respondeu
+/// dentro do timeout. "Tem rede no Android" não basta: hotéis, redes
+/// corporativas e DNS quebrado dizem "conectado" sem alcançar o servidor.
+Future<bool> pingSupabase() async {
+  try {
+    final dio = Dio(BaseOptions(
+      connectTimeout: Duration(seconds: AppConstants.pingTimeoutSeconds),
+      receiveTimeout: Duration(seconds: AppConstants.pingTimeoutSeconds),
+    ));
+    await dio.head(
+      '${AppConstants.supabaseUrl}/rest/v1/',
+      options: Options(
+        headers: {'apikey': AppConstants.supabaseAnonKey},
+        validateStatus: (_) => true,
+      ),
+    );
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
