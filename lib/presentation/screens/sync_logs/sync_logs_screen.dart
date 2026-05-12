@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/utils/app_colors.dart';
 import '../../../core/utils/sync_logger.dart';
 
 class SyncLogsScreen extends ConsumerWidget {
@@ -13,21 +14,21 @@ class SyncLogsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final logs = ref.watch(syncLoggerProvider);
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F23),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF16213E),
+        backgroundColor: AppColors.card,
         title: Text(
           'Logs do Sync (${logs.length})',
-          style: const TextStyle(color: Colors.white, fontSize: 16),
+          style: const TextStyle(color: AppColors.textPrimary, fontSize: 16),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
+          icon: const Icon(Icons.close, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         actions: [
           IconButton(
             tooltip: 'Copiar tudo',
-            icon: const Icon(Icons.copy, color: Colors.white),
+            icon: const Icon(Icons.copy, color: AppColors.textPrimary),
             onPressed: () async {
               final texto = logs
                   .map((l) =>
@@ -45,7 +46,7 @@ class SyncLogsScreen extends ConsumerWidget {
           ),
           IconButton(
             tooltip: 'Limpar logs',
-            icon: const Icon(Icons.delete_sweep, color: Colors.white),
+            icon: const Icon(Icons.delete_sweep, color: AppColors.textPrimary),
             onPressed: () => ref.read(syncLoggerProvider.notifier).clear(),
           ),
         ],
@@ -58,7 +59,8 @@ class SyncLogsScreen extends ConsumerWidget {
                   'Sem logs ainda.\n\nFaça uma ação no app (iniciar visita, '
                   'tirar foto, concluir) e os logs aparecem aqui em tempo real.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Color(0xFF8892B0), fontSize: 13),
+                  style:
+                      TextStyle(color: AppColors.textSecondary, fontSize: 13),
                 ),
               ),
             )
@@ -74,14 +76,14 @@ class SyncLogsScreen extends ConsumerWidget {
                       horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: l.erro
-                        ? const Color(0xFFE53E3E).withValues(alpha: 0.15)
-                        : const Color(0xFF16213E),
+                        ? AppColors.dangerBg
+                        : AppColors.card,
                     borderRadius: BorderRadius.circular(6),
-                    border: l.erro
-                        ? Border.all(
-                            color: const Color(0xFFE53E3E)
-                                .withValues(alpha: 0.4))
-                        : null,
+                    border: Border.all(
+                      color: l.erro
+                          ? AppColors.danger.withValues(alpha: 0.4)
+                          : AppColors.border,
+                    ),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -89,7 +91,7 @@ class SyncLogsScreen extends ConsumerWidget {
                       Text(
                         l.hora,
                         style: const TextStyle(
-                          color: Color(0xFF4A5568),
+                          color: AppColors.textMuted,
                           fontSize: 11,
                           fontFamily: 'monospace',
                         ),
@@ -99,7 +101,7 @@ class SyncLogsScreen extends ConsumerWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 1),
                         decoration: BoxDecoration(
-                          color: _corEtapa(l.etapa).withValues(alpha: 0.25),
+                          color: _corEtapa(l.etapa).withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
@@ -117,8 +119,8 @@ class SyncLogsScreen extends ConsumerWidget {
                           l.mensagem,
                           style: TextStyle(
                             color: l.erro
-                                ? const Color(0xFFFFB4B4)
-                                : Colors.white,
+                                ? AppColors.dangerText
+                                : AppColors.textPrimary,
                             fontSize: 12,
                             fontFamily: 'monospace',
                           ),
@@ -135,9 +137,9 @@ class SyncLogsScreen extends ConsumerWidget {
   Color _corEtapa(String etapa) {
     switch (etapa) {
       case 'photo':
-        return const Color(0xFF38A169);
+        return AppColors.primary;
       case 'outbox':
-        return const Color(0xFF4299E1);
+        return AppColors.statusAgendada;
       case 'pdvs':
       case 'gabaritos':
       case 'rota':
@@ -146,11 +148,11 @@ class SyncLogsScreen extends ConsumerWidget {
       case 'reconcilia':
       case 'limpeza':
       case 'salvar':
-        return const Color(0xFFFFB74D);
+        return AppColors.warning;
       case 'erro':
-        return const Color(0xFFE53E3E);
+        return AppColors.danger;
       default:
-        return const Color(0xFF8892B0);
+        return AppColors.textSecondary;
     }
   }
 }

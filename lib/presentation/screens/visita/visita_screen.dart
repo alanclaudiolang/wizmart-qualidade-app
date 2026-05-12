@@ -20,6 +20,7 @@ import '../../../main.dart' show scheduleOneOffSync;
 import '../../../core/utils/watermark_util.dart';
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/last_visita_service.dart';
+import '../../../core/utils/app_colors.dart';
 import '../../widgets/bug_report_button.dart';
 
 const _uuid = Uuid();
@@ -385,23 +386,23 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     final confirma = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF16213E),
+        backgroundColor: AppColors.card,
         title: const Text('Remover foto?',
-            style: TextStyle(color: Colors.white)),
+            style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
           'A foto será apagada deste celular e do envio para o servidor.',
-          style: TextStyle(color: Color(0xFF8892B0)),
+          style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Cancelar',
-                style: TextStyle(color: Color(0xFF8892B0))),
+                style: TextStyle(color: AppColors.textSecondary)),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Remover',
-                style: TextStyle(color: Color(0xFFFF5252))),
+                style: TextStyle(color: AppColors.danger)),
           ),
         ],
       ),
@@ -657,14 +658,14 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg),
-      backgroundColor: const Color(0xFFFF5252),
+      backgroundColor: AppColors.danger,
     ));
   }
 
   void _showSuccess(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg),
-      backgroundColor: const Color(0xFF4CAF50),
+      backgroundColor: AppColors.primary,
     ));
   }
 
@@ -674,18 +675,18 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(
-        backgroundColor: Color(0xFF1A1A2E),
+        backgroundColor: AppColors.background,
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_error != null) {
       return Scaffold(
-        backgroundColor: const Color(0xFF1A1A2E),
-        appBar: AppBar(backgroundColor: const Color(0xFF16213E)),
+        backgroundColor: AppColors.background,
+        appBar: AppBar(backgroundColor: AppColors.card),
         body: Center(
             child: Text(_error!,
-                style: const TextStyle(color: Colors.white))),
+                style: const TextStyle(color: AppColors.textPrimary))),
       );
     }
 
@@ -704,12 +705,13 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         await _sairParaHome();
       },
       child: Scaffold(
-      backgroundColor: const Color(0xFF1A1A2E),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF16213E),
+        backgroundColor: AppColors.card,
         elevation: 0,
+        iconTheme: const IconThemeData(color: AppColors.textPrimary),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: _sairParaHome,
         ),
         title: Column(
@@ -718,7 +720,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
             Text(
               pdvNome,
               style: const TextStyle(
-                  color: Colors.white,
+                  color: AppColors.textPrimary,
                   fontSize: 15,
                   fontWeight: FontWeight.bold),
               overflow: TextOverflow.ellipsis,
@@ -727,7 +729,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
               Text(
                 _pdv!.endereco!,
                 style: const TextStyle(
-                    color: Color(0xFF8892B0), fontSize: 12),
+                    color: AppColors.textSecondary, fontSize: 12),
                 overflow: TextOverflow.ellipsis,
               ),
           ],
@@ -759,7 +761,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const CircularProgressIndicator(
-                          color: Color(0xFF4CAF50),
+                          color: AppColors.primary,
                           strokeWidth: 3,
                         ),
                         const SizedBox(height: 16),
@@ -787,7 +789,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         CircularProgressIndicator(
-                          color: Color(0xFF4CAF50),
+                          color: AppColors.primary,
                           strokeWidth: 3,
                         ),
                         SizedBox(height: 20),
@@ -803,7 +805,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                         Text(
                           'Aguarde, não toque na tela.',
                           style: TextStyle(
-                            color: Color(0xFF8892B0),
+                            color: Colors.white70,
                             fontSize: 13,
                           ),
                         ),
@@ -849,13 +851,13 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Icon(Icons.store, size: 64, color: Color(0xFF4CAF50)),
+          const Icon(Icons.store, size: 64, color: AppColors.primary),
           const SizedBox(height: 24),
           const Text(
             'Iniciar visita',
             textAlign: TextAlign.center,
             style: TextStyle(
-                color: Colors.white,
+                color: AppColors.textPrimary,
                 fontSize: 24,
                 fontWeight: FontWeight.bold),
           ),
@@ -864,7 +866,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
             '📍 GPS será capturado ao iniciar',
             textAlign: TextAlign.center,
             style: TextStyle(
-                color: Color(0xFF8892B0), fontSize: 14),
+                color: AppColors.textSecondary, fontSize: 14),
           ),
           const SizedBox(height: 32),
           ElevatedButton.icon(
@@ -876,7 +878,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                     fontSize: 18,
                     fontWeight: FontWeight.bold)),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4CAF50),
+              backgroundColor: AppColors.primary,
               padding: const EdgeInsets.symmetric(vertical: 18),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14)),
@@ -895,8 +897,8 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         ? AppConstants.maxFotosAntes
         : AppConstants.maxFotosDepois;
     final cor = slot == 'antes'
-        ? const Color(0xFF64B5F6)
-        : const Color(0xFF4CAF50);
+        ? AppColors.statusAgendada
+        : AppColors.primary;
 
     final tituloLabel = slot == 'antes' ? 'Foto Antes' : 'Foto Depois';
 
@@ -905,7 +907,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         // Header com título centralizado + destacado e contador no canto
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          color: const Color(0xFF16213E),
+          color: AppColors.card,
           child: Stack(
             alignment: Alignment.center,
             children: [
@@ -925,7 +927,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                 child: Text(
                   '${fotos.length}/$limite',
                   style: const TextStyle(
-                      color: Color(0xFF8892B0), fontSize: 14),
+                      color: AppColors.textSecondary, fontSize: 14),
                 ),
               ),
             ],
@@ -948,7 +950,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                             : 'Tire a(s) foto(s) depois da reposição',
                         textAlign: TextAlign.center,
                         style: const TextStyle(
-                            color: Color(0xFF4A5568), fontSize: 16),
+                            color: AppColors.textMuted, fontSize: 16),
                       ),
                     ],
                   ),
@@ -1015,7 +1017,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                           color: Colors.white, fontSize: 16),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4CAF50),
+                      backgroundColor: AppColors.primary,
                       padding:
                           const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
@@ -1059,15 +1061,15 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       children: [
         Container(
           padding: const EdgeInsets.all(16),
-          color: const Color(0xFF16213E),
+          color: AppColors.card,
           child: const Row(
             children: [
-              Icon(Icons.checklist, color: Color(0xFF4CAF50)),
+              Icon(Icons.checklist, color: AppColors.primary),
               SizedBox(width: 12),
               Text(
                 'Checklist de encerramento',
                 style: TextStyle(
-                    color: Colors.white,
+                    color: AppColors.textPrimary,
                     fontSize: 16,
                     fontWeight: FontWeight.bold),
               ),
@@ -1084,8 +1086,9 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF16213E),
+                  color: AppColors.card,
                   borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.border),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1093,7 +1096,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                     const Text(
                       'Comentário geral sobre a visita',
                       style: TextStyle(
-                          color: Colors.white,
+                          color: AppColors.textPrimary,
                           fontSize: 14,
                           fontWeight: FontWeight.w600),
                     ),
@@ -1101,14 +1104,14 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                     TextField(
                       controller: _comentarioGeralCtrl,
                       style: const TextStyle(
-                          color: Colors.white, fontSize: 13),
+                          color: AppColors.textPrimary, fontSize: 13),
                       maxLines: 3,
                       decoration: const InputDecoration(
                         hintText: 'Opcional',
                         hintStyle: TextStyle(
-                            color: Color(0xFF4A5568), fontSize: 13),
+                            color: AppColors.textMuted, fontSize: 13),
                         filled: true,
-                        fillColor: Color(0xFF0F0F23),
+                        fillColor: AppColors.inputBg,
                         border: OutlineInputBorder(
                             borderSide: BorderSide.none,
                             borderRadius:
@@ -1137,7 +1140,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                       fontSize: 18,
                       fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4CAF50),
+                backgroundColor: AppColors.primary,
                 padding: const EdgeInsets.symmetric(vertical: 18),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14)),
@@ -1158,14 +1161,14 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF16213E),
+        color: AppColors.card,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: resposta == null
-              ? Colors.transparent
+              ? AppColors.border
               : resposta
-                  ? const Color(0xFF4CAF50).withOpacity(0.4)
-                  : const Color(0xFFFF5252).withOpacity(0.4),
+                  ? AppColors.primary.withOpacity(0.4)
+                  : AppColors.danger.withOpacity(0.4),
           width: 1.5,
         ),
       ),
@@ -1174,7 +1177,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         children: [
           Text(
             '${index + 1}. $pergunta',
-            style: const TextStyle(color: Colors.white, fontSize: 15),
+            style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
           ),
           const SizedBox(height: 12),
           Row(
@@ -1187,18 +1190,29 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
                       color: resposta == true
-                          ? const Color(0xFF4CAF50)
-                          : const Color(0xFF2D3748),
+                          ? AppColors.primary
+                          : AppColors.inputBg,
                       borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: resposta == true
+                            ? AppColors.primary
+                            : AppColors.border,
+                      ),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.check, size: 18, color: Colors.white),
-                        SizedBox(width: 6),
+                        Icon(Icons.check,
+                            size: 18,
+                            color: resposta == true
+                                ? Colors.white
+                                : AppColors.textMuted),
+                        const SizedBox(width: 6),
                         Text('SIM',
                             style: TextStyle(
-                                color: Colors.white,
+                                color: resposta == true
+                                    ? Colors.white
+                                    : AppColors.textPrimary,
                                 fontWeight: FontWeight.bold)),
                       ],
                     ),
@@ -1214,18 +1228,29 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
                       color: resposta == false
-                          ? const Color(0xFFFF5252)
-                          : const Color(0xFF2D3748),
+                          ? AppColors.danger
+                          : AppColors.inputBg,
                       borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: resposta == false
+                            ? AppColors.danger
+                            : AppColors.border,
+                      ),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.close, size: 18, color: Colors.white),
-                        SizedBox(width: 6),
+                        Icon(Icons.close,
+                            size: 18,
+                            color: resposta == false
+                                ? Colors.white
+                                : AppColors.textMuted),
+                        const SizedBox(width: 6),
                         Text('NÃO',
                             style: TextStyle(
-                                color: Colors.white,
+                                color: resposta == false
+                                    ? Colors.white
+                                    : AppColors.textPrimary,
                                 fontWeight: FontWeight.bold)),
                       ],
                     ),
@@ -1238,19 +1263,19 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
           const SizedBox(height: 8),
           TextField(
             controller: _obsControllers[index],
-            style: const TextStyle(color: Colors.white, fontSize: 13),
+            style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
             decoration: InputDecoration(
               hintText: obsObrigatoria
                   ? 'Justificativa obrigatória'
                   : 'Observação (opcional)',
               hintStyle: TextStyle(
                 color: obsObrigatoria
-                    ? const Color(0xFFFFB4B4)
-                    : const Color(0xFF4A5568),
+                    ? AppColors.dangerLight
+                    : AppColors.textMuted,
                 fontSize: 13,
               ),
               filled: true,
-              fillColor: const Color(0xFF0F0F23),
+              fillColor: AppColors.inputBg,
               border: const OutlineInputBorder(
                 borderSide: BorderSide.none,
                 borderRadius: BorderRadius.all(Radius.circular(8)),
@@ -1258,7 +1283,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
               enabledBorder: OutlineInputBorder(
                 borderSide: obsObrigatoria &&
                         _obsControllers[index].text.trim().isEmpty
-                    ? const BorderSide(color: Color(0xFFFF5252), width: 1)
+                    ? const BorderSide(color: AppColors.danger, width: 1)
                     : BorderSide.none,
                 borderRadius: const BorderRadius.all(Radius.circular(8)),
               ),
@@ -1283,12 +1308,12 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(Icons.check_circle,
-                size: 80, color: Color(0xFF4CAF50)),
+                size: 80, color: AppColors.primary),
             const SizedBox(height: 24),
             const Text(
               'Visita finalizada!',
               style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.textPrimary,
                   fontSize: 24,
                   fontWeight: FontWeight.bold),
             ),
@@ -1296,7 +1321,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
             ElevatedButton(
               onPressed: () => context.go('/home'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4CAF50),
+                backgroundColor: AppColors.primary,
                 padding: const EdgeInsets.symmetric(
                     horizontal: 40, vertical: 16),
                 shape: RoundedRectangleBorder(
@@ -1351,7 +1376,7 @@ class _PhotoTile extends StatelessWidget {
           child: _CircleButton(
             icon: Icons.close,
             onTap: onRemove,
-            background: const Color(0xFFE53E3E),
+            background: AppColors.danger,
           ),
         ),
 

@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_recorder/screen_recorder.dart';
+import '../../core/utils/app_colors.dart';
 import '../../core/utils/bug_report_controller.dart';
 
 /// Envolve o app inteiro com:
@@ -83,7 +84,7 @@ class _RecordingBadgeState extends State<_RecordingBadge>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFFE53E3E).withOpacity(0.92),
+        color: AppColors.danger.withOpacity(0.92),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -92,13 +93,13 @@ class _RecordingBadgeState extends State<_RecordingBadge>
           FadeTransition(
             opacity: _ctrl,
             child: const Icon(Icons.fiber_manual_record,
-                color: Colors.white, size: 12),
+                color: AppColors.onDanger, size: 12),
           ),
           const SizedBox(width: 6),
           const Text(
             'GRAVANDO',
             style: TextStyle(
-              color: Colors.white,
+              color: AppColors.onDanger,
               fontSize: 11,
               fontWeight: FontWeight.bold,
               letterSpacing: 1,
@@ -121,7 +122,7 @@ class _ExportingOverlay extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(color: Color(0xFF38A169)),
+            CircularProgressIndicator(color: AppColors.primary),
             SizedBox(height: 16),
             Text(
               'Gerando GIF...',

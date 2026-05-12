@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/utils/app_colors.dart';
 import '../../core/utils/app_router.dart';
 import '../../core/utils/bug_report_controller.dart';
 
@@ -23,7 +24,7 @@ class BugReportButton extends ConsumerWidget {
           padding: EdgeInsets.all(8),
           child: CircularProgressIndicator(
             strokeWidth: 2,
-            color: Color(0xFF38A169),
+            color: AppColors.primary,
           ),
         ),
       );
@@ -39,9 +40,7 @@ class BugReportButton extends ConsumerWidget {
         iconSize: 20,
         icon: Icon(
           isRecording ? Icons.stop_circle : Icons.bug_report_outlined,
-          color: isRecording
-              ? const Color(0xFFE53E3E)
-              : const Color(0xFF38A169),
+          color: isRecording ? AppColors.danger : AppColors.primary,
         ),
         onPressed: () async {
           final messenger = ScaffoldMessenger.maybeOf(context);
@@ -52,7 +51,7 @@ class BugReportButton extends ConsumerWidget {
             } else {
               messenger?.showSnackBar(const SnackBar(
                 content: Text('Não foi possível gerar o GIF.'),
-                backgroundColor: Color(0xFFFF5252),
+                backgroundColor: AppColors.danger,
               ));
             }
           } else {
@@ -61,7 +60,7 @@ class BugReportButton extends ConsumerWidget {
               content: Text(
                   'Gravando... reproduza o bug e toque no ícone vermelho para parar.'),
               duration: Duration(seconds: 3),
-              backgroundColor: Color(0xFF38A169),
+              backgroundColor: AppColors.primary,
             ));
           }
         },

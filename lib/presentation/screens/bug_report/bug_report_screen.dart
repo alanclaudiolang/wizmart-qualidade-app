@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/network/github_bug_reporter.dart';
+import '../../../core/utils/app_colors.dart';
 import '../../../core/utils/session_service.dart';
 
 /// Tela de revisão e envio do bug report.
@@ -37,7 +38,7 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
     if (_descCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Descreva brevemente o que aconteceu.'),
-        backgroundColor: Color(0xFFFF5252),
+        backgroundColor: AppColors.danger,
       ));
       return;
     }
@@ -85,7 +86,7 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Erro ao salvar: $e'),
-          backgroundColor: const Color(0xFFFF5252),
+          backgroundColor: AppColors.danger,
         ));
         setState(() => _saving = false);
       }
@@ -100,19 +101,17 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF16213E),
+        backgroundColor: AppColors.card,
         icon: Icon(
           uploaded ? Icons.cloud_done : Icons.cloud_off,
-          color: uploaded
-              ? const Color(0xFF4CAF50)
-              : const Color(0xFFFFB74D),
+          color: uploaded ? AppColors.primary : AppColors.warning,
           size: 56,
         ),
         title: Text(
           uploaded
               ? 'Issue #${result.issueNumber} criada!'
               : 'Salvo localmente',
-          style: const TextStyle(color: Colors.white),
+          style: const TextStyle(color: AppColors.textPrimary),
           textAlign: TextAlign.center,
         ),
         content: Column(
@@ -126,7 +125,7 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
                       'ficou salvo neste aparelho. '
                       '${result.error != null ? "\n\nDetalhe: ${result.error}" : ""}',
               style: const TextStyle(
-                  color: Color(0xFF8892B0), fontSize: 13),
+                  color: AppColors.textSecondary, fontSize: 13),
               textAlign: TextAlign.center,
             ),
             if (uploaded && url != null) ...[
@@ -134,7 +133,7 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
               SelectableText(
                 url,
                 style: const TextStyle(
-                  color: Color(0xFF4CAF50),
+                  color: AppColors.primary,
                   fontSize: 11,
                   fontFamily: 'monospace',
                 ),
@@ -143,9 +142,9 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
               const SizedBox(height: 8),
               TextButton.icon(
                 icon: const Icon(Icons.copy,
-                    size: 16, color: Color(0xFF4CAF50)),
+                    size: 16, color: AppColors.primary),
                 label: const Text('Copiar link',
-                    style: TextStyle(color: Color(0xFF4CAF50))),
+                    style: TextStyle(color: AppColors.primary)),
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: url));
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -163,7 +162,7 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
               context.go('/home');
             },
             child: const Text('Voltar',
-                style: TextStyle(color: Color(0xFF4CAF50))),
+                style: TextStyle(color: AppColors.primary)),
           ),
         ],
       ),
@@ -174,23 +173,23 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF16213E),
+        backgroundColor: AppColors.card,
         title: const Text('Descartar report?',
-            style: TextStyle(color: Colors.white)),
+            style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
           'O GIF gravado será apagado.',
-          style: TextStyle(color: Color(0xFF8892B0)),
+          style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Cancelar',
-                style: TextStyle(color: Color(0xFF8892B0))),
+                style: TextStyle(color: AppColors.textSecondary)),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Descartar',
-                style: TextStyle(color: Color(0xFFFF5252))),
+                style: TextStyle(color: AppColors.danger)),
           ),
         ],
       ),
@@ -212,14 +211,14 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
     final exists = gifFile.existsSync();
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A2E),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF16213E),
+        backgroundColor: AppColors.card,
         elevation: 0,
         title: const Text('Reportar problema',
-            style: TextStyle(color: Colors.white, fontSize: 16)),
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
         leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
+          icon: const Icon(Icons.close, color: AppColors.textPrimary),
           onPressed: _saving ? null : _descartar,
         ),
       ),
@@ -244,7 +243,7 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
                           padding: EdgeInsets.all(24),
                           child: Text(
                             'Não foi possível carregar o GIF.',
-                            style: TextStyle(color: Color(0xFF8892B0)),
+                            style: TextStyle(color: AppColors.textSecondary),
                           ),
                         ),
                       ),
@@ -256,7 +255,7 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
             const Text(
               'O que aconteceu?',
               style: TextStyle(
-                color: Colors.white,
+                color: AppColors.textPrimary,
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
               ),
@@ -264,20 +263,20 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
             const SizedBox(height: 6),
             const Text(
               'Conte com suas palavras. Pode ser bem curto.',
-              style: TextStyle(color: Color(0xFF8892B0), fontSize: 12),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: _descCtrl,
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: AppColors.textPrimary),
               maxLines: 4,
               minLines: 3,
               enabled: !_saving,
               decoration: InputDecoration(
                 hintText: 'Ex.- "Tirei a foto e ela sumiu da tela."',
-                hintStyle: const TextStyle(color: Color(0xFF4A5568)),
+                hintStyle: const TextStyle(color: AppColors.textMuted),
                 filled: true,
-                fillColor: const Color(0xFF0F0F23),
+                fillColor: AppColors.inputBg,
                 border: OutlineInputBorder(
                   borderSide: BorderSide.none,
                   borderRadius: BorderRadius.circular(10),
@@ -296,16 +295,17 @@ class _BugReportScreenState extends ConsumerState<BugReportScreen> {
                       height: 16,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Colors.white,
+                        color: AppColors.onPrimary,
                       ),
                     )
-                  : const Icon(Icons.send, color: Colors.white),
+                  : const Icon(Icons.send, color: AppColors.onPrimary),
               label: Text(
                 _saving ? 'Salvando...' : 'Enviar report',
-                style: const TextStyle(color: Colors.white, fontSize: 16),
+                style: const TextStyle(
+                    color: AppColors.onPrimary, fontSize: 16),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4CAF50),
+                backgroundColor: AppColors.primary,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),

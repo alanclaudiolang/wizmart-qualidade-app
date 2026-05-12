@@ -8,6 +8,7 @@ import '../../../core/network/connectivity_service.dart';
 import '../../../core/network/sync_engine.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/session_service.dart';
+import '../../../core/utils/app_colors.dart';
 import '../../widgets/bug_report_button.dart';
 
 final sessionProvider = FutureProvider<SessionData?>((ref) async => SessionService.getSession());
@@ -66,12 +67,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final sessionAsync = ref.watch(sessionProvider);
     return sessionAsync.when(
-      loading: () => const Scaffold(backgroundColor: Color(0xFF1A1A2E), body: Center(child: CircularProgressIndicator())),
+      loading: () => Scaffold(backgroundColor: AppColors.background, body: const Center(child: CircularProgressIndicator())),
       error: (_, __) => const Scaffold(body: Center(child: Text('Erro ao carregar sessão'))),
       data: (session) {
         if (session == null) {
           WidgetsBinding.instance.addPostFrameCallback((_) => context.go('/auth'));
-          return const Scaffold(backgroundColor: Color(0xFF1A1A2E), body: SizedBox());
+          return Scaffold(backgroundColor: AppColors.background, body: const SizedBox());
         }
         return _HomeContent(session: session);
       },
@@ -90,15 +91,15 @@ class _HomeContent extends ConsumerWidget {
     final pdvsAsync = ref.watch(pdvsProvider);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A2E),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF16213E),
+        backgroundColor: AppColors.card,
         elevation: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('WizMart', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-            Text('Olá, ${session.nome.split(' ').first}', style: const TextStyle(color: Color(0xFF8892B0), fontSize: 13)),
+            Text('WizMart', style: TextStyle(color: AppColors.primary, fontSize: 18, fontWeight: FontWeight.bold)),
+            Text('Olá, ${session.nome.split(' ').first}', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
           ],
         ),
         actions: [
@@ -121,8 +122,8 @@ class _HomeContent extends ConsumerWidget {
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: isOnline
-                                ? const Color(0xFF4CAF50)
-                                : const Color(0xFFFF5252),
+                                ? AppColors.primary
+                                : AppColors.danger,
                           ),
                         ),
                         const SizedBox(width: 5),
@@ -130,8 +131,8 @@ class _HomeContent extends ConsumerWidget {
                           isOnline ? 'Online' : 'Offline',
                           style: TextStyle(
                             color: isOnline
-                                ? const Color(0xFF4CAF50)
-                                : const Color(0xFFFF5252),
+                                ? AppColors.primary
+                                : AppColors.danger,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
@@ -143,8 +144,8 @@ class _HomeContent extends ConsumerWidget {
                       onTap: () => context.push('/sync-logs'),
                       child: Text(
                         'v${AppConstants.appVersion}.${AppConstants.buildNumber}',
-                        style: const TextStyle(
-                          color: Color(0xFF8892B0),
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
                           fontSize: 9,
                         ),
                       ),
@@ -157,8 +158,8 @@ class _HomeContent extends ConsumerWidget {
         ],
       ),
       body: RefreshIndicator(
-        color: const Color(0xFF4CAF50),
-        backgroundColor: const Color(0xFF16213E),
+        color: AppColors.primary,
+        backgroundColor: AppColors.card,
         onRefresh: () async {
           if (isOnline) {
             final syncEngine = ref.read(syncEngineProvider);
@@ -208,16 +209,16 @@ class _HomeContent extends ConsumerWidget {
                 padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
                 child: Text(
                   'Visitas de hoje — ${DateFormat('dd/MM/yyyy').format(DateTime.now())}',
-                  style: const TextStyle(color: Color(0xFF8892B0), fontSize: 14, fontWeight: FontWeight.w600),
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w600),
                 ),
               ),
             ),
             visitasAsync.when(
               loading: () => const SliverToBoxAdapter(
-                child: Center(child: Padding(padding: EdgeInsets.only(top: 40), child: CircularProgressIndicator(color: Color(0xFF4CAF50)))),
+                child: Center(child: Padding(padding: EdgeInsets.only(top: 40), child: CircularProgressIndicator(color: AppColors.primary))),
               ),
               error: (e, _) => SliverToBoxAdapter(
-                child: Center(child: Padding(padding: const EdgeInsets.all(32), child: Text('Erro: $e', style: const TextStyle(color: Color(0xFFFF5252))))),
+                child: Center(child: Padding(padding: const EdgeInsets.all(32), child: Text('Erro: $e', style: TextStyle(color: AppColors.danger)))),
               ),
               data: (visitas) {
                 if (visitas.isEmpty) return const SliverToBoxAdapter(child: _EmptyState());
@@ -272,8 +273,8 @@ class _HomeContent extends ConsumerWidget {
                 child: Center(
                   child: Text(
                     'v${AppConstants.appVersion} (build ${AppConstants.buildNumber}) — ${AppConstants.buildTime}',
-                    style: const TextStyle(
-                      color: Color(0xFF4A5568),
+                    style: TextStyle(
+                      color: AppColors.textMuted,
                       fontSize: 10,
                     ),
                   ),
@@ -302,7 +303,7 @@ class _ContadoresCard extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       padding: const EdgeInsets.symmetric(vertical: 16),
       decoration: BoxDecoration(
-          color: const Color(0xFF16213E),
+          color: AppColors.card,
           borderRadius: BorderRadius.circular(16)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -310,17 +311,17 @@ class _ContadoresCard extends StatelessWidget {
           _CounterItem(
               label: 'Agendadas',
               value: '$agendadas',
-              color: const Color(0xFF64B5F6)),
-          Container(width: 1, height: 40, color: const Color(0xFF2D3748)),
+              color: AppColors.statusAgendada),
+          Container(width: 1, height: 40, color: AppColors.border),
           _CounterItem(
               label: 'Realizadas',
               value: '$realizadas',
-              color: const Color(0xFF4CAF50)),
-          Container(width: 1, height: 40, color: const Color(0xFF2D3748)),
+              color: AppColors.statusRealizada),
+          Container(width: 1, height: 40, color: AppColors.border),
           _CounterItem(
               label: '% Realizado',
               value: '$percentual%',
-              color: const Color(0xFFFFB74D)),
+              color: AppColors.statusEmAndamento),
         ],
       ),
     );
@@ -341,7 +342,7 @@ class _CounterItem extends StatelessWidget {
               color: color, fontSize: 26, fontWeight: FontWeight.bold)),
       const SizedBox(height: 4),
       Text(label,
-          style: const TextStyle(color: Color(0xFF8892B0), fontSize: 12)),
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
     ]);
   }
 }
@@ -353,7 +354,7 @@ class _ContadoresLoading extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       height: 80,
-      decoration: BoxDecoration(color: const Color(0xFF16213E), borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(16)),
     );
   }
 }
@@ -372,11 +373,11 @@ class _VisitaCard extends StatelessWidget {
 
   Color get _statusColor {
     switch (visita.statusVisita) {
-      case 1: return const Color(0xFF64B5F6);
-      case 2: return const Color(0xFFFFB74D);
-      case 3: return const Color(0xFF4CAF50);
-      case 5: return const Color(0xFFFF5252);
-      default: return const Color(0xFF8892B0);
+      case 1: return AppColors.statusAgendada;
+      case 2: return AppColors.statusEmAndamento;
+      case 3: return AppColors.statusRealizada;
+      case 5: return AppColors.statusFalta;
+      default: return AppColors.textSecondary;
     }
   }
 
@@ -449,13 +450,13 @@ class _VisitaCard extends StatelessWidget {
           margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           decoration: BoxDecoration(
             color: bloqueada
-                ? const Color(0xFF0F1626)
-                : const Color(0xFF16213E),
+                ? AppColors.inputBg
+                : AppColors.card,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: emAndamento
-                  ? const Color(0xFFFFB74D).withValues(alpha: 0.5)
-                  : Colors.transparent,
+                  ? AppColors.statusEmAndamento.withValues(alpha: 0.5)
+                  : AppColors.border,
               width: 1.5,
             ),
           ),
@@ -478,16 +479,16 @@ class _VisitaCard extends StatelessWidget {
                       Text(_nomePdv,
                           style: TextStyle(
                             color: finalizada
-                                ? const Color(0xFF4A5568)
-                                : Colors.white,
+                                ? AppColors.textMuted
+                                : AppColors.textPrimary,
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                           )),
                       if (pdv?.endereco != null) ...[
                         const SizedBox(height: 2),
                         Text(pdv!.endereco!,
-                            style: const TextStyle(
-                                color: Color(0xFF8892B0), fontSize: 12),
+                            style: TextStyle(
+                                color: AppColors.textSecondary, fontSize: 12),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis),
                       ],
@@ -502,24 +503,24 @@ class _VisitaCard extends StatelessWidget {
                                 fontWeight: FontWeight.w600)),
                         const SizedBox(width: 8),
                         if (visita.syncStatus == 'pending')
-                          const Icon(Icons.cloud_upload,
-                              size: 14, color: Color(0xFFFFB74D))
+                          Icon(Icons.cloud_upload,
+                              size: 14, color: AppColors.warning)
                         else if (visita.syncStatus == 'synced')
-                          const Icon(Icons.cloud_done,
-                              size: 14, color: Color(0xFF4CAF50)),
+                          Icon(Icons.cloud_done,
+                              size: 14, color: AppColors.success),
                       ]),
                       if (info != null) ...[
                         const SizedBox(height: 4),
                         Text(info,
-                            style: const TextStyle(
-                                color: Color(0xFF8892B0), fontSize: 12)),
+                            style: TextStyle(
+                                color: AppColors.textSecondary, fontSize: 12)),
                       ],
                       if (idReal != null) ...[
                         const SizedBox(height: 4),
                         Text(
                           '#$idReal',
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.25),
+                            color: AppColors.textMuted.withValues(alpha: 0.55),
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
                           ),
@@ -529,8 +530,8 @@ class _VisitaCard extends StatelessWidget {
                   ),
                 ),
                 if (bloqueada)
-                  const Icon(Icons.lock_outline,
-                      color: Color(0xFF4A5568), size: 20)
+                  Icon(Icons.lock_outline,
+                      color: AppColors.textMuted, size: 20)
                 else if (!finalizada)
                   Icon(
                       emAndamento
@@ -554,11 +555,11 @@ class _EmptyState extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 80),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.event_available, size: 64, color: const Color(0xFF2D3748)),
+        Icon(Icons.event_available, size: 64, color: AppColors.border),
         const SizedBox(height: 16),
-        const Text('Nenhuma visita agendada para hoje', style: TextStyle(color: Color(0xFF4A5568), fontSize: 16)),
+        Text('Nenhuma visita agendada para hoje', style: TextStyle(color: AppColors.textMuted, fontSize: 16)),
         const SizedBox(height: 8),
-        const Text('Puxe para baixo para atualizar', style: TextStyle(color: Color(0xFF2D3748), fontSize: 13)),
+        Text('Puxe para baixo para atualizar', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
       ]),
     );
   }
