@@ -68,12 +68,26 @@ jobs:
           echo "Versão: $VERSION | Build: ${{ github.run_number }} | Time: $BUILD_TIME (BRT)"
           echo "APK final: $APK_NAME"
 
+      - name: Decodificar upload-keystore
+        if: ${{ env.UPLOAD_KEYSTORE_BASE64 != '' }}
+        env:
+          UPLOAD_KEYSTORE_BASE64: ${{ secrets.UPLOAD_KEYSTORE_BASE64 }}
+        run: |
+          echo "$UPLOAD_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload-keystore.jks"
+          echo "UPLOAD_KEYSTORE_PATH=$RUNNER_TEMP/upload-keystore.jks" >> $GITHUB_ENV
+
       - name: Build APK release
         env:
           GITHUB_BUG_TOKEN: ${{ secrets.BUG_REPORT_PAT }}
           APP_VERSION: ${{ steps.meta.outputs.version }}
           BUILD_TIME: ${{ steps.meta.outputs.build_time }}
           BUILD_NUMBER: ${{ github.run_number }}
+          # Variáveis lidas pelo signingConfig em android/app/build.gradle.kts
+          # Quando estiverem vazias (sem secrets configuradas), o gradle cai
+          # para a debug keystore — apk só instalável em dev.
+          UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.UPLOAD_KEYSTORE_PASSWORD }}
+          UPLOAD_KEY_ALIAS: ${{ secrets.UPLOAD_KEY_ALIAS }}
+          UPLOAD_KEY_PASSWORD: ${{ secrets.UPLOAD_KEY_PASSWORD }}
         run: |
           flutter build apk --release \
             --dart-define=GITHUB_BUG_TOKEN="$GITHUB_BUG_TOKEN" \

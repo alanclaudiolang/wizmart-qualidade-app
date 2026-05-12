@@ -167,7 +167,7 @@ class _WizMartAppState extends ConsumerState<WizMartApp>
     });
 
     return MaterialApp.router(
-      title: 'WizMart',
+      title: 'Promotor Wizmart',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: const ColorScheme.light(
