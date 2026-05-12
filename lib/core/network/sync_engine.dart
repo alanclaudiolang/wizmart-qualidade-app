@@ -478,15 +478,59 @@ class SyncEngine {
     }
   }
 
-  /// Limpa texto pra usar em nome de arquivo (replica _limparTexto do app antigo).
+  /// Limpa texto pra usar em nome de arquivo. Mais restritivo que o app antigo:
+  /// remove acentos e caracteres especiais que o Supabase Storage rejeita
+  /// com "Invalid key". Mantém apenas a-z, A-Z, 0-9, espaço, hifen.
   String _limparNomeArquivo(String texto) {
-    final limpo = texto
-        .replaceAll(RegExp(r'[^\p{L}\p{N}\s-]', unicode: true), ' ')
+    // Tabela de equivalentes ASCII (acentos comuns em pt-BR)
+    const mapa = {
+      'á': 'a', 'à': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a',
+      'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+      'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+      'ó': 'o', 'ò': 'o', 'ô': 'o', 'õ': 'o', 'ö': 'o',
+      'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u',
+      'ç': 'c', 'ñ': 'n',
+      'Á': 'A', 'À': 'A', 'Â': 'A', 'Ã': 'A', 'Ä': 'A',
+      'É': 'E', 'È': 'E', 'Ê': 'E', 'Ë': 'E',
+      'Í': 'I', 'Ì': 'I', 'Î': 'I', 'Ï': 'I',
+      'Ó': 'O', 'Ò': 'O', 'Ô': 'O', 'Õ': 'O', 'Ö': 'O',
+      'Ú': 'U', 'Ù': 'U', 'Û': 'U', 'Ü': 'U',
+      'Ç': 'C', 'Ñ': 'N',
+    };
+    var s = texto;
+    mapa.forEach((k, v) => s = s.replaceAll(k, v));
+    s = s
+        .replaceAll(RegExp(r'[^a-zA-Z0-9\s-]'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
     final palavras =
-        limpo.split(' ').where((p) => p.trim().isNotEmpty).take(6).join(' ');
+        s.split(' ').where((p) => p.trim().isNotEmpty).take(6).join(' ');
     return palavras.isEmpty ? 'foto' : palavras;
+  }
+
+  /// Sanitiza um segmento do storage path (sem espaços, sem `:`, sem acentos).
+  String _sanitizePathSegment(String s) {
+    const mapa = {
+      'á': 'a', 'à': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a',
+      'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+      'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+      'ó': 'o', 'ò': 'o', 'ô': 'o', 'õ': 'o', 'ö': 'o',
+      'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u',
+      'ç': 'c', 'ñ': 'n',
+      'Á': 'A', 'À': 'A', 'Â': 'A', 'Ã': 'A', 'Ä': 'A',
+      'É': 'E', 'È': 'E', 'Ê': 'E', 'Ë': 'E',
+      'Í': 'I', 'Ì': 'I', 'Î': 'I', 'Ï': 'I',
+      'Ó': 'O', 'Ò': 'O', 'Ô': 'O', 'Õ': 'O', 'Ö': 'O',
+      'Ú': 'U', 'Ù': 'U', 'Û': 'U', 'Ü': 'U',
+      'Ç': 'C', 'Ñ': 'N',
+    };
+    var r = s;
+    mapa.forEach((k, v) => r = r.replaceAll(k, v));
+    return r
+        .replaceAll(':', '-')
+        .replaceAll(' ', '_')
+        .replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_');
   }
 
   Future<void> _processPhotoUpload(PendingPhoto photo) async {
@@ -530,9 +574,13 @@ class SyncEngine {
         dataAgendadoBr = visita?.diaHoraAgendado ?? '';
       }
       final nomeBase = _limparNomeArquivo(visita?.titulo ?? 'visita');
-      final ext = photo.localPath.split('.').last;
+      final ext = photo.localPath.split('.').last.toLowerCase();
+      // Sanitiza cada segmento — Supabase Storage rejeita :, espaços e acentos
+      final dataSeg = _sanitizePathSegment(dataAgendadoBr);
+      final nomeSeg = _sanitizePathSegment(nomeBase);
+      final extSeg = _sanitizePathSegment(ext);
       final storagePath =
-          'abastecimentos/$authUid/$dataAgendadoBr/$nomeBase-${photo.slot}-${photo.numero}.$ext';
+          'abastecimentos/$authUid/$dataSeg/$nomeSeg-${photo.slot}-${photo.numero}.$extSeg';
 
       _logger.log('photo',
           'Upload photo id=${photo.id} path=$storagePath bytes=${(await file.length())}');
