@@ -14,6 +14,7 @@ import 'package:gal/gal.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/network/sync_engine.dart';
+import '../../../core/network/sync_pause.dart';
 import '../../../core/network/connectivity_service.dart';
 import '../../../core/utils/watermark_util.dart';
 import '../../../core/utils/session_service.dart';
@@ -63,6 +64,11 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   @override
   void initState() {
     super.initState();
+    // Pausa o sync periódico (WorkManager) enquanto o usuário está nesta
+    // tela. Sync só dispara nas transições de status — `_iniciarVisita`
+    // (1→2) e `_finalizarVisita` (2→3) — para não consumir recursos
+    // durante a captura de fotos.
+    SyncPause.pause();
     _loadVisita();
   }
 
@@ -72,6 +78,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       c.dispose();
     }
     _comentarioGeralCtrl.dispose();
+    SyncPause.resume();
     super.dispose();
   }
 
@@ -306,12 +313,9 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       nextRetryAt: drift.Value(DateTime.now().toIso8601String()),
       createdAt: drift.Value(capturedAt.toIso8601String()),
     ));
-
-    // Tenta sync imediato se online
-    final isOnline = ref.read(connectivityProvider);
-    if (isOnline) {
-      ref.read(syncEngineProvider).processOutbox();
-    }
+    // Sem trigger de sync aqui: a foto fica na fila local. O envio só
+    // dispara nas transições de status (1→2 em `_iniciarVisita` e 2→3
+    // em `_finalizarVisita`).
   }
 
   // ── Reordenar e remover fotos do grid ─────────────────────────────────────
@@ -442,15 +446,14 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       syncStatus: const drift.Value('pending'),
     ));
 
-    // Enfileira atualização das fotos antes pro servidor
+    // Enfileira atualização das fotos antes pro servidor.
+    // Sem trigger de sync aqui: não há transição de status nesta etapa
+    // (status continua 2 = em andamento). O envio acontece só quando o
+    // usuário finaliza a visita (transição 2→3).
     await _enfileirarVisita('photos_antes', {
       'id': widget.visitaId,
       'fotos_antes_count': _fotosAntes.length,
     });
-
-    if (ref.read(connectivityProvider)) {
-      ref.read(syncEngineProvider).processOutbox();
-    }
 
     if (mounted) context.go('/home');
   }

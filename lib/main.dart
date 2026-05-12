@@ -9,6 +9,7 @@ import 'core/constants/app_constants.dart';
 import 'core/utils/app_router.dart';
 import 'core/database/app_database.dart';
 import 'core/network/sync_engine.dart';
+import 'core/network/sync_pause.dart';
 import 'core/utils/sync_logger.dart';
 import 'presentation/widgets/bug_report_overlay.dart';
 
@@ -18,6 +19,11 @@ const _bgSyncTask = 'wizmart_bg_sync';
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     if (task == _bgSyncTask) {
+      // Pausado enquanto o usuário está dentro da tela da visita (captura
+      // de fotos ou checklist) para não consumir CPU/memória do device.
+      if (await SyncPause.isPaused()) {
+        return Future.value(true);
+      }
       try {
         await Supabase.initialize(
           url: AppConstants.supabaseUrl,
