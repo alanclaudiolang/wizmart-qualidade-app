@@ -7,6 +7,7 @@ import '../../presentation/screens/bug_report/bug_report_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/sync_logs/sync_logs_screen.dart';
 import '../../presentation/screens/visita/visita_screen.dart';
+import 'last_visita_service.dart';
 import 'session_service.dart';
 
 final appRouter = GoRouter(
@@ -65,15 +66,29 @@ class _SplashRedirectState extends State<_SplashRedirect> {
     if (!mounted) return;
 
     final hasSession = await SessionService.hasSession();
-    if (hasSession) {
-      // Verifica se usuário ainda está ativo
-      final session = await SessionService.getSession();
-      if (session != null) {
-        context.go('/home');
-        return;
-      }
+    if (!hasSession) {
+      if (mounted) context.go('/auth');
+      return;
     }
-    context.go('/auth');
+
+    final session = await SessionService.getSession();
+    if (!mounted) return;
+    if (session == null) {
+      context.go('/auth');
+      return;
+    }
+
+    // Se o Android matou o app enquanto a câmera estava aberta (low memory)
+    // ou o usuário trocou de app no meio da visita, restaura a tela onde
+    // estava — não joga ele pra home perdido.
+    final lastVisitaId = await LastVisitaService.get();
+    if (!mounted) return;
+    if (lastVisitaId != null) {
+      context.go('/visita/$lastVisitaId');
+      return;
+    }
+
+    context.go('/home');
   }
 
   @override

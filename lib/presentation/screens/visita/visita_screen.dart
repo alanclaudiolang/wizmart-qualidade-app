@@ -19,6 +19,7 @@ import '../../../core/network/connectivity_service.dart';
 import '../../../main.dart' show scheduleOneOffSync;
 import '../../../core/utils/watermark_util.dart';
 import '../../../core/utils/session_service.dart';
+import '../../../core/utils/last_visita_service.dart';
 import '../../widgets/bug_report_button.dart';
 
 const _uuid = Uuid();
@@ -46,6 +47,10 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   List<String> _fotosAntes = []; // paths locais
   List<String> _fotosDepois = [];
 
+  // Loading durante transições assíncronas (GPS, salvar etc.)
+  bool _busy = false;
+  String _busyLabel = '';
+
   // Nome do promotor (para watermark)
   String _promotorNome = '';
 
@@ -65,6 +70,10 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   @override
   void initState() {
     super.initState();
+    // Marca esta visita como "atualmente aberta" para o SplashRedirect
+    // restaurar o usuário aqui caso o Android mate o app durante a
+    // captura (low memory + câmera aberta = caso comum em devices fracos).
+    LastVisitaService.set(widget.visitaId);
     _loadVisita();
   }
 
@@ -88,6 +97,15 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     } else {
       SyncPause.resume();
     }
+  }
+
+  /// Saída explícita pra home. As fotos já estão persistidas no DB local
+  /// e na galeria — voltar não perde nada, ao reabrir a visita o estado
+  /// é restaurado pelo `_loadVisita`. Limpa o `lastVisitaId` para que o
+  /// SplashRedirect mande pra home no próximo cold start.
+  Future<void> _sairParaHome() async {
+    await LastVisitaService.clear();
+    if (mounted) context.go('/home');
   }
 
   Future<void> _loadVisita() async {
@@ -197,9 +215,23 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         return null;
       }
 
-      final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      // Tenta accuracy alta com timeout curto. Se demorar, cai pra última
+      // posição conhecida — em modo avião / GPS frio o `getCurrentPosition`
+      // pode travar indefinidamente. Offline-first não pode esperar GPS.
+      Position? pos;
+      try {
+        pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 8),
+        );
+      } catch (_) {
+        pos = await Geolocator.getLastKnownPosition();
+      }
+      if (pos == null) {
+        // Sem GPS atual nem histórico: deixa registrar sem coordenadas.
+        // O servidor aceita null e o promotor não fica travado.
+        return null;
+      }
 
       return 'LatLng(lat: ${pos.latitude.toStringAsFixed(7)}, lng: ${pos.longitude.toStringAsFixed(7)})';
     } catch (e) {
@@ -249,21 +281,21 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
           _pdv?.apiLocalCustomerName ??
           'PDV ${_visita?.idPdvAssociado ?? '?'}';
 
-      // Aplica watermark
+      // Aplica watermark com timeout — em devices fracos com baixa memória
+      // o isolate pode travar. 30s é o ceiling absoluto antes de desistir.
       final watermarkedPath = await WatermarkUtil.applyWatermark(
         sourcePath: picked.path,
         pdvNome: pdvNome,
         promotorNome: _promotorNome,
         slot: slot == 'antes' ? 'Antes' : 'Depois',
         capturedAt: capturedAt,
-      );
+      ).timeout(const Duration(seconds: 30));
 
-      // Salva cópia na galeria
+      // Salva cópia na galeria (não crítico — se falhar o path local basta).
       try {
-        await Gal.putImage(watermarkedPath);
-      } catch (_) {
-        // Não critica se falhar — o path local é o importante
-      }
+        await Gal.putImage(watermarkedPath)
+            .timeout(const Duration(seconds: 5));
+      } catch (_) {}
 
       setState(() {
         if (slot == 'antes') {
@@ -413,41 +445,31 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   // ── Ações da máquina de estados ────────────────────────────────────────────
 
   Future<void> _iniciarVisita() async {
+    setState(() {
+      _busy = true;
+      _busyLabel = 'Obtendo localização...';
+    });
+    // GPS é "best effort" — se falhar (modo avião, sinal fraco, timeout),
+    // segue em frente com loc = null. O servidor aceita null.
     final loc = await _capturarLocalizacao();
-    if (loc == null) return;
 
     final agora = DateTime.now();
     final db = ref.read(appDatabaseProvider);
-    final session = await SessionService.getSession();
 
-    // Atualiza local
+    // Persiste apertura SOMENTE local. Status fica 1 (agendada) e nada
+    // entra na outbox: se o promotor desistir antes de concluir as fotos
+    // antes, a visita continua "agendada" no servidor — sem fantasma.
     await db.updateVisita(VisitasCompanion(
       id: drift.Value(widget.visitaId),
-      statusVisita: const drift.Value(AppConstants.statusEmAndamento),
       diaHoraAbertura: drift.Value(agora.toIso8601String()),
       localizacaoAbertura: drift.Value(loc),
       localState: const drift.Value('fotos_antes'),
-      syncStatus: const drift.Value('pending'),
     ));
-
-    // Enfileira no outbox
-    await _enfileirarVisita('open', {
-      'id': widget.visitaId,
-      'status_visita': AppConstants.statusEmAndamento,
-      'dia_hora_abertura': agora.toIso8601String(),
-      'localizacao_abertura': loc,
-      'id_promotor_associado': session?.userId,
-    });
-
-    // Dispara sync ANTES de pausar — transição 1→2 ("em andamento") é
-    // um dos pontos em que queremos enviar imediatamente.
-    if (ref.read(connectivityProvider)) {
-      ref.read(syncEngineProvider).processOutbox();
-    }
 
     setState(() {
       _localizacaoAbertura = loc;
       _localState = 'fotos_antes';
+      _busy = false;
     });
     _updateSyncPause('fotos_antes');
   }
@@ -457,25 +479,46 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       _showError('Tire pelo menos uma foto antes da reposição.');
       return;
     }
+    setState(() {
+      _busy = true;
+      _busyLabel = 'Salvando...';
+    });
 
     final db = ref.read(appDatabaseProvider);
-    // Vai direto para 'fotos_depois': quando o usuário voltar à visita,
-    // verá a tela de fotos DEPOIS sem passar por uma tela intermediária.
+    final session = await SessionService.getSession();
+    // Recarrega visita para pegar diaHoraAbertura/localizacaoAbertura
+    // persistidos no _iniciarVisita.
+    final atual = await db.getVisitaById(widget.visitaId);
+
+    // É AQUI que a transição 1→2 (agendada → em andamento) acontece:
+    // só depois que o promotor concluiu as fotos antes. Se ele desistir
+    // no meio, o status no servidor continua "agendada" — sem fantasma.
     await db.updateVisita(VisitasCompanion(
       id: drift.Value(widget.visitaId),
+      statusVisita: const drift.Value(AppConstants.statusEmAndamento),
       localState: const drift.Value('fotos_depois'),
       syncStatus: const drift.Value('pending'),
     ));
 
-    // Enfileira atualização das fotos antes pro servidor.
-    // Sem trigger de sync aqui: não há transição de status nesta etapa
-    // (status continua 2 = em andamento). O envio acontece só quando o
-    // usuário finaliza a visita (transição 2→3).
-    await _enfileirarVisita('photos_antes', {
+    // Enfileira no outbox: open (status 1→2) + dados das fotos antes,
+    // tudo num único item — o sync engine constrói o payload completo
+    // a partir do estado atual da visita no DB local.
+    await _enfileirarVisita('open', {
       'id': widget.visitaId,
+      'status_visita': AppConstants.statusEmAndamento,
+      'dia_hora_abertura': atual?.diaHoraAbertura,
+      'localizacao_abertura': atual?.localizacaoAbertura,
+      'id_promotor_associado': session?.userId,
       'fotos_antes_count': _fotosAntes.length,
     });
 
+    // Dispara sync no foreground se online (background já foi agendado
+    // pelo _enfileirarVisita via scheduleOneOffSync).
+    if (ref.read(connectivityProvider)) {
+      ref.read(syncEngineProvider).processOutbox();
+    }
+
+    await LastVisitaService.clear();
     if (mounted) context.go('/home');
   }
 
@@ -486,9 +529,13 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       return;
     }
 
+    setState(() {
+      _busy = true;
+      _busyLabel = 'Obtendo localização...';
+    });
+
     final loc = await _capturarLocalizacao();
 
-    final agora = DateTime.now();
     final db = ref.read(appDatabaseProvider);
 
     await db.updateVisita(VisitasCompanion(
@@ -501,6 +548,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     setState(() {
       _localizacaoEncerramento = loc;
       _localState = 'checklist';
+      _busy = false;
     });
     // Saída do estado de captura → libera sync.
     _updateSyncPause('checklist');
@@ -576,10 +624,11 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       ref.read(syncEngineProvider).processOutbox();
     }
 
+    await LastVisitaService.clear();
     if (mounted) {
       _showSuccess('Visita finalizada com sucesso!');
       await Future.delayed(const Duration(seconds: 1));
-      context.go('/home');
+      if (mounted) context.go('/home');
     }
   }
 
@@ -647,14 +696,21 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
             _pdv?.apiLocalCustomerName ??
             'PDV ${_visita?.idPdvAssociado ?? '?'}';
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        // Back do sistema: mesmo comportamento da seta do AppBar.
+        await _sairParaHome();
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFF1A1A2E),
       appBar: AppBar(
         backgroundColor: const Color(0xFF16213E),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => context.go('/home'),
+          onPressed: _sairParaHome,
         ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -693,6 +749,34 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
             right: false,
             child: _buildBody(),
           ),
+          if (_busy)
+            Positioned.fill(
+              child: AbsorbPointer(
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(
+                          color: Color(0xFF4CAF50),
+                          strokeWidth: 3,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _busyLabel,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (_savingPhoto)
             Positioned.fill(
               child: AbsorbPointer(
@@ -730,6 +814,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
               ),
             ),
         ],
+      ),
       ),
     );
   }
