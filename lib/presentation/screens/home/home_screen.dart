@@ -336,14 +336,11 @@ class _HomeContent extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 1),
-              GestureDetector(
-                onTap: () => context.push('/sync-logs'),
-                child: Text(
-                  'v${AppConstants.appVersion}.${AppConstants.buildNumber}',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 9,
-                  ),
+              Text(
+                'v${AppConstants.appVersion}.${AppConstants.buildNumber}',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 9,
                 ),
               ),
               // Badge "Desatualizado" — só aparece se o release v-latest
@@ -377,9 +374,25 @@ class _HomeContent extends ConsumerWidget {
             icon: const Icon(Icons.more_vert, color: AppColors.textPrimary),
             color: AppColors.card,
             onSelected: (value) async {
-              if (value == 'logout') await _confirmarLogout(context, ref);
+              if (value == 'logs') {
+                if (context.mounted) context.push('/sync-logs');
+              } else if (value == 'logout') {
+                await _confirmarLogout(context, ref);
+              }
             },
             itemBuilder: (_) => const [
+              PopupMenuItem<String>(
+                value: 'logs',
+                child: Row(
+                  children: [
+                    Icon(Icons.description_outlined,
+                        color: AppColors.textPrimary, size: 20),
+                    SizedBox(width: 8),
+                    Text('Ver logs',
+                        style: TextStyle(color: AppColors.textPrimary)),
+                  ],
+                ),
+              ),
               PopupMenuItem<String>(
                 value: 'logout',
                 child: Row(
