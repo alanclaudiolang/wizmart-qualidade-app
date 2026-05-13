@@ -36,20 +36,35 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _triggerSync();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // App veio do background: o WorkManager pode ter sincronizado em
+    // outro isolate (DB no disco mudou). Invalida os providers da home
+    // pra ler dados frescos e dispara um sync no main isolate também.
+    if (state == AppLifecycleState.resumed) {
+      _triggerSync();
+    }
   }
 
   Future<void> _triggerSync() async {
     final session = await SessionService.getSession();
     if (session == null) return;
-    // Não checa connectivityProvider aqui: ele começa como false e só
-    // vira true após o primeiro ping (~1-5s). Tentamos o sync direto;
-    // se estivermos offline o supabase client vai jogar a exceção que o
-    // try/catch abaixo absorve.
     final syncEngine = ref.read(syncEngineProvider);
     try {
       await syncEngine.pullAll(session.userId);
@@ -57,10 +72,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } catch (e) {
       debugPrint('Auto-sync falhou: $e');
     }
-    // Força UI a buscar dados atualizados após o sync
+    // Força UI a buscar dados atualizados após o sync.
     if (mounted) {
       ref.invalidate(contadoresProvider(session.userId));
       ref.invalidate(pdvsProvider);
+      ref.invalidate(visitasHojeProvider(session.userId));
     }
   }
 
@@ -127,9 +143,8 @@ class _HomeContent extends ConsumerWidget {
     final pdvsAsync = ref.watch(pdvsProvider);
 
     // Quando a rede volta (offline → online) enquanto a home está aberta,
-    // dispara um sync completo (pullAll + processOutbox). Sem isso, o
-    // promotor que terminou uma etapa offline e ativou a rede precisava
-    // arrastar a lista pra baixo manualmente pra ver dados sincronizados.
+    // dispara um sync completo (pullAll + processOutbox) e invalida os
+    // providers — sem isso, o promotor precisava pull-to-refresh.
     ref.listen<bool>(connectivityProvider, (prev, next) async {
       if (prev == false && next == true) {
         final engine = ref.read(syncEngineProvider);
@@ -139,6 +154,7 @@ class _HomeContent extends ConsumerWidget {
         } catch (_) {}
         ref.invalidate(contadoresProvider(session.userId));
         ref.invalidate(pdvsProvider);
+        ref.invalidate(visitasHojeProvider(session.userId));
       }
     });
 
