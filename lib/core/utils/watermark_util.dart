@@ -36,6 +36,7 @@ class WatermarkUtil {
     required String promotorNome,
     required String slot,
     required DateTime capturedAt,
+    int? numero,
   }) async {
     final docs = await getApplicationDocumentsDirectory();
     final outDir = '${docs.path}/wizmart_fotos';
@@ -77,6 +78,51 @@ class WatermarkUtil {
 
     // Foto original ocupa o topo.
     canvas.drawImage(original, Offset.zero, Paint());
+
+    // Badge da numeração no canto superior direito (translúcido,
+    // discreto). Só desenha se `numero` foi informado.
+    if (numero != null) {
+      final badgeFontSize = (w * 0.040).clamp(28.0, 96.0);
+      final badgePadH = (w * 0.022).clamp(14.0, 48.0);
+      final badgePadV = (w * 0.012).clamp(8.0, 32.0);
+      final badgeMargin = (w * 0.018).clamp(10.0, 48.0);
+      final tpBadge = TextPainter(
+        text: TextSpan(
+          text: '$numero',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: badgeFontSize,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        textDirection: ui.TextDirection.ltr,
+      );
+      tpBadge.layout();
+      final badgeW = tpBadge.width + badgePadH * 2;
+      final badgeH = tpBadge.height + badgePadV * 2;
+      final badgeRect = Rect.fromLTWH(
+        w - badgeW - badgeMargin,
+        badgeMargin,
+        badgeW,
+        badgeH,
+      );
+      // Fundo translúcido (preto ~50% alpha) com cantos arredondados.
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          badgeRect,
+          Radius.circular(badgeH * 0.25),
+        ),
+        Paint()..color = Colors.black.withValues(alpha: 0.45),
+      );
+      tpBadge.paint(
+        canvas,
+        Offset(
+          badgeRect.left + badgePadH,
+          badgeRect.top + badgePadV,
+        ),
+      );
+      tpBadge.dispose();
+    }
 
     // Faixa preta no rodapé (logo abaixo da foto).
     canvas.drawRect(

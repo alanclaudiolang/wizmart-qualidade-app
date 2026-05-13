@@ -125,6 +125,7 @@ class WatermarkQueueService {
           promotorNome: item.promotorNome,
           slot: item.slot == 'antes' ? 'Antes' : 'Depois',
           capturedAt: capturedAt,
+          numero: p.numero,
         ).timeout(const Duration(seconds: 30));
 
         // Foto pronta — substitui path e libera pra sync.
