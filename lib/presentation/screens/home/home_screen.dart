@@ -79,6 +79,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ref.invalidate(contadoresProvider(session.userId));
       ref.invalidate(pdvsProvider);
       ref.invalidate(visitasHojeProvider(session.userId));
+      // Re-checa GitHub Releases pra detectar build novo (badge "atualizar").
+      ref.invalidate(appVersionProvider);
     }
   }
 
@@ -208,6 +210,7 @@ class _HomeContent extends ConsumerWidget {
         ref.invalidate(contadoresProvider(session.userId));
         ref.invalidate(pdvsProvider);
         ref.invalidate(visitasHojeProvider(session.userId));
+        ref.invalidate(appVersionProvider);
       }
     });
 

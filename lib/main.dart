@@ -11,6 +11,7 @@ import 'core/database/app_database.dart';
 import 'core/network/connectivity_service.dart';
 import 'core/network/sync_engine.dart';
 import 'core/network/sync_pause.dart';
+import 'core/network/version_check_service.dart';
 import 'core/utils/session_service.dart';
 import 'core/utils/gps_status_service.dart';
 import 'core/utils/sync_logger.dart';
@@ -163,6 +164,10 @@ class _WizMartAppState extends ConsumerState<WizMartApp>
       ref.invalidate(contadoresProvider(session.userId));
       ref.invalidate(pdvsProvider);
       ref.invalidate(visitasHojeProvider(session.userId));
+      // Re-checa se há build novo no GitHub Releases. Sem isso o
+      // FutureProvider ficava cacheado pra sempre — promotor instalava
+      // a versão N e nunca via o badge 'atualizar' quando a N+1 saía.
+      ref.invalidate(appVersionProvider);
     } else {
       await engine.processOutbox();
     }
