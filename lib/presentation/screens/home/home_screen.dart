@@ -691,21 +691,30 @@ class _VisitaCard extends StatelessWidget {
                           Icon(Icons.cloud_done,
                               size: 14, color: AppColors.success),
                       ]),
-                      if (info != null) ...[
+                      if (info != null || idReal != null) ...[
                         const SizedBox(height: 4),
-                        Text(info,
-                            style: TextStyle(
-                                color: AppColors.textSecondary, fontSize: 12)),
-                      ],
-                      if (idReal != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          '#$idReal',
-                          style: TextStyle(
-                            color: AppColors.textMuted.withValues(alpha: 0.55),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                info ?? '',
+                                style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (idReal != null)
+                              Text(
+                                '#$idReal',
+                                style: TextStyle(
+                                  color: AppColors.textMuted
+                                      .withValues(alpha: 0.55),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                          ],
                         ),
                       ],
                     ],

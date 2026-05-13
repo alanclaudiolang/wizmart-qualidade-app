@@ -1,12 +1,14 @@
 // lib/core/network/connectivity_service.dart
 
 import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/app_constants.dart';
 
 class ConnectivityService extends Notifier<bool> {
   Timer? _pingTimer;
+  StreamSubscription<List<ConnectivityResult>>? _connSub;
   // Anti-flicker: só marca offline após 2 falhas consecutivas. Um ping
   // lento ou falha pontual não vai bagunçar a UI piscando Online/Offline.
   int _consecutiveOffline = 0;
@@ -20,8 +22,23 @@ class ConnectivityService extends Notifier<bool> {
   @override
   bool build() {
     _startPing();
+    // Escuta mudanças nativas de conectividade (modo avião, Wi-Fi,
+    // dados móveis). Dispara ping imediato — sem isso, o app levava
+    // até 60s pra detectar offline (anti-flicker × intervalo periódico).
+    _connSub = Connectivity().onConnectivityChanged.listen((results) {
+      final hasAny = results.any((r) => r != ConnectivityResult.none);
+      if (!hasAny) {
+        // Sem nenhuma interface → offline imediato (sem anti-flicker).
+        _consecutiveOffline = 2;
+        if (state != false) state = false;
+      } else {
+        // Apareceu rede → tenta ping na hora pra confirmar acesso real.
+        _ping();
+      }
+    });
     ref.onDispose(() {
       _pingTimer?.cancel();
+      _connSub?.cancel();
     });
     return false; // começa como offline, primeiro ping confirma
   }

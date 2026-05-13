@@ -12,7 +12,10 @@ import 'core/network/connectivity_service.dart';
 import 'core/network/sync_engine.dart';
 import 'core/network/sync_pause.dart';
 import 'core/utils/session_service.dart';
+import 'core/utils/gps_status_service.dart';
 import 'core/utils/sync_logger.dart';
+import 'presentation/screens/home/home_screen.dart'
+    show contadoresProvider, pdvsProvider, visitasHojeProvider;
 import 'presentation/widgets/bug_report_overlay.dart';
 import 'presentation/widgets/gps_guard.dart';
 
@@ -142,8 +145,9 @@ class _WizMartAppState extends ConsumerState<WizMartApp>
     super.dispose();
   }
 
-  /// Gatilho universal — dispara fullSync (push + pull). O `processOutbox`
-  /// checa `SyncPause` internamente, então durante captura este kick é
+  /// Gatilho universal — dispara fullSync (push + pull) e invalida os
+  /// providers da home pra refletir mudanças. O `processOutbox` checa
+  /// `SyncPause` internamente, então durante captura este kick é
   /// absorvido sem efeito.
   Future<void> _kickSync() async {
     if (!mounted) return;
@@ -152,6 +156,13 @@ class _WizMartAppState extends ConsumerState<WizMartApp>
     final engine = ref.read(syncEngineProvider);
     if (session != null) {
       await engine.fullSync(session.userId);
+      if (!mounted) return;
+      // Invalida providers da home pra UI buscar dados recém atualizados.
+      // Inclui o caso de sync via WorkManager periódico que mexe no DB
+      // em isolate separado — Stream do Drift pode não notificar.
+      ref.invalidate(contadoresProvider(session.userId));
+      ref.invalidate(pdvsProvider);
+      ref.invalidate(visitasHojeProvider(session.userId));
     } else {
       await engine.processOutbox();
     }
@@ -160,8 +171,11 @@ class _WizMartAppState extends ConsumerState<WizMartApp>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    // Gatilho: app voltou pro foreground → tenta sincronizar.
     if (state == AppLifecycleState.resumed) {
+      // App voltou pro foreground (de configs, câmera, painel rápido,
+      // outro app, etc.). Re-checa GPS — o stream do Geolocator nem
+      // sempre dispara em mudanças via painel rápido do Android.
+      ref.read(gpsStatusProvider.notifier).refresh();
       _kickSync();
     }
   }

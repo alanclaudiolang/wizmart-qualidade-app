@@ -21,6 +21,7 @@ import '../../../main.dart' show scheduleOneOffSync;
 import '../../../core/utils/watermark_util.dart';
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/last_visita_service.dart';
+import '../../../core/utils/gps_status_service.dart';
 import '../../../core/utils/app_colors.dart';
 import '../../widgets/bug_report_button.dart';
 
@@ -171,6 +172,8 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
     if (_localState == 'fotos_antes') {
       // Reverte a abertura: como se nunca tivesse clicado em iniciar.
+      // syncStatus volta a 'synced' — não há mais nada pra enviar
+      // (o início era SOMENTE local, ainda não tinha sido enfileirado).
       await db.updateVisita(VisitasCompanion(
         id: drift.Value(widget.visitaId),
         fotosAntesJson: const drift.Value(null),
@@ -179,15 +182,18 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         diaHoraFotosAntes: const drift.Value(null),
         localizacaoFotosAntes: const drift.Value(null),
         localState: const drift.Value('idle'),
+        syncStatus: const drift.Value('synced'),
       ));
     } else {
       // Mantém status 2 (em andamento) e localState 'fotos_depois':
       // próxima vez já volta direto pra grid de fotos depois vazio.
+      // syncStatus volta a 'synced' — fotos descartadas eram só locais.
       await db.updateVisita(VisitasCompanion(
         id: drift.Value(widget.visitaId),
         fotosDepoisJson: const drift.Value(null),
         diaHoraFotosDepois: const drift.Value(null),
         localizacaoFotosDepois: const drift.Value(null),
+        syncStatus: const drift.Value('synced'),
       ));
     }
   }
@@ -335,6 +341,15 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
     if (atual >= limite) {
       _showError('Limite de $limite fotos atingido.');
+      return;
+    }
+
+    // GPS é obrigatório pra registrar foto. Se não está ok, o overlay
+    // global do GpsGuard já está cobrindo a tela — não tem como o user
+    // chegar aqui via toque normal. Mas se ele chegou via race
+    // (overlay ainda aparecendo), nem abre a câmera.
+    if (ref.read(gpsStatusProvider) != GpsState.ok) {
+      ref.read(gpsStatusProvider.notifier).refresh();
       return;
     }
 
@@ -750,8 +765,14 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       // _finalizarVisita vem do 'checklist' (não captura), então o
       // SyncPause já está liberado — mas garantimos defensivamente.
       await SyncPause.resume();
+      // AGUARDA o push terminar antes de ir pra home. Sem o await, a
+      // home montava com a visita ainda em syncStatus='pending' local
+      // e o pullAll subsequente pulava ela (regra do "não sobrescrever
+      // pending"), deixando o status visualmente sem mudar.
       if (ref.read(connectivityProvider)) {
-        ref.read(syncEngineProvider).processOutbox();
+        try {
+          await ref.read(syncEngineProvider).processOutbox();
+        } catch (_) {}
       }
 
       await LastVisitaService.clear();
