@@ -7,6 +7,7 @@ import '../../presentation/screens/bug_report/bug_report_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/sync_logs/sync_logs_screen.dart';
 import '../../presentation/screens/visita/visita_screen.dart';
+import 'device_info_service.dart';
 import 'last_visita_service.dart';
 import 'session_service.dart';
 
@@ -77,6 +78,11 @@ class _SplashRedirectState extends State<_SplashRedirect> {
       context.go('/auth');
       return;
     }
+
+    // Atualiza device_info da sessão restaurada em background — não
+    // bloqueia o splash. Próxima vez tenta de novo se falhar agora.
+    // ignore: discarded_futures
+    DeviceInfoService.updateForUser(session.userId);
 
     // Se o Android matou o app enquanto a câmera estava aberta (low memory)
     // ou o usuário trocou de app no meio da visita, restaura a tela onde

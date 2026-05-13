@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/network/connectivity_service.dart';
 import '../../../core/network/sync_engine.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/session_service.dart';
+import '../../../core/utils/last_visita_service.dart';
 import '../../../core/utils/app_colors.dart';
 import '../../widgets/bug_report_button.dart';
 
@@ -84,6 +86,45 @@ class _HomeContent extends ConsumerWidget {
   final SessionData session;
   const _HomeContent({required this.session});
 
+  Future<void> _confirmarLogout(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text('Sair do app?',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: const Text(
+          'Você precisará entrar novamente com seu email e senha. '
+          'Visitas em andamento permanecem salvas.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Sair',
+                style: TextStyle(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    // Tenta signOut no Supabase com timeout — se offline, prossegue.
+    try {
+      await Supabase.instance.client.auth
+          .signOut()
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {}
+    await SessionService.clearSession();
+    await LastVisitaService.clear();
+    if (context.mounted) context.go('/auth');
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isOnline = ref.watch(connectivityProvider);
@@ -119,57 +160,69 @@ class _HomeContent extends ConsumerWidget {
           ],
         ),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const BugReportButton(),
-                const SizedBox(width: 4),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisSize: MainAxisSize.min,
+          const BugReportButton(),
+          const SizedBox(width: 4),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8, height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isOnline
+                          ? AppColors.primary
+                          : AppColors.danger,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    isOnline ? 'Online' : 'Offline',
+                    style: TextStyle(
+                      color: isOnline
+                          ? AppColors.primary
+                          : AppColors.danger,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 1),
+              GestureDetector(
+                onTap: () => context.push('/sync-logs'),
+                child: Text(
+                  'v${AppConstants.appVersion}.${AppConstants.buildNumber}',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 9,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: AppColors.textPrimary),
+            color: AppColors.card,
+            onSelected: (value) async {
+              if (value == 'logout') await _confirmarLogout(context);
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem<String>(
+                value: 'logout',
+                child: Row(
                   children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 8, height: 8,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: isOnline
-                                ? AppColors.primary
-                                : AppColors.danger,
-                          ),
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          isOnline ? 'Online' : 'Offline',
-                          style: TextStyle(
-                            color: isOnline
-                                ? AppColors.primary
-                                : AppColors.danger,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 1),
-                    GestureDetector(
-                      onTap: () => context.push('/sync-logs'),
-                      child: Text(
-                        'v${AppConstants.appVersion}.${AppConstants.buildNumber}',
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 9,
-                        ),
-                      ),
-                    ),
+                    Icon(Icons.logout, color: AppColors.danger, size: 20),
+                    SizedBox(width: 8),
+                    Text('Sair',
+                        style: TextStyle(color: AppColors.textPrimary)),
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),

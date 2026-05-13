@@ -58,6 +58,9 @@ dependencies:
   # Bug report (gravação da tela em GIF)
   screen_recorder: ^0.3.0
 
+  # Device info (campo device_info da tabela users)
+  device_info_plus: ^11.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../../../core/utils/session_service.dart';
+import '../../../core/utils/device_info_service.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../widgets/bug_report_button.dart';
 
@@ -104,12 +105,17 @@ class _AuthScreenState extends State<AuthScreen> {
         setState(() { _error = 'Acesso apenas para Promotores.'; _loading = false; });
         return;
       }
+      final userId = userData['id'] as int;
       await SessionService.saveSession(
-        userId: userData['id'] as int,
+        userId: userId,
         email: email,
         nome: userData['nome'] as String? ?? '',
         senhaHash: _lembrarMe ? senha : '',
       );
+      // Não bloqueia o login: roda em background. Se falhar (offline,
+      // RLS bloqueando, etc.), próximo login/abertura tenta de novo.
+      // ignore: discarded_futures
+      DeviceInfoService.updateForUser(userId);
       if (mounted) context.go('/home');
     } on AuthException catch (e) {
       // Mensagens canônicas do Supabase em PT-BR.
