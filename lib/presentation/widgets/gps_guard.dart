@@ -94,15 +94,20 @@ class _GpsBlocker extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Cinza translúcido por cima de TUDO — não só visualmente: o
-    // AbsorbPointer + ModalBarrier garantem que nenhum toque chega na
-    // tela debaixo. Isso vale durante captura, dentro de dialogs, etc.
+    // Stack com duas camadas independentes:
+    //   1. ModalBarrier — bloqueia toques pra UI debaixo (cinza
+    //      translúcido). Não dismissible — única saída é resolver o GPS.
+    //   2. Card no centro — recebe toques normalmente. Estava bugado
+    //      antes porque ficava DENTRO do AbsorbPointer, que matava
+    //      toda interação inclusive a do próprio botão.
     return Positioned.fill(
-      child: AbsorbPointer(
-        absorbing: true,
-        child: ColoredBox(
-          color: const Color(0xCCB0B0B0), // cinza ~80% opaco
-          child: Material(
+      child: Stack(
+        children: [
+          const ModalBarrier(
+            dismissible: false,
+            color: Color(0xCCB0B0B0),
+          ),
+          Material(
             type: MaterialType.transparency,
             child: SafeArea(
               child: Center(
@@ -171,7 +176,7 @@ class _GpsBlocker extends ConsumerWidget {
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
