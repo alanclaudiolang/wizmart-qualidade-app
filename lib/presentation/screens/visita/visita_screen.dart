@@ -22,6 +22,7 @@ import '../../../main.dart' show scheduleOneOffSync;
 import '../../../core/utils/watermark_util.dart';
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/last_visita_service.dart';
+import '../../../core/utils/watermark_queue.dart';
 import '../../../core/utils/gps_status_service.dart';
 import '../../../core/utils/app_colors.dart';
 import '../../widgets/bug_report_button.dart';
@@ -128,6 +129,10 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     final temFotosDepois =
         _localState == 'fotos_depois' && _fotosDepois.isNotEmpty;
 
+    // Sempre sai do estado de captura ao voltar pra home — garante
+    // que o sync engine esteja liberado pra processar.
+    await SyncPause.resume();
+
     if (temFotosAntes || temFotosDepois) {
       final qtd = temFotosAntes ? _fotosAntes.length : _fotosDepois.length;
       final ok = await showDialog<bool>(
@@ -162,6 +167,21 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     }
 
     await LastVisitaService.clear();
+
+    // Sempre dispara fullSync ao voltar pra home (push + pull). Mesmo
+    // sem pendências locais, o pull pode trazer alterações que o
+    // supervisor fez no servidor (nova visita, gabarito mudado etc).
+    // Roda sem await pra não travar a navegação.
+    if (ref.read(connectivityProvider)) {
+      final session = await SessionService.getSession();
+      if (session != null) {
+        // ignore: discarded_futures
+        ref.read(syncEngineProvider).fullSync(session.userId);
+      } else {
+        // ignore: discarded_futures
+        ref.read(syncEngineProvider).processOutbox();
+      }
+    }
     if (mounted) context.go('/home');
   }
 
@@ -481,16 +501,18 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       slot: drift.Value(slot),
       numero: drift.Value(numero),
       localPath: drift.Value(path),
-      status: const drift.Value('pending'),
+      // 'watermark_pending': bloqueia o sync engine (que só pega
+      // 'pending'). A WatermarkQueueService aplica o watermark em
+      // background quando o promotor concluir a etapa e muda o
+      // status pra 'pending', liberando o upload.
+      status: const drift.Value('watermark_pending'),
       attempts: const drift.Value(0),
       nextRetryAt: drift.Value(DateTime.now().toIso8601String()),
       createdAt: drift.Value(capturedAt.toIso8601String()),
     ));
-    // Não dispara sync no foreground (estamos em captura = pausado).
-    // Mas enfileira um gatilho de background com constraint de rede:
-    // quando o usuário sair da captura, ou em outro evento, o
-    // OneOffWorker tentará processar.
-    scheduleOneOffSync();
+    // Sem trigger de sync aqui — não há nada pra subir ainda. O
+    // gatilho de background será disparado pela WatermarkQueueService
+    // quando o watermark estiver pronto.
   }
 
   // ── Reordenar e remover fotos do grid ─────────────────────────────────────
@@ -703,16 +725,16 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     });
 
     try {
-      // Aplica watermark em todas as fotos da etapa + salva na galeria.
-      // Processamento pesado concentrado num único loading (em vez de
-      // bloquear o promotor a cada foto durante a captura).
-      setState(() {
-        _busyLabel = 'Aplicando marca d\'água e salvando...';
-      });
-      await _aplicarWatermarkEmTodasFotos('antes');
-      setState(() {
-        _busyLabel = 'Salvando...';
-      });
+      // Enfileira watermark + galeria pra rodar em BACKGROUND. O
+      // promotor segue o fluxo (vai pra home, abre outra visita,
+      // etc.) sem esperar nem ver indicador. As fotos só sobem ao
+      // servidor depois do watermark, mas isso roda em paralelo.
+      ref.read(watermarkQueueProvider).enqueue(
+            visitaId: widget.visitaId,
+            slot: 'antes',
+            pdvNome: _pdvNomeParaWatermark(),
+            promotorNome: _promotorNome,
+          );
 
       final db = ref.read(appDatabaseProvider);
       final session = await SessionService.getSession();
@@ -737,14 +759,10 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         'fotos_antes_count': _fotosAntes.length,
       });
 
-      // Sai do estado de captura ANTES de chamar processOutbox: se o
-      // SyncPause ainda estiver ativo (porque viemos de 'fotos_antes'),
-      // o processOutbox aborta sem fazer nada. Resume aqui garante que
-      // o sync de fato rode.
+      // Sai do estado de captura. O sync vai ser disparado pelo
+      // WatermarkQueueService quando o watermark da etapa terminar
+      // (lá ele dispara fullSync com fotos já prontas pra upload).
       await SyncPause.resume();
-      if (ref.read(connectivityProvider)) {
-        ref.read(syncEngineProvider).processOutbox();
-      }
 
       await LastVisitaService.clear();
       if (mounted) context.go('/home');
@@ -765,16 +783,18 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
     setState(() {
       _busy = true;
-      _busyLabel = 'Aplicando marca d\'água e salvando...';
-    });
-
-    // Aplica watermark em todas as fotos depois + galeria (mesmo
-    // padrão usado em _concluirFotosAntes).
-    await _aplicarWatermarkEmTodasFotos('depois');
-
-    setState(() {
       _busyLabel = 'Obtendo localização...';
     });
+
+    // Watermark + galeria das fotos depois rodam em BACKGROUND.
+    // O promotor avança pro checklist imediatamente.
+    ref.read(watermarkQueueProvider).enqueue(
+          visitaId: widget.visitaId,
+          slot: 'depois',
+          pdvNome: _pdvNomeParaWatermark(),
+          promotorNome: _promotorNome,
+        );
+
     final loc = await _capturarLocalizacao();
 
     final db = ref.read(appDatabaseProvider);
