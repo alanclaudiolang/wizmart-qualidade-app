@@ -3,13 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/network/connectivity_service.dart';
 import '../../../core/network/sync_engine.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/session_service.dart';
-import '../../../core/utils/last_visita_service.dart';
+import '../../../core/utils/logout_service.dart';
 import '../../../core/utils/app_colors.dart';
 import '../../widgets/bug_report_button.dart';
 
@@ -86,7 +85,7 @@ class _HomeContent extends ConsumerWidget {
   final SessionData session;
   const _HomeContent({required this.session});
 
-  Future<void> _confirmarLogout(BuildContext context) async {
+  Future<void> _confirmarLogout(BuildContext context, WidgetRef ref) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -94,8 +93,9 @@ class _HomeContent extends ConsumerWidget {
         title: const Text('Sair do app?',
             style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
-          'Você precisará entrar novamente com seu email e senha. '
-          'Visitas em andamento permanecem salvas.',
+          'Tudo do seu acesso (login, visitas locais, fotos pendentes, '
+          'logs e tarefas) será apagado deste dispositivo. Você precisará '
+          'entrar novamente. Continuar?',
           style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
@@ -114,14 +114,9 @@ class _HomeContent extends ConsumerWidget {
     );
     if (ok != true) return;
 
-    // Tenta signOut no Supabase com timeout — se offline, prossegue.
-    try {
-      await Supabase.instance.client.auth
-          .signOut()
-          .timeout(const Duration(seconds: 5));
-    } catch (_) {}
-    await SessionService.clearSession();
-    await LastVisitaService.clear();
+    // Limpeza centralizada — apaga TODO vestígio do promotor anterior.
+    final db = ref.read(appDatabaseProvider);
+    await LogoutService.logoutCompletely(db);
     if (context.mounted) context.go('/auth');
   }
 
@@ -208,7 +203,7 @@ class _HomeContent extends ConsumerWidget {
             icon: const Icon(Icons.more_vert, color: AppColors.textPrimary),
             color: AppColors.card,
             onSelected: (value) async {
-              if (value == 'logout') await _confirmarLogout(context);
+              if (value == 'logout') await _confirmarLogout(context, ref);
             },
             itemBuilder: (_) => const [
               PopupMenuItem<String>(
