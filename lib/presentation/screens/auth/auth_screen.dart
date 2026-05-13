@@ -112,10 +112,10 @@ class _AuthScreenState extends State<AuthScreen> {
         nome: userData['nome'] as String? ?? '',
         senhaHash: _lembrarMe ? senha : '',
       );
-      // Não bloqueia o login: roda em background. Se falhar (offline,
-      // RLS bloqueando, etc.), próximo login/abertura tenta de novo.
+      // Atualiza device_info em background (igual FF antigo: match por
+      // email, update direto na tabela users). Falha silenciosa.
       // ignore: discarded_futures
-      DeviceInfoService.updateForUser(userId);
+      DeviceInfoService.updateForEmail(email);
       if (mounted) context.go('/home');
     } on AuthException catch (e) {
       // Mensagens canônicas do Supabase em PT-BR.

@@ -82,7 +82,7 @@ class _SplashRedirectState extends State<_SplashRedirect> {
     // Atualiza device_info da sessão restaurada em background — não
     // bloqueia o splash. Próxima vez tenta de novo se falhar agora.
     // ignore: discarded_futures
-    DeviceInfoService.updateForUser(session.userId);
+    DeviceInfoService.updateForEmail(session.email);
 
     // Se o Android matou o app enquanto a câmera estava aberta (low memory)
     // ou o usuário trocou de app no meio da visita, restaura a tela onde
