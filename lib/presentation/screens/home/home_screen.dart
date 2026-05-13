@@ -311,6 +311,19 @@ class _HomeContent extends ConsumerWidget {
                   if (s == 3) return 2;
                   return 3;
                 }
+                int turnoOrder(String? t) {
+                  switch (t?.toLowerCase()) {
+                    case 'manha':
+                    case 'manhã':
+                      return 1;
+                    case 'tarde':
+                      return 2;
+                    case 'noite':
+                      return 3;
+                    default:
+                      return 9;
+                  }
+                }
                 final sorted = [...visitas]..sort((a, b) {
                   final pa = statusPriority(a.statusVisita);
                   final pb = statusPriority(b.statusVisita);
@@ -320,7 +333,13 @@ class _HomeContent extends ConsumerWidget {
                     return (b.diaHoraRealizado ?? '')
                         .compareTo(a.diaHoraRealizado ?? '');
                   }
-                  // demais: por horário agendado crescente
+                  // agendadas: manhã → tarde → noite; empate vai pelo
+                  // horário agendado crescente.
+                  if (a.statusVisita == 1) {
+                    final ta = turnoOrder(a.previsaoTurnoRealizada);
+                    final tb = turnoOrder(b.previsaoTurnoRealizada);
+                    if (ta != tb) return ta.compareTo(tb);
+                  }
                   return (a.diaHoraAgendado ?? '')
                       .compareTo(b.diaHoraAgendado ?? '');
                 });
@@ -463,7 +482,12 @@ class _VisitaCard extends StatelessWidget {
 
   String get _statusLabel {
     switch (visita.statusVisita) {
-      case 1: return 'Agendada';
+      case 1:
+        final t = visita.previsaoTurnoRealizada?.toLowerCase();
+        if (t == 'manha' || t == 'manhã') return 'Agendada manhã';
+        if (t == 'tarde') return 'Agendada tarde';
+        if (t == 'noite') return 'Agendada noite';
+        return 'Agendada';
       case 2: return 'Em andamento';
       case 3: return 'Realizada';
       case 5: return 'Falta';

@@ -176,9 +176,12 @@ class SyncEngine {
         final key = '$gabaritoId|$pdvId|$turno';
         final realizadaServidor = realizadasMap[key];
 
+        // Se há row no servidor (realizada/andamento), usa esse status
+        // convertido. Senão é uma "vaga" gerada pela edge function —
+        // ainda agendada no app.
         final int statusFinal = realizadaServidor != null
-            ? (realizadaServidor['status_visita'] as int? ?? 1)
-            : (item['status_visita'] as int? ?? 1);
+            ? _fromServerStatus(realizadaServidor['status_visita'] as int?)
+            : AppConstants.statusAgendada;
 
         final int? idVisita = realizadaServidor != null
             ? realizadaServidor['id'] as int?
@@ -240,7 +243,7 @@ class SyncEngine {
           diaHoraAgendado: Value(row['dia_hora_agendado'] as String?),
           diaHoraRealizado: Value(row['dia_hora_realizado'] as String?),
           diaHoraAbertura: Value(row['dia_hora_abertura'] as String?),
-          statusVisita: Value(row['status_visita'] as int?),
+          statusVisita: Value(_fromServerStatus(row['status_visita'] as int?)),
           rotaAssociada: Value(row['rota_associada'] as int?),
           idGabaritoAssociado: Value(row['id_gabarito_associado'] as int?),
           titulo: Value(row['titulo'] as String?),
@@ -359,6 +362,23 @@ class SyncEngine {
   int _toServerStatus(int? appStatus) {
     if (appStatus == AppConstants.statusRealizada) return 1; // 3 -> 1
     return appStatus ?? AppConstants.statusEmAndamento;
+  }
+
+  /// Inverso de `_toServerStatus`. Servidor → App.
+  ///   Servidor 1 (realizada) → App 3 (statusRealizada)
+  ///   Servidor 2 (andamento) → App 2 (statusEmAndamento)
+  ///   Servidor 5 (falta)     → App 5 (statusFalta)
+  ///   null/outro             → App 1 (statusAgendada)
+  /// Sem essa conversão, uma visita realizada no servidor (status 1)
+  /// chegava no app como "agendada" (status 1), reabrindo visitas já
+  /// finalizadas — bug visto após 15 min de sync periódico.
+  int _fromServerStatus(int? serverStatus) {
+    if (serverStatus == 1) return AppConstants.statusRealizada;
+    if (serverStatus == 2) return AppConstants.statusEmAndamento;
+    if (serverStatus == AppConstants.statusFalta) {
+      return AppConstants.statusFalta;
+    }
+    return AppConstants.statusAgendada;
   }
 
   /// Monta o payload completo da visita para enviar ao Supabase, replicando
