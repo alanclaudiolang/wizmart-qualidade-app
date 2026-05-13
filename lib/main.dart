@@ -14,6 +14,7 @@ import 'core/network/sync_pause.dart';
 import 'core/utils/session_service.dart';
 import 'core/utils/sync_logger.dart';
 import 'presentation/widgets/bug_report_overlay.dart';
+import 'presentation/widgets/gps_guard.dart';
 
 const _bgSyncTask = 'wizmart_bg_sync';
 const _oneOffSyncName = 'wizmart_oneoff_sync';
@@ -192,7 +193,11 @@ class _WizMartAppState extends ConsumerState<WizMartApp>
       ),
       routerConfig: appRouter,
       builder: (context, child) {
-        return BugReportOverlay(child: child ?? const SizedBox.shrink());
+        // GpsGuard envolve TUDO: se GPS desligar ou perder permissão a
+        // qualquer momento, um overlay bloqueia a UI até reativar.
+        return GpsGuard(
+          child: BugReportOverlay(child: child ?? const SizedBox.shrink()),
+        );
       },
     );
   }

@@ -279,7 +279,7 @@ class _HomeContent extends ConsumerWidget {
                   child: Padding(
                     padding: const EdgeInsets.only(top: 1),
                     child: Text(
-                      'Desatualizado · baixar',
+                      'atualizar',
                       style: TextStyle(
                         color: AppColors.danger,
                         fontSize: 9,
