@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/network/connectivity_service.dart';
 import '../../../core/network/sync_engine.dart';
+import '../../../core/network/version_check_service.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/logout_service.dart';
@@ -100,6 +102,57 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 class _HomeContent extends ConsumerWidget {
   final SessionData session;
   const _HomeContent({required this.session});
+
+  Future<void> _abrirDownloadAPK(
+      BuildContext context, WidgetRef ref, AppVersionInfo info) async {
+    final url = info.apkDownloadUrl;
+    if (url == null) return;
+
+    // Bloqueia o download se houver dados não sincronizados.
+    // Instalar uma APK nova por cima pode causar perda de dados que
+    // ainda não chegaram ao servidor.
+    final db = ref.read(appDatabaseProvider);
+    final pendentes = await db.countPendentesParaSync();
+    if (pendentes > 0) {
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: AppColors.card,
+          title: const Text(
+            'Não dá pra atualizar agora',
+            style: TextStyle(color: AppColors.textPrimary),
+          ),
+          content: Text(
+            'Você tem $pendentes item${pendentes == 1 ? '' : 's'} '
+            'pendente${pendentes == 1 ? '' : 's'} de sincronização. '
+            'Verifique sua conexão, aguarde o app sincronizar tudo, '
+            'e então tente atualizar de novo.',
+            style: const TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Entendi',
+                  style: TextStyle(color: AppColors.primary)),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final ok = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: AppColors.danger,
+        content: const Text('Não foi possível abrir o download.'),
+      ));
+    }
+  }
 
   Future<void> _confirmarLogout(BuildContext context, WidgetRef ref) async {
     final ok = await showDialog<bool>(
@@ -213,6 +266,31 @@ class _HomeContent extends ConsumerWidget {
                   ),
                 ),
               ),
+              // Badge "Desatualizado" — só aparece se o release v-latest
+              // do GitHub tem build maior que o local. Toca pra baixar.
+              Consumer(builder: (_, ref, __) {
+                final v = ref.watch(appVersionProvider);
+                final info = v.asData?.value;
+                if (info == null || !info.outdated) {
+                  return const SizedBox.shrink();
+                }
+                return GestureDetector(
+                  onTap: () => _abrirDownloadAPK(context, ref, info),
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Text(
+                      'Desatualizado · baixar',
+                      style: TextStyle(
+                        color: AppColors.danger,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.underline,
+                        decorationColor: AppColors.danger,
+                      ),
+                    ),
+                  ),
+                );
+              }),
             ],
           ),
           PopupMenuButton<String>(

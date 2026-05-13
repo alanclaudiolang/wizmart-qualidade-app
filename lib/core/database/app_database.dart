@@ -368,6 +368,29 @@ class AppDatabase extends _$AppDatabase {
   Future<void> deleteOutboxItem(String id) =>
       (delete(outboxItems)..where((o) => o.id.equals(id))).go();
 
+  /// Conta itens não-sincronizados (qualquer status que não seja terminal).
+  /// Usado para bloquear ações destrutivas (download de APK nova,
+  /// logoff opcionalmente, etc.) enquanto há dados pendentes.
+  Future<int> countPendentesParaSync() async {
+    final outboxCount = await (select(outboxItems)
+          ..where((o) =>
+              o.status.equals('pending') | o.status.equals('processing')))
+        .get()
+        .then((r) => r.length);
+    final photosCount = await (select(pendingPhotos)
+          ..where((p) =>
+              p.status.equals('pending') |
+              p.status.equals('uploading') |
+              p.status.equals('error')))
+        .get()
+        .then((r) => r.length);
+    final visitasPending = await (select(visitas)
+          ..where((v) => v.syncStatus.equals('pending')))
+        .get()
+        .then((r) => r.length);
+    return outboxCount + photosCount + visitasPending;
+  }
+
   // ── Pending Photos ─────────────────────────────────────────────────────────
 
   Future<List<PendingPhoto>> getPendingPhotos() {
