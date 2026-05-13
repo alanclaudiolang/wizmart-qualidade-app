@@ -2,13 +2,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/network/connectivity_service.dart';
 import '../../../core/network/sync_engine.dart';
 import '../../../core/network/version_check_service.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/utils/apk_updater_service.dart';
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/logout_service.dart';
 import '../../../core/utils/app_colors.dart';
@@ -144,16 +145,18 @@ class _HomeContent extends ConsumerWidget {
       return;
     }
 
-    final ok = await launchUrl(
-      Uri.parse(url),
-      mode: LaunchMode.externalApplication,
+    if (!context.mounted) return;
+    // Dialog modal com barra de progresso. O download roda em
+    // background e o usuário pode cancelar a qualquer momento.
+    final cancelToken = CancelToken();
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _ApkDownloadDialog(
+        url: url,
+        cancelToken: cancelToken,
+      ),
     );
-    if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: AppColors.danger,
-        content: const Text('Não foi possível abrir o download.'),
-      ));
-    }
   }
 
   Future<void> _confirmarLogout(BuildContext context, WidgetRef ref) async {
@@ -755,6 +758,105 @@ class _EmptyState extends StatelessWidget {
         const SizedBox(height: 8),
         Text('Puxe para baixo para atualizar', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
       ]),
+    );
+  }
+}
+
+
+class _ApkDownloadDialog extends StatefulWidget {
+  final String url;
+  final CancelToken cancelToken;
+  const _ApkDownloadDialog({required this.url, required this.cancelToken});
+
+  @override
+  State<_ApkDownloadDialog> createState() => _ApkDownloadDialogState();
+}
+
+class _ApkDownloadDialogState extends State<_ApkDownloadDialog> {
+  double _progress = 0.0;
+  String? _erro;
+  bool _terminado = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _iniciarDownload();
+  }
+
+  Future<void> _iniciarDownload() async {
+    final result = await ApkUpdaterService.downloadAndInstall(
+      url: widget.url,
+      cancelToken: widget.cancelToken,
+      onProgress: (p) {
+        if (mounted) setState(() => _progress = p);
+      },
+    );
+    if (!mounted) return;
+    setState(() {
+      _terminado = true;
+      if (!result.success && result.error != 'cancelado') {
+        _erro = result.error;
+      }
+    });
+    // Se sucesso (instalador foi disparado), fecha o dialog — o
+    // promotor agora interage com o prompt nativo do Android.
+    if (result.success && mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.card,
+      title: Text(
+        _erro != null ? 'Erro ao baixar' : 'Baixando atualização',
+        style: const TextStyle(color: AppColors.textPrimary),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_erro != null)
+            Text(
+              _erro!,
+              style: const TextStyle(color: AppColors.danger, fontSize: 13),
+            )
+          else ...[
+            LinearProgressIndicator(
+              value: _progress > 0 ? _progress : null,
+              backgroundColor: AppColors.border,
+              color: AppColors.primary,
+              minHeight: 6,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _terminado
+                  ? 'Pronto. Toque em "Instalar" no prompt do Android.'
+                  : '${(_progress * 100).toStringAsFixed(0)}%',
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            if (!_terminado) {
+              widget.cancelToken.cancel();
+            }
+            Navigator.of(context).pop();
+          },
+          child: Text(
+            _erro != null || _terminado ? 'Fechar' : 'Cancelar',
+            style: const TextStyle(color: AppColors.textSecondary),
+          ),
+        ),
+      ],
     );
   }
 }

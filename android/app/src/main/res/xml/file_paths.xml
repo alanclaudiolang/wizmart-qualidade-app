@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Paths que o FileProvider está autorizado a expor pra outros apps
+     via URIs content://. Usado pelo open_filex pra entregar a APK
+     baixada ao instalador nativo do Android. -->
+<paths>
+    <files-path name="files" path="."/>
+    <cache-path name="cache" path="."/>
+    <external-files-path name="external_files" path="."/>
+    <external-cache-path name="external_cache" path="."/>
+</paths>

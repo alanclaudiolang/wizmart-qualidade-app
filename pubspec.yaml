@@ -65,6 +65,9 @@ dependencies:
   # Abrir URL externa (download da nova APK)
   url_launcher: ^6.3.1
 
+  # Abrir APK baixada pra instalar (via Intent nativo do Android)
+  open_filex: ^4.5.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
