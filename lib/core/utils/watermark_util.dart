@@ -1,19 +1,34 @@
 // lib/core/utils/watermark_util.dart
+//
+// Watermark via Flutter Canvas (Skia, hardware-accelerated) + encode JPG
+// nativo via flutter_image_compress (libjpeg-turbo no Android).
+//
+// Substitui a versão anterior que usava `package:image` em Dart puro
+// para decode/encode (lento em devices fracos). A nova versão:
+//   1. Pre-compress nativo: resize máx 2048px + recompress JPG 90.
+//   2. Canvas nativo: desenha foto + faixa + texto.
+//   3. Encode final via flutter_image_compress (PNG intermediário → JPG).
+//
+// Funciona em Android 5+ (mínimo do Flutter atual). Skia/Canvas estão
+// disponíveis desde Android 4.4 — sem dependência de GPU especial.
+
 import 'dart:io';
-import 'package:flutter/foundation.dart';
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 class WatermarkUtil {
-  /// Resize moderado antes do watermark: max 2560px no lado maior.
-  /// Foto típica de celular é 3000–4000px; reduzir para 2560 corta ~40-60%
-  /// do tamanho do arquivo sem perda visual perceptível, e acelera muito o
-  /// decode/encode em Dart puro que vem depois.
-  static const _maxSide = 2560;
-  static const _jpegQuality = 90;
+  /// Lado maior da imagem final. Reduzir esse valor acelera todo o
+  /// pipeline (decode/canvas/encode). 2048px ainda fica nítido pra
+  /// visualização normal de foto de PDV.
+  static const _maxSide = 2048;
+
+  /// Qualidade JPG do encode final.
+  static const _jpegQuality = 88;
 
   static Future<String> applyWatermark({
     required String sourcePath,
@@ -22,16 +37,15 @@ class WatermarkUtil {
     required String slot,
     required DateTime capturedAt,
   }) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final outDir = '${dir.path}/wizmart_fotos';
+    final docs = await getApplicationDocumentsDirectory();
+    final outDir = '${docs.path}/wizmart_fotos';
     await Directory(outDir).create(recursive: true);
-    final outPath = '$outDir/${const Uuid().v4()}.jpg';
-    final preCompressedPath = '$outDir/${const Uuid().v4()}_pre.jpg';
+    final uid = const Uuid().v4();
+    final outPath = '$outDir/$uid.jpg';
 
-    // Pre-compress nativo (libjpeg-turbo no Android, ImageIO no iOS) na main
-    // isolate — o plugin não funciona dentro de compute(). Resultado: arquivo
-    // já redimensionado e recomprimido que o `package:image` vai abrir muito
-    // mais rápido para desenhar o watermark.
+    // ── 1. Pre-compress nativo: resize + recompress + strip EXIF.
+    //     Resultado: arquivo menor que o Canvas precisará decodificar.
+    final preCompressedPath = '$outDir/${uid}_pre.jpg';
     final preResult = await FlutterImageCompress.compressAndGetFile(
       sourcePath,
       preCompressedPath,
@@ -43,97 +57,94 @@ class WatermarkUtil {
     final inputPath = preResult?.path ?? sourcePath;
     final usedPreCompressed = preResult != null;
 
-    return compute(_processImage, {
-      'sourcePath': inputPath,
-      'outPath': outPath,
-      'pdvNome': pdvNome,
-      'promotorNome': promotorNome,
-      'slot': slot,
-      'capturedAt': capturedAt.toIso8601String(),
-      'isTempInput': usedPreCompressed,
-    });
-  }
+    // ── 2. Decode com instantiateImageCodec (Skia nativo).
+    final bytes = await File(inputPath).readAsBytes();
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    final original = frame.image;
+    final w = original.width;
+    final h = original.height;
 
-  static Future<String> _processImage(Map<String, dynamic> args) async {
-    final sourcePath = args['sourcePath'] as String;
-    final outPath = args['outPath'] as String;
-    final pdvNome = args['pdvNome'] as String;
-    final promotorNome = args['promotorNome'] as String;
-    final slot = args['slot'] as String;
-    final capturedAt = DateTime.parse(args['capturedAt'] as String);
+    // ── 3. Calcula dimensões da faixa e fonte proporcionais à foto.
+    final faixaH = (h * 0.13).round().clamp(120, 600);
+    final fontSize = (w * 0.022).clamp(20.0, 64.0);
+    final lineH = fontSize * 1.45;
+    final padding = (w * 0.018).clamp(10.0, 48.0);
 
-    final sourceBytes = await File(sourcePath).readAsBytes();
-    final original = img.decodeImage(sourceBytes);
-    if (original == null) {
-      throw Exception('Não foi possível decodificar a imagem');
-    }
+    // ── 4. Desenha tudo no Canvas (Skia hardware-accelerated).
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
 
-    // ─── Estratégia: renderizar a faixa em resolução baixa e escalar
-    // pra largura da foto. Como `arial48` é fixa em pixels, renderizando
-    // numa faixa de 1/4 da largura e depois escalando 4x, o texto vira
-    // efetivamente "arial192" — visível mesmo em foto de 4000px.
-    //
-    // Em foto de 1080×1920: faixaSmall 270×120 → faixaScaled 1080×480
-    // Em foto de 4000×3000: faixaSmall 1000×120 → faixaScaled 4000×480
-    //
-    // Ratio escolhido para que a faixa final fique entre 12-18% da
-    // altura da foto, dependendo do aspect ratio.
+    // Foto original ocupa o topo.
+    canvas.drawImage(original, Offset.zero, Paint());
 
-    const baseSmallH = 120;
-    const lineHeight = 36; // arial24 (~24px) com gap
-    const topPadding = 12;
-    final smallW = (original.width / 4).round().clamp(400, 2000);
+    // Faixa preta no rodapé (logo abaixo da foto).
+    canvas.drawRect(
+      Rect.fromLTWH(0, h.toDouble(), w.toDouble(), faixaH.toDouble()),
+      Paint()..color = Colors.black,
+    );
 
-    final faixaSmall = img.Image(width: smallW, height: baseSmallH);
-    img.fill(faixaSmall, color: img.ColorRgb8(0, 0, 0));
-
+    // Texto via TextPainter (3 linhas).
     final dateStr = DateFormat('dd/MM/yyyy HH:mm:ss').format(capturedAt);
-    final linhas = [
+    final linhas = <String>[
       'PDV: $pdvNome',
       'Promotor: $promotorNome',
       'FOTO $slot  -  $dateStr',
     ];
-    final font = img.arial24;
-    final corBranca = img.ColorRgb8(255, 255, 255);
-
     for (var i = 0; i < linhas.length; i++) {
-      img.drawString(
-        faixaSmall,
-        linhas[i],
-        font: font,
-        x: 12,
-        y: topPadding + (i * lineHeight),
-        color: corBranca,
+      final tp = TextPainter(
+        text: TextSpan(
+          text: linhas[i],
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: fontSize,
+            fontWeight: FontWeight.w600,
+            // Fonte default do sistema é mais leve e funciona em todos
+            // os Android. Sem fontes externas pra evitar ttf bundling.
+          ),
+        ),
+        textDirection: ui.TextDirection.ltr,
+        maxLines: 1,
+        ellipsis: '…',
       );
+      tp.layout(maxWidth: w.toDouble() - padding * 2);
+      tp.paint(canvas, Offset(padding, h + padding + i * lineH));
+      tp.dispose();
     }
 
-    // Escala 4x — texto fica visualmente 4x maior que arial24 (≈ arial96)
-    final faixaScaled = img.copyResize(
-      faixaSmall,
-      width: original.width,
-      interpolation: img.Interpolation.linear,
+    // ── 5. Render final.
+    final picture = recorder.endRecording();
+    final composed = await picture.toImage(w, h + faixaH);
+    final pngByteData =
+        await composed.toByteData(format: ui.ImageByteFormat.png);
+    final pngBytes = pngByteData!.buffer.asUint8List();
+
+    original.dispose();
+    composed.dispose();
+    picture.dispose();
+
+    // ── 6. PNG → JPG nativo (PNG sai pesado do Canvas; JPG nativo
+    //     é rápido e gera um arquivo bem menor pra subir).
+    final tmpPngPath = '$outDir/${uid}_tmp.png';
+    final tmpPng = File(tmpPngPath);
+    await tmpPng.writeAsBytes(pngBytes);
+    final compressResult = await FlutterImageCompress.compressAndGetFile(
+      tmpPngPath,
+      outPath,
+      quality: _jpegQuality,
+      format: CompressFormat.jpeg,
     );
 
-    // Composita: foto original em cima, faixa escalada embaixo
-    final novaAltura = original.height + faixaScaled.height;
-    final novaImagem = img.Image(width: original.width, height: novaAltura);
-    img.compositeImage(novaImagem, original, dstX: 0, dstY: 0);
-    img.compositeImage(novaImagem, faixaScaled,
-        dstX: 0, dstY: original.height);
-
-    await File(outPath).writeAsBytes(
-      img.encodeJpg(novaImagem, quality: _jpegQuality),
-    );
-
-    // Remove arquivo intermediário do pre-compress.
-    final isTempInput = (args['isTempInput'] as bool?) ?? false;
-    if (isTempInput) {
+    // ── 7. Cleanup: remove temporários.
+    try {
+      await tmpPng.delete();
+    } catch (_) {}
+    if (usedPreCompressed) {
       try {
-        final f = File(sourcePath);
-        if (await f.exists()) await f.delete();
+        await File(inputPath).delete();
       } catch (_) {}
     }
 
-    return outPath;
+    return compressResult?.path ?? outPath;
   }
 }

@@ -9,6 +9,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:drift/drift.dart' as drift;
 import 'package:gal/gal.dart';
@@ -391,43 +392,34 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       final loc = await _capturarLocalizacao();
       final capturedAt = DateTime.now();
 
-      // Mesma fonte da home: `visita.titulo` (campo descritivo do FF).
-      // Cai pra api_local_name / api_local_customer_name só como fallback.
-      final tituloVisita = _visita?.titulo;
-      final pdvNome = (tituloVisita != null && tituloVisita.trim().isNotEmpty)
-          ? tituloVisita
-          : (_pdv?.apiLocalName ??
-              _pdv?.apiLocalCustomerName ??
-              'PDV ${_visita?.idPdvAssociado ?? '?'}');
-
-      // Aplica watermark com timeout — em devices fracos com baixa memória
-      // o isolate pode travar. 30s é o ceiling absoluto antes de desistir.
-      final watermarkedPath = await WatermarkUtil.applyWatermark(
-        sourcePath: picked.path,
-        pdvNome: pdvNome,
-        promotorNome: _promotorNome,
-        slot: slot == 'antes' ? 'Antes' : 'Depois',
-        capturedAt: capturedAt,
-      ).timeout(const Duration(seconds: 30));
-
-      // Não salva na galeria aqui. Galeria só recebe as fotos quando o
-      // promotor CONCLUI a etapa (em `_concluirFotosAntes`/`_concluirFotosDepois`),
-      // pra que voltar antes de concluir não polua a galeria.
+      // Copia o arquivo da câmera pro diretório do app pra ter caminho
+      // estável. O watermark NÃO é aplicado aqui — entra na fila e é
+      // processado em batch quando o promotor concluir a etapa. Isso
+      // torna o "salvar foto" praticamente instantâneo.
+      final docs = await getApplicationDocumentsDirectory();
+      final outDir = '${docs.path}/wizmart_fotos';
+      await Directory(outDir).create(recursive: true);
+      final ext = picked.path.split('.').last;
+      final rawPath = '$outDir/${const Uuid().v4()}_raw.$ext';
+      await File(picked.path).copy(rawPath);
 
       setState(() {
         if (slot == 'antes') {
-          _fotosAntes.add(watermarkedPath);
+          _fotosAntes.add(rawPath);
         } else {
-          _fotosDepois.add(watermarkedPath);
+          _fotosDepois.add(rawPath);
         }
       });
 
-      // Salva no DB local
+      // Salva no DB local (com path do arquivo cru — vai ser substituído
+      // pelo path com watermark quando a etapa for concluída).
       await _salvarFotosLocalmente(slot, loc, capturedAt);
 
-      // Enfileira upload
+      // Enfileira upload — mas a foto SÓ vai pro servidor depois que
+      // o watermark for aplicado. Ver `_aplicarWatermarkEmTodasFotos`
+      // que troca o localPath antes de a etapa concluir.
       await _enfileirarUploadFoto(
-          watermarkedPath, slot, atual + 1, capturedAt);
+          rawPath, slot, atual + 1, capturedAt);
     } catch (e, stack) {
       debugPrint('Erro ao registrar foto ($slot): $e\n$stack');
       if (mounted) {
@@ -591,13 +583,88 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     _updateSyncPause('fotos_antes');
   }
 
-  /// Salva todas as fotos da etapa na galeria do dispositivo. Cada chamada
-  /// individual tem timeout curto — galeria não é crítica, falha silenciosa.
-  Future<void> _salvarFotosNaGaleria(List<String> paths) async {
-    for (final p in paths) {
+  String _pdvNomeParaWatermark() {
+    final titulo = _visita?.titulo;
+    if (titulo != null && titulo.trim().isNotEmpty) return titulo;
+    return _pdv?.apiLocalName ??
+        _pdv?.apiLocalCustomerName ??
+        'PDV ${_visita?.idPdvAssociado ?? '?'}';
+  }
+
+  /// Aplica watermark em batch nas fotos da etapa e salva na galeria.
+  /// O processamento é pesado (decode + canvas + encode) — por isso
+  /// fica concentrado na conclusão da etapa, com um único loading,
+  /// em vez de bloquear o promotor a cada foto.
+  ///
+  /// Para cada foto:
+  ///   - Lê `createdAt` (capturedAt original) do PendingPhoto.
+  ///   - Aplica watermark → gera novo arquivo.
+  ///   - Salva o novo arquivo na galeria.
+  ///   - Apaga o arquivo cru original.
+  ///   - Atualiza PendingPhoto.localPath para apontar pro novo arquivo.
+  ///
+  /// Atualiza também a lista em memória (`_fotosAntes` / `_fotosDepois`)
+  /// e persiste em `fotosAntesJson` / `fotosDepoisJson`.
+  Future<void> _aplicarWatermarkEmTodasFotos(String slot) async {
+    final db = ref.read(appDatabaseProvider);
+    final pendentes =
+        await db.getPendingPhotosByVisitaSlot(widget.visitaId, slot);
+    if (pendentes.isEmpty) return;
+
+    final pdvNome = _pdvNomeParaWatermark();
+    final novosCaminhos = <String>[];
+
+    for (final p in pendentes) {
       try {
-        await Gal.putImage(p).timeout(const Duration(seconds: 5));
-      } catch (_) {}
+        final capturedAt =
+            DateTime.tryParse(p.createdAt) ?? DateTime.now();
+        final wmPath = await WatermarkUtil.applyWatermark(
+          sourcePath: p.localPath,
+          pdvNome: pdvNome,
+          promotorNome: _promotorNome,
+          slot: slot == 'antes' ? 'Antes' : 'Depois',
+          capturedAt: capturedAt,
+        ).timeout(const Duration(seconds: 30));
+
+        novosCaminhos.add(wmPath);
+
+        // Atualiza o registro pra o sync subir o arquivo com watermark.
+        await db.updatePendingPhoto(PendingPhotosCompanion(
+          id: drift.Value(p.id),
+          localPath: drift.Value(wmPath),
+        ));
+
+        // Galeria — não crítica, falha silenciosa.
+        try {
+          await Gal.putImage(wmPath).timeout(const Duration(seconds: 5));
+        } catch (_) {}
+
+        // Cleanup do arquivo cru (só se o caminho mudou).
+        if (wmPath != p.localPath) {
+          try {
+            await File(p.localPath).delete();
+          } catch (_) {}
+        }
+      } catch (e) {
+        debugPrint('Falha no watermark da foto ${p.id}: $e');
+        // Em caso de falha, mantém o arquivo cru como fallback.
+        novosCaminhos.add(p.localPath);
+      }
+    }
+
+    // Atualiza listas em memória + JSON do DB.
+    if (slot == 'antes') {
+      _fotosAntes = novosCaminhos;
+      await db.updateVisita(VisitasCompanion(
+        id: drift.Value(widget.visitaId),
+        fotosAntesJson: drift.Value(jsonEncode(_fotosAntes)),
+      ));
+    } else {
+      _fotosDepois = novosCaminhos;
+      await db.updateVisita(VisitasCompanion(
+        id: drift.Value(widget.visitaId),
+        fotosDepoisJson: drift.Value(jsonEncode(_fotosDepois)),
+      ));
     }
   }
 
@@ -612,8 +679,16 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     });
 
     try {
-      // Persiste as fotos na galeria agora que a etapa foi concluída.
-      await _salvarFotosNaGaleria(_fotosAntes);
+      // Aplica watermark em todas as fotos da etapa + salva na galeria.
+      // Processamento pesado concentrado num único loading (em vez de
+      // bloquear o promotor a cada foto durante a captura).
+      setState(() {
+        _busyLabel = 'Aplicando marca d\'água e salvando...';
+      });
+      await _aplicarWatermarkEmTodasFotos('antes');
+      setState(() {
+        _busyLabel = 'Salvando...';
+      });
 
       final db = ref.read(appDatabaseProvider);
       final session = await SessionService.getSession();
@@ -666,12 +741,16 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
     setState(() {
       _busy = true;
-      _busyLabel = 'Obtendo localização...';
+      _busyLabel = 'Aplicando marca d\'água e salvando...';
     });
 
-    // Persiste as fotos depois na galeria agora que a etapa foi concluída.
-    await _salvarFotosNaGaleria(_fotosDepois);
+    // Aplica watermark em todas as fotos depois + galeria (mesmo
+    // padrão usado em _concluirFotosAntes).
+    await _aplicarWatermarkEmTodasFotos('depois');
 
+    setState(() {
+      _busyLabel = 'Obtendo localização...';
+    });
     final loc = await _capturarLocalizacao();
 
     final db = ref.read(appDatabaseProvider);

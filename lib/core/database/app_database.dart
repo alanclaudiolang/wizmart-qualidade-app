@@ -411,6 +411,17 @@ class AppDatabase extends _$AppDatabase {
       (update(pendingPhotos)..where((p) => p.id.equals(photo.id.value)))
           .write(photo);
 
+  /// Busca fotos pendentes de uma visita+slot ordenadas por `numero`
+  /// (mesma ordem do grid). Usado pra aplicar watermark em batch na
+  /// hora de concluir uma etapa.
+  Future<List<PendingPhoto>> getPendingPhotosByVisitaSlot(
+          int visitaId, String slot) =>
+      (select(pendingPhotos)
+            ..where((p) =>
+                p.visitaId.equals(visitaId) & p.slot.equals(slot))
+            ..orderBy([(p) => OrderingTerm.asc(p.numero)]))
+          .get();
+
   /// Apaga registros de upload pendente para a foto cujo path local foi
   /// removido pelo usuário no grid. Usado pelo botão "X" da grade de fotos.
   Future<void> deletePendingPhotosByPath(String localPath) =>
