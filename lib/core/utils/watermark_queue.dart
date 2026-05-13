@@ -103,6 +103,12 @@ class WatermarkQueueService {
     final novosCaminhos = <String>[];
 
     for (final p in pendentes) {
+      // Pausa pra UI thread terminar transições/renderizar frames
+      // antes do trabalho pesado. Sem isso, fotos em sequência
+      // bloqueiam o UI thread ininterruptamente (Canvas + toByteData
+      // são síncronos do ponto de vista do main isolate).
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
       // Foto já com watermark (cenário: voltou do checklist e re-concluiu).
       final isRaw = p.localPath.contains('_raw.');
       if (!isRaw) {

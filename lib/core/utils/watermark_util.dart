@@ -169,28 +169,23 @@ class WatermarkUtil {
     composed.dispose();
     picture.dispose();
 
-    // ── 6. PNG → JPG nativo (PNG sai pesado do Canvas; JPG nativo
-    //     é rápido e gera um arquivo bem menor pra subir).
-    final tmpPngPath = '$outDir/${uid}_tmp.png';
-    final tmpPng = File(tmpPngPath);
-    await tmpPng.writeAsBytes(pngBytes);
-    final compressResult = await FlutterImageCompress.compressAndGetFile(
-      tmpPngPath,
-      outPath,
+    // ── 6. PNG bytes → JPG bytes via plugin nativo (sem I/O de arquivo
+    //     intermediário). compressWithList roda em thread nativa do
+    //     plugin (libjpeg-turbo), liberando o UI thread.
+    final jpgBytes = await FlutterImageCompress.compressWithList(
+      pngBytes,
       quality: _jpegQuality,
       format: CompressFormat.jpeg,
     );
+    await File(outPath).writeAsBytes(jpgBytes);
 
     // ── 7. Cleanup: remove temporários.
-    try {
-      await tmpPng.delete();
-    } catch (_) {}
     if (usedPreCompressed) {
       try {
         await File(inputPath).delete();
       } catch (_) {}
     }
 
-    return compressResult?.path ?? outPath;
+    return outPath;
   }
 }

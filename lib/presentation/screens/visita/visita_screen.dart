@@ -719,22 +719,13 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       _showError('Tire pelo menos uma foto antes da reposição.');
       return;
     }
-    setState(() {
-      _busy = true;
-      _busyLabel = 'Salvando...';
-    });
 
     try {
-      // Enfileira watermark + galeria pra rodar em BACKGROUND. O
-      // promotor segue o fluxo (vai pra home, abre outra visita,
-      // etc.) sem esperar nem ver indicador. As fotos só sobem ao
-      // servidor depois do watermark, mas isso roda em paralelo.
-      ref.read(watermarkQueueProvider).enqueue(
-            visitaId: widget.visitaId,
-            slot: 'antes',
-            pdvNome: _pdvNomeParaWatermark(),
-            promotorNome: _promotorNome,
-          );
+      // Captura tudo o que vai precisar pro enqueue ANTES do context.go
+      // (depois disso o widget é descartado e `ref` fica inválido).
+      final wmQueue = ref.read(watermarkQueueProvider);
+      final pdvNome = _pdvNomeParaWatermark();
+      final promotorNome = _promotorNome;
 
       final db = ref.read(appDatabaseProvider);
       final session = await SessionService.getSession();
@@ -766,9 +757,19 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
       await LastVisitaService.clear();
       if (mounted) context.go('/home');
+
+      // SÓ AGORA enfileira o watermark. Importante fazer DEPOIS do
+      // context.go pra que o trabalho pesado do Canvas/encode (que
+      // bloqueia o UI thread) aconteça enquanto o promotor já está
+      // navegando na home, não na tela de visita.
+      wmQueue.enqueue(
+        visitaId: widget.visitaId,
+        slot: 'antes',
+        pdvNome: pdvNome,
+        promotorNome: promotorNome,
+      );
     } catch (e) {
       if (mounted) {
-        setState(() => _busy = false);
         _showError('Não foi possível salvar. Tente novamente.');
       }
     }
@@ -786,14 +787,11 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       _busyLabel = 'Obtendo localização...';
     });
 
-    // Watermark + galeria das fotos depois rodam em BACKGROUND.
-    // O promotor avança pro checklist imediatamente.
-    ref.read(watermarkQueueProvider).enqueue(
-          visitaId: widget.visitaId,
-          slot: 'depois',
-          pdvNome: _pdvNomeParaWatermark(),
-          promotorNome: _promotorNome,
-        );
+    // Captura tudo o que o queue precisa ANTES (depois o widget vai
+    // pra outro estado e setState não vai mais ser confiável).
+    final wmQueue = ref.read(watermarkQueueProvider);
+    final pdvNome = _pdvNomeParaWatermark();
+    final promotorNome = _promotorNome;
 
     final loc = await _capturarLocalizacao();
 
@@ -813,6 +811,16 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     });
     // Saída do estado de captura → libera sync.
     _updateSyncPause('checklist');
+
+    // SÓ AGORA enfileira o watermark — depois que a UI já transicionou
+    // pro checklist. O processamento pesado roda enquanto o promotor
+    // responde o checklist, sem aparecer como "tela travada".
+    wmQueue.enqueue(
+      visitaId: widget.visitaId,
+      slot: 'depois',
+      pdvNome: pdvNome,
+      promotorNome: promotorNome,
+    );
   }
 
   Future<void> _finalizarVisita() async {
