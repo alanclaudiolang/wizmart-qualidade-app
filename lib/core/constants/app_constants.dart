@@ -11,10 +11,10 @@ class AppConstants {
   static const String sessionUserPhoneKey = 'wizmart_user_phone';
   static const String sessionUserNameKey = 'wizmart_user_name';
 
-  // Sync — fail-safe periódico do WorkManager. 15 min é o mínimo que o
-  // Android permite em PeriodicTask (qualquer valor menor é arredondado).
-  // Em devices que entram em Doze/App Standby o intervalo real pode ser
-  // bem maior. Configurar como 15 deixa claro que esse é o piso real.
+  // Sync — fail-safe periódico do WorkManager. 15 min é o mínimo
+  // permitido pelo Android (qualquer valor menor é arredondado).
+  // Em devices em Doze/App Standby o intervalo real pode ser bem maior.
+  // 15 deixa claro que esse é o piso real.
   static const int syncIntervalMinutes = 15;
   static const int pingIntervalSeconds = 30;
   static const int maxSyncRetries = 10;
