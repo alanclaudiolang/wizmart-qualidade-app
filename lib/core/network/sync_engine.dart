@@ -158,6 +158,11 @@ class SyncEngine {
       _logger.log('salvar', 'Salvando visitas normais no SQLite...');
       int salvas = 0;
       int puladas = 0;
+      // Marca quais entradas do realizadasMap já foram aproveitadas no
+      // loop da edge function — as que sobrarem são órfãs (gabarito
+      // removido da rota mas visita já realizada/em andamento existe
+      // no servidor) e precisam ser recriadas no passo 6b.
+      final keysConsumidas = <String>{};
 
       for (final item in visitasNormais) {
         final gabaritoId = item['gabarito_id'] as int? ?? 0;
@@ -175,6 +180,7 @@ class SyncEngine {
 
         final key = '$gabaritoId|$pdvId|$turno';
         final realizadaServidor = realizadasMap[key];
+        if (realizadaServidor != null) keysConsumidas.add(key);
 
         // Se há row no servidor (realizada/andamento), usa esse status
         // convertido. Senão é uma "vaga" gerada pela edge function —
@@ -227,6 +233,50 @@ class SyncEngine {
       }
 
       _logger.log('salvar', '$salvas visitas normais salvas, $puladas puladas (pending local)');
+
+      // ── 6b. Recria visitas realizadas/andamento órfãs ─────────────────────
+      // Visitas que estão no servidor com status 1 ou 2 mas cujo
+      // gabarito NÃO aparece mais na rota atual (supervisor removeu
+      // depois que o promotor já tinha começado/realizado). Sem este
+      // passo, elas seriam apagadas pelo deleteVisitasSincronizadas...
+      // e não voltariam pela edge function.
+      int orfas = 0;
+      for (final entry in realizadasMap.entries) {
+        if (keysConsumidas.contains(entry.key)) continue;
+        final row = entry.value;
+        final idVisita = row['id'] as int?;
+        if (idVisita == null) continue;
+        await _db.upsertVisita(VisitasCompanion(
+          id: Value(idVisita),
+          serverId: Value(idVisita),
+          idPdvAssociado: Value(row['id_pdv_associado'] as int?),
+          idPromotorAssociado: Value(promotorId),
+          rotaAssociada: Value(row['rota_associada'] as int? ?? rotaId),
+          idGabaritoAssociado: Value(row['id_gabarito_associado'] as int?),
+          diaHoraAgendado: Value(row['dia_hora_agendado'] as String?),
+          statusVisita:
+              Value(_fromServerStatus(row['status_visita'] as int?)),
+          titulo: Value(row['titulo'] as String?),
+          previsaoTurnoRealizada:
+              Value(row['previsao_turno_realizada'] as String?),
+          visitaAvulsa: const Value(false),
+          diaHoraRealizado: Value(row['dia_hora_realizado'] as String?),
+          diaHoraAbertura: Value(row['dia_hora_abertura'] as String?),
+          localizacaoAbertura:
+              Value(row['localizacao_abertura'] as String?),
+          localizacaoEncerramento:
+              Value(row['localizacao_encerramento'] as String?),
+          syncStatus: const Value('synced'),
+          syncedAt: Value(DateTime.now().toIso8601String()),
+        ));
+        orfas++;
+      }
+      if (orfas > 0) {
+        _logger.log(
+            'salvar',
+            '$orfas visitas órfãs preservadas '
+            '(gabarito fora da rota mas visita já estava em andamento/realizada)');
+      }
 
       // ── 7. Salva avulsas ───────────────────────────────────────────────────
       int avulsasSalvas = 0;
