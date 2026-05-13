@@ -21,14 +21,31 @@ class AppVersionInfo {
   final bool outdated;
   final String? latestBuild;
   final String? apkDownloadUrl;
+  /// Timestamp `published_at` do release no GitHub. Usado pra decidir
+  /// se a atualização é obrigatória (publicado em dia anterior a hoje).
+  final DateTime? publishedAt;
 
   const AppVersionInfo({
     required this.outdated,
     this.latestBuild,
     this.apkDownloadUrl,
+    this.publishedAt,
   });
 
   static const upToDate = AppVersionInfo(outdated: false);
+
+  /// Atualização obrigatória quando o release foi publicado em dia
+  /// anterior à data local de hoje. "Dia seguinte" = qualquer dia
+  /// posterior à data da publicação.
+  bool get atualizacaoObrigatoria {
+    if (!outdated) return false;
+    if (publishedAt == null) return false;
+    final agora = DateTime.now();
+    final hoje = DateTime(agora.year, agora.month, agora.day);
+    final pubLocal = publishedAt!.toLocal();
+    final diaPub = DateTime(pubLocal.year, pubLocal.month, pubLocal.day);
+    return hoje.isAfter(diaPub);
+  }
 }
 
 class VersionCheckService {
@@ -74,10 +91,17 @@ class VersionCheckService {
       final outdated = (latestNum != null &&
           (localNum == null || latestNum > localNum));
 
+      DateTime? publishedAt;
+      final pubRaw = json['published_at'] as String?;
+      if (pubRaw != null) {
+        publishedAt = DateTime.tryParse(pubRaw);
+      }
+
       return AppVersionInfo(
         outdated: outdated,
         latestBuild: latestBuild,
         apkDownloadUrl: url,
+        publishedAt: publishedAt,
       );
     } catch (_) {
       return AppVersionInfo.upToDate;

@@ -39,6 +39,11 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
+// Flag de sessão pra não re-mostrar o dialog de atualização obrigatória
+// várias vezes no mesmo open. Reseta naturalmente quando o app é
+// fechado/reaberto — alinhado com "primeira vez no dia seguinte".
+bool _bloqueioObrigatorioTratado = false;
+
 class _HomeScreenState extends ConsumerState<HomeScreen>
     with WidgetsBindingObserver {
   @override
@@ -159,6 +164,58 @@ class _HomeContent extends ConsumerWidget {
     );
   }
 
+  Future<void> _mostrarBloqueioObrigatorio(
+      BuildContext context, WidgetRef ref, AppVersionInfo info) async {
+    final db = ref.read(appDatabaseProvider);
+    final pendentes = await db.countPendentesParaSync();
+    if (pendentes > 0) {
+      // Promotor ainda tem coisa pra sincronizar — não bloqueia.
+      // Quando finalizar tudo, próxima abertura ou re-checagem mostra.
+      _bloqueioObrigatorioTratado = false;
+      return;
+    }
+    if (!context.mounted) return;
+
+    final url = info.apkDownloadUrl;
+    if (url == null) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          backgroundColor: AppColors.card,
+          title: const Text(
+            'Atualização obrigatória',
+            style: TextStyle(color: AppColors.textPrimary),
+          ),
+          content: Text(
+            'Há uma nova versão do app disponível há mais de um dia. '
+            'Para continuar usando, é necessário atualizar agora. '
+            'Build novo: ${info.latestBuild ?? '?'}.',
+            style: const TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.of(dialogCtx).pop();
+                if (context.mounted) {
+                  await _abrirDownloadAPK(context, ref, info);
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.onPrimary,
+              ),
+              child: const Text('Atualizar agora'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _confirmarLogout(BuildContext context, WidgetRef ref) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -215,6 +272,23 @@ class _HomeContent extends ConsumerWidget {
         ref.invalidate(visitasHojeProvider(session.userId));
         ref.invalidate(appVersionProvider);
       }
+    });
+
+    // Bloqueio obrigatório de atualização: quando o release foi
+    // publicado em dia anterior ao de hoje, o promotor tem que
+    // atualizar antes de continuar. Só dispara se ele está online
+    // e SEM pendências (visitas/fotos não sincronizadas).
+    ref.listen<AsyncValue<AppVersionInfo>>(appVersionProvider, (_, next) {
+      final info = next.asData?.value;
+      if (info == null) return;
+      if (!info.atualizacaoObrigatoria) return;
+      if (!isOnline) return;
+      if (_bloqueioObrigatorioTratado) return;
+      _bloqueioObrigatorioTratado = true;
+      // Atrasa pra dar tempo da home renderizar antes do modal.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) _mostrarBloqueioObrigatorio(context, ref, info);
+      });
     });
 
     return Scaffold(
