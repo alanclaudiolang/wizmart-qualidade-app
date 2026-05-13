@@ -103,11 +103,26 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     }
   }
 
-  /// Saída pra home. Se há fotos não concluídas na etapa atual, pergunta
-  /// se quer descartar — voltar = abandonar a etapa. Galeria nem foi
-  /// tocada (só recebe fotos ao concluir a etapa), e os arquivos locais
-  /// + entradas no DB são limpos.
+  /// Botão voltar / back do sistema. Comportamento depende da etapa:
+  ///   - checklist → volta pra grid de fotos depois (não home)
+  ///   - fotos_antes/fotos_depois com fotos → dialog "descartar?"
+  ///   - demais → vai direto pra home
   Future<void> _sairParaHome() async {
+    // No checklist, voltar = volta uma etapa (grid de fotos depois),
+    // não pra home. Promotor pode estar revisando ou tirando mais
+    // fotos antes de finalizar.
+    if (_localState == 'checklist') {
+      final db = ref.read(appDatabaseProvider);
+      await db.updateVisita(VisitasCompanion(
+        id: drift.Value(widget.visitaId),
+        localState: const drift.Value('fotos_depois'),
+      ));
+      if (!mounted) return;
+      setState(() => _localState = 'fotos_depois');
+      _updateSyncPause('fotos_depois');
+      return;
+    }
+
     final temFotosAntes =
         _localState == 'fotos_antes' && _fotosAntes.isNotEmpty;
     final temFotosDepois =
@@ -615,6 +630,15 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     final novosCaminhos = <String>[];
 
     for (final p in pendentes) {
+      // Pula se a foto já tem watermark (caminho não termina em "_raw").
+      // Caso comum: promotor concluiu fotos depois, foi pro checklist,
+      // voltou pra grid de fotos depois e concluiu de novo — não pode
+      // aplicar watermark em cima de quem já tem.
+      final isRaw = p.localPath.contains('_raw.');
+      if (!isRaw) {
+        novosCaminhos.add(p.localPath);
+        continue;
+      }
       try {
         final capturedAt =
             DateTime.tryParse(p.createdAt) ?? DateTime.now();
