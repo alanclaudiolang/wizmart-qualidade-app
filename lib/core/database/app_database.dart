@@ -281,6 +281,43 @@ class AppDatabase extends _$AppDatabase {
         .go();
   }
 
+  /// Estratégia "destruir + re-baixar": apaga TODAS as visitas do
+  /// promotor que já estão sincronizadas (`syncStatus='synced'`) E
+  /// não têm pendências (nenhum outbox item nem pending photo
+  /// referenciando-as). O pullAll subsequente vai recriar tudo a
+  /// partir do servidor, garantindo que app e servidor fiquem
+  /// idênticos. Visitas pending/em upload são preservadas pra serem
+  /// enviadas no próximo push.
+  Future<void> deleteVisitasSincronizadasSemPendencias(int promotorId) async {
+    // IDs de visitas com outbox items ainda não finalizados.
+    final outboxRows = await (select(outboxItems)
+          ..where((o) =>
+              o.status.equals('pending') | o.status.equals('processing')))
+        .get();
+    final naoApagar = <int>{};
+    for (final o in outboxRows) {
+      naoApagar.add(o.entityId);
+    }
+
+    // IDs de visitas com fotos ainda em fila de upload.
+    final photoRows = await (select(pendingPhotos)
+          ..where((p) =>
+              p.status.equals('pending') | p.status.equals('uploading')))
+        .get();
+    for (final p in photoRows) {
+      naoApagar.add(p.visitaId);
+    }
+
+    final query = delete(visitas)
+      ..where((v) =>
+          v.idPromotorAssociado.equals(promotorId) &
+          v.syncStatus.equals('synced'));
+    if (naoApagar.isNotEmpty) {
+      query.where((v) => v.id.isNotIn(naoApagar.toList()));
+    }
+    await query.go();
+  }
+
   Future<void> upsertVisita(VisitasCompanion visita) =>
       into(visitas).insertOnConflictUpdate(visita);
 

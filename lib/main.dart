@@ -11,6 +11,7 @@ import 'core/database/app_database.dart';
 import 'core/network/connectivity_service.dart';
 import 'core/network/sync_engine.dart';
 import 'core/network/sync_pause.dart';
+import 'core/utils/session_service.dart';
 import 'core/utils/sync_logger.dart';
 import 'presentation/widgets/bug_report_overlay.dart';
 
@@ -56,7 +57,14 @@ void callbackDispatcher() {
         final db = AppDatabase();
         final logger = SyncLoggerNotifier();
         final syncEngine = SyncEngine(db, Supabase.instance.client, logger);
-        await syncEngine.processOutbox();
+        // fullSync = push + pull. Precisa do userId da sessão atual; se
+        // não houver sessão (deslogado), só faz push do que sobrou.
+        final session = await SessionService.getSession();
+        if (session != null) {
+          await syncEngine.fullSync(session.userId);
+        } else {
+          await syncEngine.processOutbox();
+        }
         await db.close();
       } catch (_) {}
     }
@@ -133,12 +141,19 @@ class _WizMartAppState extends ConsumerState<WizMartApp>
     super.dispose();
   }
 
-  /// Gatilho universal — dispara sync. O `processOutbox` checa `SyncPause`
-  /// internamente, então durante captura este kick é absorvido sem efeito.
-  void _kickSync() {
+  /// Gatilho universal — dispara fullSync (push + pull). O `processOutbox`
+  /// checa `SyncPause` internamente, então durante captura este kick é
+  /// absorvido sem efeito.
+  Future<void> _kickSync() async {
     if (!mounted) return;
     if (!ref.read(connectivityProvider)) return;
-    ref.read(syncEngineProvider).processOutbox();
+    final session = await SessionService.getSession();
+    final engine = ref.read(syncEngineProvider);
+    if (session != null) {
+      await engine.fullSync(session.userId);
+    } else {
+      await engine.processOutbox();
+    }
   }
 
   @override

@@ -30,6 +30,17 @@ class SyncEngine {
     _logger.log('fim', 'Sincronização concluída');
   }
 
+  /// Ciclo completo de sincronização usado por todos os gatilhos:
+  ///   1) PUSH: envia tudo que está pendente local pro servidor
+  ///   2) PULL: apaga local sincronizado e re-baixa do servidor
+  /// Garante que app e servidor fiquem idênticos após cada execução.
+  /// Push antes de pull pra não perder dados locais que ainda não
+  /// foram enviados.
+  Future<void> fullSync(int promotorId) async {
+    await processOutbox();
+    await pullAll(promotorId);
+  }
+
   Future<void> _pullVisitasDia(int promotorId) async {
     try {
       final hoje = DateTime.now();
@@ -134,9 +145,14 @@ class SyncEngine {
         realizadasMap[key] = r;
       }
 
-      // ── 5. Limpa agendadas não modificadas ─────────────────────────────────
-      _logger.log('limpeza', 'Removendo visitas agendadas não modificadas localmente...');
-      await _db.deleteVisitasAgendadasHojeNaoModificadas(promotorId);
+      // ── 5. Limpa local antes do refetch ────────────────────────────────────
+      // Estratégia "destruir + re-baixar": apaga TODAS as visitas synced
+      // do promotor (preservando as com pendências). O loop seguinte
+      // recria tudo a partir do servidor — garantindo que app e
+      // servidor fiquem idênticos a cada pull, sem duplicação possível.
+      _logger.log('limpeza',
+          'Apagando visitas synced sem pendências (re-baixa do servidor)...');
+      await _db.deleteVisitasSincronizadasSemPendencias(promotorId);
 
       // ── 6. Salva visitas normais ───────────────────────────────────────────
       _logger.log('salvar', 'Salvando visitas normais no SQLite...');
@@ -316,13 +332,19 @@ class SyncEngine {
     }
     _running = true;
     try {
-      final items = await _db.getPendingOutboxItems();
-      for (final item in items) {
-        await _processOutboxItem(item);
-      }
+      // FOTOS PRIMEIRO: o upload em Storage gera URLs públicas e grava
+      // em pending_photos.storageUrl. Quando o INSERT/UPDATE da visita
+      // rodar a seguir, o _buildVisitaPayload lê essas URLs e envia
+      // tudo num único request — em vez de 1 INSERT + N UPDATEs.
       final photos = await _db.getPendingPhotos();
       for (final photo in photos) {
         await _processPhotoUpload(photo);
+      }
+      // Reler outbox: o upload das fotos pode ter enfileirado UPDATEs
+      // pra visitas com serverId já existente (fluxo de re-edição).
+      final items = await _db.getPendingOutboxItems();
+      for (final item in items) {
+        await _processOutboxItem(item);
       }
     } finally {
       _running = false;
