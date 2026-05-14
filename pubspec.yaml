@@ -68,6 +68,11 @@ dependencies:
   # Abrir APK baixada pra instalar (via Intent nativo do Android)
   open_filex: ^4.5.0
 
+  # Detectar RAM total (definir tier de qualidade) e espaço em disco
+  # (pré-check antes de tirar foto)
+  system_info_plus: ^0.0.5
+  disk_space_plus: ^0.2.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
