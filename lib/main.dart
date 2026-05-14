@@ -14,11 +14,13 @@ import 'core/network/sync_pause.dart';
 import 'core/network/version_check_service.dart';
 import 'core/utils/session_service.dart';
 import 'core/utils/gps_status_service.dart';
+import 'core/utils/permissions_status_service.dart';
 import 'core/utils/sync_logger.dart';
 import 'presentation/screens/home/home_screen.dart'
     show contadoresProvider, pdvsProvider, visitasHojeProvider;
 import 'presentation/widgets/bug_report_overlay.dart';
 import 'presentation/widgets/gps_guard.dart';
+import 'presentation/widgets/permissions_guard.dart';
 
 const _bgSyncTask = 'wizmart_bg_sync';
 const _oneOffSyncName = 'wizmart_oneoff_sync';
@@ -178,9 +180,10 @@ class _WizMartAppState extends ConsumerState<WizMartApp>
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
       // App voltou pro foreground (de configs, câmera, painel rápido,
-      // outro app, etc.). Re-checa GPS — o stream do Geolocator nem
-      // sempre dispara em mudanças via painel rápido do Android.
+      // outro app, etc.). Re-checa GPS e permissões — não há stream
+      // nativa pra essas mudanças; precisa polling no lifecycle.
       ref.read(gpsStatusProvider.notifier).refresh();
+      ref.read(permissionsStatusProvider.notifier).refresh();
       _kickSync();
     }
   }
@@ -212,10 +215,13 @@ class _WizMartAppState extends ConsumerState<WizMartApp>
       ),
       routerConfig: appRouter,
       builder: (context, child) {
-        // GpsGuard envolve TUDO: se GPS desligar ou perder permissão a
-        // qualquer momento, um overlay bloqueia a UI até reativar.
-        return GpsGuard(
-          child: BugReportOverlay(child: child ?? const SizedBox.shrink()),
+        // PermissionsGuard (câmera/galeria) + GpsGuard envolvem TUDO.
+        // Se qualquer permissão crítica for negada ou o GPS desligar,
+        // um overlay bloqueia a UI até resolver.
+        return PermissionsGuard(
+          child: GpsGuard(
+            child: BugReportOverlay(child: child ?? const SizedBox.shrink()),
+          ),
         );
       },
     );
