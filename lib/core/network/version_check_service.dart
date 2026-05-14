@@ -68,18 +68,30 @@ class VersionCheckService {
       final assets = (json['assets'] as List?) ?? const [];
       if (assets.isEmpty) return AppVersionInfo.upToDate;
 
-      // Pega o primeiro asset .apk
-      final apkAsset = assets.cast<Map<String, dynamic>>().firstWhere(
-            (a) => (a['name'] as String?)?.endsWith('.apk') ?? false,
-            orElse: () => const {},
-          );
-      if (apkAsset.isEmpty) return AppVersionInfo.upToDate;
+      final assetList = assets.cast<Map<String, dynamic>>();
 
-      final name = apkAsset['name'] as String? ?? '';
-      final url = apkAsset['browser_download_url'] as String?;
-      // Extrai "buildNN" do nome
-      final match = RegExp(r'build(\d+)').firstMatch(name);
-      if (match == null || url == null) return AppVersionInfo.upToDate;
+      // Extrai o build number do asset variável (nome contém "buildNN").
+      final assetComBuild = assetList.firstWhere(
+        (a) {
+          final n = (a['name'] as String?) ?? '';
+          return n.contains(RegExp(r'build\d+')) && n.endsWith('.apk');
+        },
+        orElse: () => const {},
+      );
+      if (assetComBuild.isEmpty) return AppVersionInfo.upToDate;
+      final nameVar = assetComBuild['name'] as String? ?? '';
+      final match = RegExp(r'build(\d+)').firstMatch(nameVar);
+      if (match == null) return AppVersionInfo.upToDate;
+
+      // Pra download usamos o asset com nome fixo (promotor-wizmart.apk)
+      // — URL estável que serve qualquer release. Cai pro asset variável
+      // se por algum motivo o fixo não existir.
+      final assetFixo = assetList.firstWhere(
+        (a) => (a['name'] as String?) == 'promotor-wizmart.apk',
+        orElse: () => assetComBuild,
+      );
+      final url = assetFixo['browser_download_url'] as String?;
+      if (url == null) return AppVersionInfo.upToDate;
 
       final latestBuild = match.group(1)!;
       final localBuild = AppConstants.buildNumber;

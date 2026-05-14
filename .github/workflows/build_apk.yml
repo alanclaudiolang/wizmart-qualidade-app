@@ -95,10 +95,15 @@ jobs:
             --dart-define=BUILD_TIME="$BUILD_TIME" \
             --dart-define=BUILD_NUMBER="$BUILD_NUMBER"
 
-      - name: Renomear APK
+      - name: Renomear APK (versão rastreável + cópia fixa)
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk \
              "${{ steps.meta.outputs.apk_name }}"
+          # Cópia com nome FIXO — usada como URL estável pra compartilhar
+          # com novos usuários (ex: link no WhatsApp). Sobrescreve a cada
+          # build, então a mesma URL sempre serve a versão mais recente.
+          cp build/app/outputs/flutter-apk/app-release.apk \
+             "promotor-wizmart.apk"
 
       - name: Upload APK (artifact)
         uses: actions/upload-artifact@v4
@@ -113,8 +118,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete v-latest --yes --cleanup-tag 2>/dev/null || true
+          # Sobe os DOIS arquivos:
+          #  - apk_name (com versão+build+timestamp) pra rastreabilidade
+          #  - promotor-wizmart.apk pra URL fixa estável
           gh release create v-latest \
             "${{ steps.meta.outputs.apk_name }}" \
-            --title "WizMart v${{ steps.meta.outputs.version }} (build ${{ github.run_number }})" \
+            "promotor-wizmart.apk" \
+            --title "Promotor Wizmart v${{ steps.meta.outputs.version }} (build ${{ github.run_number }})" \
             --notes "Build automático do commit ${{ github.sha }} em ${{ steps.meta.outputs.build_time }}." \
             --target ${{ github.sha }}
