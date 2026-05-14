@@ -374,13 +374,46 @@ class _HomeContent extends ConsumerWidget {
             icon: const Icon(Icons.more_vert, color: AppColors.textPrimary),
             color: AppColors.card,
             onSelected: (value) async {
-              if (value == 'logs') {
-                if (context.mounted) context.push('/sync-logs');
-              } else if (value == 'logout') {
-                await _confirmarLogout(context, ref);
+              switch (value) {
+                case 'home':
+                  // Já está aqui; menu fecha sem navegar.
+                  break;
+                case 'faltas':
+                  if (context.mounted) context.push('/faltas');
+                  break;
+                case 'logs':
+                  if (context.mounted) context.push('/sync-logs');
+                  break;
+                case 'logout':
+                  await _confirmarLogout(context, ref);
+                  break;
               }
             },
             itemBuilder: (_) => const [
+              PopupMenuItem<String>(
+                value: 'home',
+                child: Row(
+                  children: [
+                    Icon(Icons.home_outlined,
+                        color: AppColors.textPrimary, size: 20),
+                    SizedBox(width: 8),
+                    Text('Home',
+                        style: TextStyle(color: AppColors.textPrimary)),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'faltas',
+                child: Row(
+                  children: [
+                    Icon(Icons.event_busy,
+                        color: AppColors.danger, size: 20),
+                    SizedBox(width: 8),
+                    Text('Faltas',
+                        style: TextStyle(color: AppColors.textPrimary)),
+                  ],
+                ),
+              ),
               PopupMenuItem<String>(
                 value: 'logs',
                 child: Row(

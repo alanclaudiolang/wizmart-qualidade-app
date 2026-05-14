@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../presentation/screens/auth/auth_screen.dart';
 import '../../presentation/screens/bug_report/bug_report_screen.dart';
+import '../../presentation/screens/faltas/faltas_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/sync_logs/sync_logs_screen.dart';
 import '../../presentation/screens/visita/visita_screen.dart';
@@ -43,6 +44,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/sync-logs',
       builder: (_, __) => const SyncLogsScreen(),
+    ),
+    GoRoute(
+      path: '/faltas',
+      builder: (_, __) => const FaltasScreen(),
     ),
   ],
 );
