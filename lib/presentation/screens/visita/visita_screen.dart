@@ -491,14 +491,8 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       await _persistirListaEMetadados(
           slot, novaLista, loc, capturedAt);
       await _enfileirarUploadFoto(rawPath, slot, atual + 1, capturedAt);
-
-      // Salva a bruta na galeria do celular imediatamente. Se o promotor
-      // perder o app, a foto está preservada no carretel. Quando o
-      // watermark for aplicado no concluir-etapa, a galeria recebe
-      // outra cópia (a versão definitiva com marca d'água).
-      try {
-        await Gal.putImage(rawPath).timeout(const Duration(seconds: 5));
-      } catch (_) {/* galeria não crítica */}
+      // Galeria só recebe a foto com watermark, ao concluir a etapa.
+      // Não duplicamos: nada vai pro carretel agora.
 
       // DB OK → AGORA atualiza o grid em memória.
       setState(() {
@@ -733,92 +727,6 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     return _pdv?.apiLocalName ??
         _pdv?.apiLocalCustomerName ??
         'PDV ${_visita?.idPdvAssociado ?? '?'}';
-  }
-
-  /// Aplica watermark em batch nas fotos da etapa e salva na galeria.
-  /// O processamento é pesado (decode + canvas + encode) — por isso
-  /// fica concentrado na conclusão da etapa, com um único loading,
-  /// em vez de bloquear o promotor a cada foto.
-  ///
-  /// Para cada foto:
-  ///   - Lê `createdAt` (capturedAt original) do PendingPhoto.
-  ///   - Aplica watermark → gera novo arquivo.
-  ///   - Salva o novo arquivo na galeria.
-  ///   - Apaga o arquivo cru original.
-  ///   - Atualiza PendingPhoto.localPath para apontar pro novo arquivo.
-  ///
-  /// Atualiza também a lista em memória (`_fotosAntes` / `_fotosDepois`)
-  /// e persiste em `fotosAntesJson` / `fotosDepoisJson`.
-  Future<void> _aplicarWatermarkEmTodasFotos(String slot) async {
-    final db = ref.read(appDatabaseProvider);
-    final pendentes =
-        await db.getPendingPhotosByVisitaSlot(widget.visitaId, slot);
-    if (pendentes.isEmpty) return;
-
-    final pdvNome = _pdvNomeParaWatermark();
-    final novosCaminhos = <String>[];
-
-    for (final p in pendentes) {
-      // Pula se a foto já tem watermark (caminho não termina em "_raw").
-      // Caso comum: promotor concluiu fotos depois, foi pro checklist,
-      // voltou pra grid de fotos depois e concluiu de novo — não pode
-      // aplicar watermark em cima de quem já tem.
-      final isRaw = p.localPath.contains('_raw.');
-      if (!isRaw) {
-        novosCaminhos.add(p.localPath);
-        continue;
-      }
-      try {
-        final capturedAt =
-            DateTime.tryParse(p.createdAt) ?? DateTime.now();
-        final wmPath = await WatermarkUtil.applyWatermark(
-          sourcePath: p.localPath,
-          pdvNome: pdvNome,
-          promotorNome: _promotorNome,
-          slot: slot == 'antes' ? 'Antes' : 'Depois',
-          capturedAt: capturedAt,
-        ).timeout(const Duration(seconds: 30));
-
-        novosCaminhos.add(wmPath);
-
-        // Atualiza o registro pra o sync subir o arquivo com watermark.
-        await db.updatePendingPhoto(PendingPhotosCompanion(
-          id: drift.Value(p.id),
-          localPath: drift.Value(wmPath),
-        ));
-
-        // Galeria — não crítica, falha silenciosa.
-        try {
-          await Gal.putImage(wmPath).timeout(const Duration(seconds: 5));
-        } catch (_) {}
-
-        // Cleanup do arquivo cru (só se o caminho mudou).
-        if (wmPath != p.localPath) {
-          try {
-            await File(p.localPath).delete();
-          } catch (_) {}
-        }
-      } catch (e) {
-        debugPrint('Falha no watermark da foto ${p.id}: $e');
-        // Em caso de falha, mantém o arquivo cru como fallback.
-        novosCaminhos.add(p.localPath);
-      }
-    }
-
-    // Atualiza listas em memória + JSON do DB.
-    if (slot == 'antes') {
-      _fotosAntes = novosCaminhos;
-      await db.updateVisita(VisitasCompanion(
-        id: drift.Value(widget.visitaId),
-        fotosAntesJson: drift.Value(jsonEncode(_fotosAntes)),
-      ));
-    } else {
-      _fotosDepois = novosCaminhos;
-      await db.updateVisita(VisitasCompanion(
-        id: drift.Value(widget.visitaId),
-        fotosDepoisJson: drift.Value(jsonEncode(_fotosDepois)),
-      ));
-    }
   }
 
   Future<void> _concluirFotosAntes() async {

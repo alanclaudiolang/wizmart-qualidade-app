@@ -128,22 +128,22 @@ class WatermarkUtil {
     }
 
     // Linha 4 (canto inferior direito da faixa): info técnica
-    // discreta e translúcida — útil pra debug post-mortem de fotos
-    // problemáticas. Ex: "imgQ:70 · max1600 · tier:low"
-    if (imgQuality != null || maxSide != null) {
-      final partes = <String>[];
-      if (imgQuality != null) partes.add('imgQ:$imgQuality');
-      if (maxSide != null) partes.add('max$maxSide');
-      if (tierLabel != null) partes.add(tierLabel);
-      final infoText = partes.join(' · ');
-      final infoFontSize = (w * 0.016).clamp(14.0, 40.0);
+    // translúcida — útil pra debug post-mortem de fotos problemáticas.
+    // Ex: "imgQ:70 · max1600 · low"
+    final infoPartes = <String>[];
+    if (imgQuality != null) infoPartes.add('imgQ:$imgQuality');
+    if (maxSide != null) infoPartes.add('max$maxSide');
+    if (tierLabel != null) infoPartes.add(tierLabel);
+    if (infoPartes.isNotEmpty) {
+      final infoText = infoPartes.join(' · ');
+      final infoFontSize = (w * 0.020).clamp(18.0, 52.0);
       final tpInfo = TextPainter(
         text: TextSpan(
           text: infoText,
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.45),
+            color: Colors.white.withValues(alpha: 0.7),
             fontSize: infoFontSize,
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w600,
           ),
         ),
         textDirection: ui.TextDirection.ltr,
