@@ -31,6 +31,7 @@ import 'package:gal/gal.dart';
 
 import '../database/app_database.dart';
 import '../network/sync_engine.dart';
+import 'performance_profile.dart';
 import 'session_service.dart';
 import 'watermark_util.dart';
 
@@ -125,6 +126,12 @@ class WatermarkQueueService {
       try {
         final capturedAt =
             DateTime.tryParse(p.createdAt) ?? DateTime.now();
+        // Tier atual (default mid se ainda não detectou).
+        final profile = _ref
+                .read(performanceProfileProvider)
+                .asData
+                ?.value ??
+            PerformanceProfile.padraoCarregando;
         final wmPath = await WatermarkUtil.applyWatermark(
           sourcePath: p.localPath,
           pdvNome: item.pdvNome,
@@ -132,6 +139,10 @@ class WatermarkQueueService {
           slot: item.slot == 'antes' ? 'Antes' : 'Depois',
           capturedAt: capturedAt,
           numero: p.numero,
+          finalJpegQuality: profile.watermarkQuality,
+          imgQuality: profile.imageQuality,
+          maxSide: profile.imageMaxSide,
+          tierLabel: profile.tierLabel,
         ).timeout(const Duration(seconds: 30));
 
         // Foto pronta — substitui path e libera pra sync.

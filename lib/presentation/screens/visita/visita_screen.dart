@@ -21,9 +21,12 @@ import '../../../core/network/connectivity_service.dart';
 import '../../../main.dart' show scheduleOneOffSync;
 import '../../../core/utils/watermark_util.dart';
 import '../../../core/utils/session_service.dart';
+import 'package:disk_space_plus/disk_space_plus.dart';
 import '../../../core/utils/last_visita_service.dart';
 import '../../../core/utils/watermark_queue.dart';
 import '../../../core/utils/gps_status_service.dart';
+import '../../../core/utils/performance_profile.dart';
+import '../../../core/utils/sync_logger.dart';
 import '../../../core/utils/app_colors.dart';
 import '../../widgets/bug_report_button.dart';
 
@@ -369,6 +372,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   // ── Câmera ─────────────────────────────────────────────────────────────────
 
   Future<void> _tirarFoto(String slot) async {
+    final logger = ref.read(syncLoggerProvider.notifier);
     final limite = slot == 'antes'
         ? AppConstants.maxFotosAntes
         : AppConstants.maxFotosDepois;
@@ -389,6 +393,31 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       return;
     }
 
+    // ── (C) Pré-check de storage livre. Mínimo de 100MB pra ter
+    //    folga pra foto + watermark + processamento. Bloqueia com
+    //    diálogo claro pra promotor liberar espaço antes de tirar.
+    try {
+      final freeMb = await DiskSpacePlus().getFreeDiskSpace ?? 9999;
+      if (freeMb < 100) {
+        logger.log('foto', 'Storage baixo: ${freeMb.toStringAsFixed(0)}MB',
+            erro: true);
+        await _avisoBloqueante(
+          'Armazenamento cheio',
+          'Você tem apenas ${freeMb.toStringAsFixed(0)} MB livres. '
+              'Libere espaço no celular (apague fotos, vídeos ou apps '
+              'não usados) antes de tirar mais fotos.',
+        );
+        return;
+      }
+    } catch (_) {/* sem disk_space, segue */}
+
+    // ── Perfil de performance (tier) ─────────────────────────────────
+    final profileAsync = ref.read(performanceProfileProvider);
+    final profile =
+        profileAsync.asData?.value ?? PerformanceProfile.padraoCarregando;
+    logger.log('foto',
+        'Captura iniciada slot=$slot tier=${profile.tierLabel} q=${profile.imageQuality} maxSide=${profile.imageMaxSide}');
+
     // Pausa sync enquanto a câmera estiver aberta — câmera consome CPU/RAM
     // e qualquer upload concorrente em device de baixa memória pode travar.
     await SyncPause.pause();
@@ -396,20 +425,20 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     try {
       picked = await _picker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 85,
+        imageQuality: profile.imageQuality,
+        maxWidth: profile.imageMaxSide.toDouble(),
+        maxHeight: profile.imageMaxSide.toDouble(),
         preferredCameraDevice: CameraDevice.rear,
       );
     } on PlatformException catch (e) {
-      // Distingue permissão negada de outras falhas — no Android, o code
-      // costuma ser 'camera_access_denied' ou 'photo_access_denied'.
       _updateSyncPause(_localState);
       final code = e.code.toLowerCase();
       if (code.contains('denied') || code.contains('permission')) {
-        _showError(
-          'Permissão de câmera negada. Ative nas configurações do app.',
-        );
+        await _avisoBloqueante('Permissão negada',
+            'Permissão de câmera negada. Ative nas configurações do app.');
       } else {
-        _showError('Não foi possível abrir a câmera. Tente novamente.');
+        await _avisoBloqueante('Erro na câmera',
+            'Não foi possível abrir a câmera. Tente novamente.');
       }
       return;
     }
@@ -428,9 +457,9 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       final capturedAt = DateTime.now();
 
       // Copia o arquivo da câmera pro diretório do app pra ter caminho
-      // estável. O watermark NÃO é aplicado aqui — entra na fila e é
-      // processado em batch quando o promotor concluir a etapa. Isso
-      // torna o "salvar foto" praticamente instantâneo.
+      // estável. A foto já vem da câmera com quality+resize do tier
+      // aplicados — pronta pra entrar no grid. O watermark é desenhado
+      // depois, quando o promotor concluir a etapa.
       final docs = await getApplicationDocumentsDirectory();
       final outDir = '${docs.path}/wizmart_fotos';
       await Directory(outDir).create(recursive: true);
@@ -438,30 +467,102 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       final rawPath = '$outDir/${const Uuid().v4()}_raw.$ext';
       await File(picked.path).copy(rawPath);
 
+      // ── (B) Valida que o arquivo realmente foi gravado e tem
+      //    conteúdo. Sem isso, copy "silencioso" deixava grid com
+      //    referência pra arquivo inexistente/zerado.
+      final f = File(rawPath);
+      final exists = await f.exists();
+      final size = exists ? await f.length() : 0;
+      if (!exists || size <= 0) {
+        logger.log('foto',
+            'Cópia falhou: exists=$exists size=$size path=$rawPath',
+            erro: true);
+        throw FileSystemException(
+            'Arquivo da foto vazio ou ausente após cópia', rawPath);
+      }
+      logger.log('foto', 'Cópia OK ${(size / 1024).toStringAsFixed(0)}KB');
+
+      // ── (A) Atomicidade: GRAVA no DB ANTES de adicionar no grid.
+      //    Se DB falhar, foto não vai pro grid (consistência forte).
+      //    Construímos a nova lista localmente sem mutar a state ainda.
+      final novaLista = slot == 'antes'
+          ? [..._fotosAntes, rawPath]
+          : [..._fotosDepois, rawPath];
+      await _persistirListaEMetadados(
+          slot, novaLista, loc, capturedAt);
+      await _enfileirarUploadFoto(rawPath, slot, atual + 1, capturedAt);
+      // Galeria só recebe a foto com watermark, ao concluir a etapa.
+      // Não duplicamos: nada vai pro carretel agora.
+
+      // DB OK → AGORA atualiza o grid em memória.
       setState(() {
         if (slot == 'antes') {
-          _fotosAntes.add(rawPath);
+          _fotosAntes = novaLista;
         } else {
-          _fotosDepois.add(rawPath);
+          _fotosDepois = novaLista;
         }
       });
-
-      // Salva no DB local (com path do arquivo cru — vai ser substituído
-      // pelo path com watermark quando a etapa for concluída).
-      await _salvarFotosLocalmente(slot, loc, capturedAt);
-
-      // Enfileira upload — mas a foto SÓ vai pro servidor depois que
-      // o watermark for aplicado. Ver `_aplicarWatermarkEmTodasFotos`
-      // que troca o localPath antes de a etapa concluir.
-      await _enfileirarUploadFoto(
-          rawPath, slot, atual + 1, capturedAt);
+      logger.log('foto', 'Foto registrada total=${novaLista.length}');
     } catch (e, stack) {
+      logger.log('foto', 'Erro: $e', erro: true);
       debugPrint('Erro ao registrar foto ($slot): $e\n$stack');
       if (mounted) {
-        _showError('Falha ao registrar foto: $e');
+        await _avisoBloqueante(
+          'Foto não foi salva',
+          'Tente novamente. Se o problema persistir, libere espaço '
+              'no celular ou reinicie o app.',
+        );
       }
     } finally {
       if (mounted) setState(() => _savingPhoto = false);
+    }
+  }
+
+  /// (D) Dialog bloqueante em vez de SnackBar pra erros críticos. O
+  /// promotor precisa ver e confirmar — SnackBar somia em 4s e ele
+  /// não entendia o que perdeu.
+  Future<void> _avisoBloqueante(String titulo, String mensagem) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: Text(titulo,
+            style: const TextStyle(color: AppColors.textPrimary)),
+        content: Text(mensagem,
+            style: const TextStyle(color: AppColors.textSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Entendi',
+                style: TextStyle(color: AppColors.primary)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Persiste a nova lista de fotos + horários/localização no DB.
+  /// Reuso pra que o `_tirarFoto` faça DB write antes do setState do grid.
+  Future<void> _persistirListaEMetadados(String slot, List<String> lista,
+      String? loc, DateTime capturedAt) async {
+    final db = ref.read(appDatabaseProvider);
+    if (slot == 'antes') {
+      await db.updateVisita(VisitasCompanion(
+        id: drift.Value(widget.visitaId),
+        fotosAntesJson: drift.Value(jsonEncode(lista)),
+        diaHoraFotosAntes: drift.Value(capturedAt.toIso8601String()),
+        localizacaoFotosAntes: drift.Value(loc),
+        syncStatus: const drift.Value('pending'),
+      ));
+    } else {
+      await db.updateVisita(VisitasCompanion(
+        id: drift.Value(widget.visitaId),
+        fotosDepoisJson: drift.Value(jsonEncode(lista)),
+        diaHoraFotosDepois: drift.Value(capturedAt.toIso8601String()),
+        localizacaoFotosDepois: drift.Value(loc),
+        syncStatus: const drift.Value('pending'),
+      ));
     }
   }
 
@@ -626,92 +727,6 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     return _pdv?.apiLocalName ??
         _pdv?.apiLocalCustomerName ??
         'PDV ${_visita?.idPdvAssociado ?? '?'}';
-  }
-
-  /// Aplica watermark em batch nas fotos da etapa e salva na galeria.
-  /// O processamento é pesado (decode + canvas + encode) — por isso
-  /// fica concentrado na conclusão da etapa, com um único loading,
-  /// em vez de bloquear o promotor a cada foto.
-  ///
-  /// Para cada foto:
-  ///   - Lê `createdAt` (capturedAt original) do PendingPhoto.
-  ///   - Aplica watermark → gera novo arquivo.
-  ///   - Salva o novo arquivo na galeria.
-  ///   - Apaga o arquivo cru original.
-  ///   - Atualiza PendingPhoto.localPath para apontar pro novo arquivo.
-  ///
-  /// Atualiza também a lista em memória (`_fotosAntes` / `_fotosDepois`)
-  /// e persiste em `fotosAntesJson` / `fotosDepoisJson`.
-  Future<void> _aplicarWatermarkEmTodasFotos(String slot) async {
-    final db = ref.read(appDatabaseProvider);
-    final pendentes =
-        await db.getPendingPhotosByVisitaSlot(widget.visitaId, slot);
-    if (pendentes.isEmpty) return;
-
-    final pdvNome = _pdvNomeParaWatermark();
-    final novosCaminhos = <String>[];
-
-    for (final p in pendentes) {
-      // Pula se a foto já tem watermark (caminho não termina em "_raw").
-      // Caso comum: promotor concluiu fotos depois, foi pro checklist,
-      // voltou pra grid de fotos depois e concluiu de novo — não pode
-      // aplicar watermark em cima de quem já tem.
-      final isRaw = p.localPath.contains('_raw.');
-      if (!isRaw) {
-        novosCaminhos.add(p.localPath);
-        continue;
-      }
-      try {
-        final capturedAt =
-            DateTime.tryParse(p.createdAt) ?? DateTime.now();
-        final wmPath = await WatermarkUtil.applyWatermark(
-          sourcePath: p.localPath,
-          pdvNome: pdvNome,
-          promotorNome: _promotorNome,
-          slot: slot == 'antes' ? 'Antes' : 'Depois',
-          capturedAt: capturedAt,
-        ).timeout(const Duration(seconds: 30));
-
-        novosCaminhos.add(wmPath);
-
-        // Atualiza o registro pra o sync subir o arquivo com watermark.
-        await db.updatePendingPhoto(PendingPhotosCompanion(
-          id: drift.Value(p.id),
-          localPath: drift.Value(wmPath),
-        ));
-
-        // Galeria — não crítica, falha silenciosa.
-        try {
-          await Gal.putImage(wmPath).timeout(const Duration(seconds: 5));
-        } catch (_) {}
-
-        // Cleanup do arquivo cru (só se o caminho mudou).
-        if (wmPath != p.localPath) {
-          try {
-            await File(p.localPath).delete();
-          } catch (_) {}
-        }
-      } catch (e) {
-        debugPrint('Falha no watermark da foto ${p.id}: $e');
-        // Em caso de falha, mantém o arquivo cru como fallback.
-        novosCaminhos.add(p.localPath);
-      }
-    }
-
-    // Atualiza listas em memória + JSON do DB.
-    if (slot == 'antes') {
-      _fotosAntes = novosCaminhos;
-      await db.updateVisita(VisitasCompanion(
-        id: drift.Value(widget.visitaId),
-        fotosAntesJson: drift.Value(jsonEncode(_fotosAntes)),
-      ));
-    } else {
-      _fotosDepois = novosCaminhos;
-      await db.updateVisita(VisitasCompanion(
-        id: drift.Value(widget.visitaId),
-        fotosDepoisJson: drift.Value(jsonEncode(_fotosDepois)),
-      ));
-    }
   }
 
   Future<void> _concluirFotosAntes() async {
