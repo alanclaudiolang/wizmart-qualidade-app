@@ -21,7 +21,6 @@ import 'core/utils/error_reporter.dart';
 import 'core/utils/sync_logger.dart';
 import 'presentation/screens/home/home_screen.dart'
     show contadoresProvider, pdvsProvider, visitasHojeProvider;
-import 'presentation/widgets/bug_report_overlay.dart';
 import 'presentation/widgets/gps_guard.dart';
 import 'presentation/widgets/permissions_guard.dart';
 
@@ -242,7 +241,7 @@ class _WizMartAppState extends ConsumerState<WizMartApp>
         // um overlay bloqueia a UI até resolver.
         return PermissionsGuard(
           child: GpsGuard(
-            child: BugReportOverlay(child: child ?? const SizedBox.shrink()),
+            child: child ?? const SizedBox.shrink(),
           ),
         );
       },

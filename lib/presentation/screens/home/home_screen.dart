@@ -13,7 +13,6 @@ import '../../../core/utils/apk_updater_service.dart';
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/logout_service.dart';
 import '../../../core/utils/app_colors.dart';
-import '../../widgets/bug_report_button.dart';
 
 final sessionProvider = FutureProvider<SessionData?>((ref) async => SessionService.getSession());
 
@@ -304,8 +303,6 @@ class _HomeContent extends ConsumerWidget {
           ],
         ),
         actions: [
-          const BugReportButton(),
-          const SizedBox(width: 4),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
@@ -381,9 +378,6 @@ class _HomeContent extends ConsumerWidget {
                 case 'faltas':
                   if (context.mounted) context.push('/faltas');
                   break;
-                case 'logs':
-                  if (context.mounted) context.push('/sync-logs');
-                  break;
                 case 'logout':
                   await _confirmarLogout(context, ref);
                   break;
@@ -410,18 +404,6 @@ class _HomeContent extends ConsumerWidget {
                         color: AppColors.danger, size: 20),
                     SizedBox(width: 8),
                     Text('Faltas',
-                        style: TextStyle(color: AppColors.textPrimary)),
-                  ],
-                ),
-              ),
-              PopupMenuItem<String>(
-                value: 'logs',
-                child: Row(
-                  children: [
-                    Icon(Icons.description_outlined,
-                        color: AppColors.textPrimary, size: 20),
-                    SizedBox(width: 8),
-                    Text('Ver logs',
                         style: TextStyle(color: AppColors.textPrimary)),
                   ],
                 ),

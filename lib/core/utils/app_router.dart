@@ -3,10 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../presentation/screens/auth/auth_screen.dart';
-import '../../presentation/screens/bug_report/bug_report_screen.dart';
 import '../../presentation/screens/faltas/faltas_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
-import '../../presentation/screens/sync_logs/sync_logs_screen.dart';
 import '../../presentation/screens/visita/visita_screen.dart';
 import 'current_screen.dart';
 import 'device_info_service.dart';
@@ -41,17 +39,6 @@ final appRouter = GoRouter(
         final id = int.parse(state.pathParameters['id']!);
         return VisitaScreen(visitaId: id);
       },
-    ),
-    GoRoute(
-      path: '/bug-report',
-      builder: (_, state) {
-        final gif = state.uri.queryParameters['gif'] ?? '';
-        return BugReportScreen(gifPath: gif);
-      },
-    ),
-    GoRoute(
-      path: '/sync-logs',
-      builder: (_, __) => const SyncLogsScreen(),
     ),
     GoRoute(
       path: '/faltas',
