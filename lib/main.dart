@@ -1,6 +1,7 @@
 // lib/main.dart
 
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -15,10 +16,11 @@ import 'core/network/version_check_service.dart';
 import 'core/utils/session_service.dart';
 import 'core/utils/gps_status_service.dart';
 import 'core/utils/permissions_status_service.dart';
+import 'core/utils/persistent_logger.dart';
+import 'core/utils/error_reporter.dart';
 import 'core/utils/sync_logger.dart';
 import 'presentation/screens/home/home_screen.dart'
     show contadoresProvider, pdvsProvider, visitasHojeProvider;
-import 'presentation/widgets/bug_report_overlay.dart';
 import 'presentation/widgets/gps_guard.dart';
 import 'presentation/widgets/permissions_guard.dart';
 
@@ -85,9 +87,28 @@ String? _initError;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Captura erros Flutter não tratados e exibe na tela
+  // Captura QUALQUER erro Flutter não tratado e reporta como issue
+  // no GitHub (cooldown de 5 min por tela). O ErrorReporter lê
+  // CurrentScreen.nome pra rotular o issue com `screen:<nome>`.
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
+    // ignore: discarded_futures
+    ErrorReporter.reportar(
+      contexto: 'FlutterError não tratado',
+      erro: details.exception,
+      stack: details.stack,
+    );
+  };
+
+  // Erros assíncronos não tratados (Future sem catch, isolates).
+  PlatformDispatcher.instance.onError = (error, stack) {
+    // ignore: discarded_futures
+    ErrorReporter.reportar(
+      contexto: 'PlatformDispatcher erro assíncrono',
+      erro: error,
+      stack: stack,
+    );
+    return true;
   };
 
   await runZonedGuarded(() async {
@@ -220,7 +241,7 @@ class _WizMartAppState extends ConsumerState<WizMartApp>
         // um overlay bloqueia a UI até resolver.
         return PermissionsGuard(
           child: GpsGuard(
-            child: BugReportOverlay(child: child ?? const SizedBox.shrink()),
+            child: child ?? const SizedBox.shrink(),
           ),
         );
       },

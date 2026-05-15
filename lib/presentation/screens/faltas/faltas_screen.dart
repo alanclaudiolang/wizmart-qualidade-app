@@ -144,9 +144,6 @@ class FaltasScreen extends ConsumerWidget {
                 case 'faltas':
                   // Já está aqui — fecha o menu, não navega.
                   break;
-                case 'logs':
-                  context.push('/sync-logs');
-                  break;
                 case 'logout':
                   await _confirmarLogout(context, ref);
                   break;
@@ -173,18 +170,6 @@ class FaltasScreen extends ConsumerWidget {
                         color: AppColors.danger, size: 20),
                     SizedBox(width: 8),
                     Text('Faltas',
-                        style: TextStyle(color: AppColors.textPrimary)),
-                  ],
-                ),
-              ),
-              PopupMenuItem<String>(
-                value: 'logs',
-                child: Row(
-                  children: [
-                    Icon(Icons.description_outlined,
-                        color: AppColors.textPrimary, size: 20),
-                    SizedBox(width: 8),
-                    Text('Ver logs',
                         style: TextStyle(color: AppColors.textPrimary)),
                   ],
                 ),

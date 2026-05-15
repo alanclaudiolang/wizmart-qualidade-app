@@ -3,17 +3,23 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../presentation/screens/auth/auth_screen.dart';
-import '../../presentation/screens/bug_report/bug_report_screen.dart';
 import '../../presentation/screens/faltas/faltas_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
-import '../../presentation/screens/sync_logs/sync_logs_screen.dart';
 import '../../presentation/screens/visita/visita_screen.dart';
+import 'current_screen.dart';
 import 'device_info_service.dart';
 import 'last_visita_service.dart';
 import 'session_service.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/splash',
+  // Cada navegação atualiza o CurrentScreen — usado pelo ErrorReporter
+  // pra rotular issues por tela (label `screen:<nome>`). Implementado
+  // via redirect (que vê todas as navegações, inclusive `context.go`).
+  redirect: (_, state) {
+    CurrentScreen.setFromLocation(state.uri.toString());
+    return null; // não redireciona, só observa
+  },
   routes: [
     GoRoute(
       path: '/splash',
@@ -33,17 +39,6 @@ final appRouter = GoRouter(
         final id = int.parse(state.pathParameters['id']!);
         return VisitaScreen(visitaId: id);
       },
-    ),
-    GoRoute(
-      path: '/bug-report',
-      builder: (_, state) {
-        final gif = state.uri.queryParameters['gif'] ?? '';
-        return BugReportScreen(gifPath: gif);
-      },
-    ),
-    GoRoute(
-      path: '/sync-logs',
-      builder: (_, __) => const SyncLogsScreen(),
     ),
     GoRoute(
       path: '/faltas',
@@ -112,3 +107,4 @@ class _SplashRedirectState extends State<_SplashRedirect> {
     );
   }
 }
+

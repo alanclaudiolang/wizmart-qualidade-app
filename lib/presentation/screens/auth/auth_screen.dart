@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/device_info_service.dart';
 import '../../../core/constants/app_constants.dart';
-import '../../widgets/bug_report_button.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -211,8 +210,6 @@ class _AuthScreenState extends State<AuthScreen> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const BugReportButton(),
-                      const SizedBox(width: 4),
                       _buildConexaoIndicador(),
                     ],
                   ),

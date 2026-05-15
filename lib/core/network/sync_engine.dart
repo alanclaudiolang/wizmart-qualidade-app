@@ -22,7 +22,9 @@ class SyncEngine {
   SyncEngine(this._db, this._supabase, this._logger);
 
   Future<void> pullAll(int promotorId) async {
-    _logger.clear();
+    // _logger.clear() removido — apagava histórico anterior e perdíamos
+    // logs do flow de foto. Mantém cumulativo (SyncLoggerNotifier
+    // já limita o buffer em memória).
     _logger.log('início', 'Iniciando sincronização para promotor $promotorId');
     await _pullPdvs(promotorId);
     await _pullGabaritos(promotorId);

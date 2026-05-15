@@ -22,13 +22,14 @@ import '../../../main.dart' show scheduleOneOffSync;
 import '../../../core/utils/watermark_util.dart';
 import '../../../core/utils/session_service.dart';
 import 'package:disk_space_plus/disk_space_plus.dart';
+import '../../../core/utils/current_screen.dart';
 import '../../../core/utils/last_visita_service.dart';
 import '../../../core/utils/watermark_queue.dart';
 import '../../../core/utils/gps_status_service.dart';
 import '../../../core/utils/performance_profile.dart';
+import '../../../core/utils/error_reporter.dart';
 import '../../../core/utils/sync_logger.dart';
 import '../../../core/utils/app_colors.dart';
-import '../../widgets/bug_report_button.dart';
 
 const _uuid = Uuid();
 
@@ -99,11 +100,35 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
   /// Pausa sync apenas em estados de captura (grid de fotos antes/depois).
   /// Em outros estados (idle, checklist, finalizada) o sync roda normal.
+  /// Também atualiza CurrentScreen pra que o ErrorReporter rotule
+  /// issues com sub-estado da visita (visita-fotos-antes, etc).
   void _updateSyncPause(String localState) {
     if (localState == 'fotos_antes' || localState == 'fotos_depois') {
       SyncPause.pause();
     } else {
       SyncPause.resume();
+    }
+    _atualizarCurrentScreen(localState);
+  }
+
+  /// Mapeia o `_localState` interno da visita pra um label de screen
+  /// granular usado nos labels do issue no GitHub.
+  void _atualizarCurrentScreen(String localState) {
+    switch (localState) {
+      case 'fotos_antes':
+        CurrentScreen.nome = 'visita-fotos-antes';
+        break;
+      case 'fotos_depois':
+        CurrentScreen.nome = 'visita-fotos-depois';
+        break;
+      case 'checklist':
+        CurrentScreen.nome = 'visita-checklist';
+        break;
+      case 'finalizada':
+        CurrentScreen.nome = 'visita-finalizada';
+        break;
+      default:
+        CurrentScreen.nome = 'visita';
     }
   }
 
@@ -506,6 +531,14 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     } catch (e, stack) {
       logger.log('foto', 'Erro: $e', erro: true);
       debugPrint('Erro ao registrar foto ($slot): $e\n$stack');
+      // Auto-report assíncrono: cria issue no GitHub com contexto
+      // completo (promotor, device, RAM, storage, bateria, log).
+      // ignore: discarded_futures
+      ErrorReporter.reportar(
+        contexto: '_tirarFoto slot=$slot',
+        erro: e,
+        stack: stack,
+      );
       if (mounted) {
         await _avisoBloqueante(
           'Foto não foi salva',
@@ -783,7 +816,13 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         pdvNome: pdvNome,
         promotorNome: promotorNome,
       );
-    } catch (e) {
+    } catch (e, stack) {
+      // ignore: discarded_futures
+      ErrorReporter.reportar(
+        contexto: '_concluirFotosAntes visitaId=${widget.visitaId}',
+        erro: e,
+        stack: stack,
+      );
       if (mounted) {
         _showError('Não foi possível salvar. Tente novamente.');
       }
@@ -927,7 +966,13 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         await Future.delayed(const Duration(seconds: 1));
         if (mounted) context.go('/home');
       }
-    } catch (e) {
+    } catch (e, stack) {
+      // ignore: discarded_futures
+      ErrorReporter.reportar(
+        contexto: '_finalizarVisita visitaId=${widget.visitaId}',
+        erro: e,
+        stack: stack,
+      );
       if (mounted) {
         setState(() => _busy = false);
         _showError('Não foi possível finalizar. Tente novamente.');
@@ -1036,12 +1081,6 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
               ),
           ],
         ),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 12),
-            child: BugReportButton(),
-          ),
-        ],
       ),
       body: Stack(
         children: [

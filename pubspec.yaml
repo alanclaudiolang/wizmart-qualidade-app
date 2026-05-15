@@ -55,9 +55,6 @@ dependencies:
   collection: ^1.18.0
   shared_preferences: ^2.2.3
 
-  # Bug report (gravação da tela em GIF)
-  screen_recorder: ^0.3.0
-
   # Device info (campo device_info da tabela users)
   device_info_plus: ^11.1.0
   package_info_plus: ^8.0.2
@@ -72,6 +69,9 @@ dependencies:
   # (pré-check antes de tirar foto)
   system_info_plus: ^0.0.5
   disk_space_plus: ^0.2.4
+
+  # Nível de bateria — incluído nos auto-reports de erro
+  battery_plus: ^6.0.3
 
 dev_dependencies:
   flutter_test:
