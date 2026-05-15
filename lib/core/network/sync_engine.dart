@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../database/app_database.dart';
 import '../constants/app_constants.dart';
+import '../utils/processing_counter.dart';
 import '../utils/sync_logger.dart';
 import 'sync_pause.dart';
 
@@ -22,14 +23,17 @@ class SyncEngine {
   SyncEngine(this._db, this._supabase, this._logger);
 
   Future<void> pullAll(int promotorId) async {
-    // _logger.clear() removido — apagava histórico anterior e perdíamos
-    // logs do flow de foto. Mantém cumulativo (SyncLoggerNotifier
-    // já limita o buffer em memória).
-    _logger.log('início', 'Iniciando sincronização para promotor $promotorId');
-    await _pullPdvs(promotorId);
-    await _pullGabaritos(promotorId);
-    await _pullVisitasDia(promotorId);
-    _logger.log('fim', 'Sincronização concluída');
+    ProcessingCounter.begin();
+    try {
+      _logger.log(
+          'início', 'Iniciando sincronização para promotor $promotorId');
+      await _pullPdvs(promotorId);
+      await _pullGabaritos(promotorId);
+      await _pullVisitasDia(promotorId);
+      _logger.log('fim', 'Sincronização concluída');
+    } finally {
+      ProcessingCounter.end();
+    }
   }
 
   /// Ciclo completo de sincronização usado por todos os gatilhos:
@@ -386,6 +390,7 @@ class SyncEngine {
       return;
     }
     _running = true;
+    ProcessingCounter.begin();
     try {
       // FOTOS PRIMEIRO: o upload em Storage gera URLs públicas e grava
       // em pending_photos.storageUrl. Quando o INSERT/UPDATE da visita
@@ -403,6 +408,7 @@ class SyncEngine {
       }
     } finally {
       _running = false;
+      ProcessingCounter.end();
     }
   }
 

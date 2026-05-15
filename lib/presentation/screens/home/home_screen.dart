@@ -13,6 +13,7 @@ import '../../../core/utils/apk_updater_service.dart';
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/logout_service.dart';
 import '../../../core/utils/app_colors.dart';
+import '../../widgets/processing_indicator.dart';
 
 final sessionProvider = FutureProvider<SessionData?>((ref) async => SessionService.getSession());
 
@@ -317,6 +318,7 @@ class _HomeContent extends ConsumerWidget {
           ],
         ),
         actions: [
+          const ProcessingIndicator(),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
