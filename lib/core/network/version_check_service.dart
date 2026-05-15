@@ -21,24 +21,31 @@ class AppVersionInfo {
   final bool outdated;
   final String? latestBuild;
   final String? apkDownloadUrl;
-  /// Timestamp `published_at` do release no GitHub. Usado pra decidir
-  /// se a atualização é obrigatória (publicado em dia anterior a hoje).
+  /// Timestamp `published_at` do release no GitHub.
   final DateTime? publishedAt;
+  /// `true` quando o body do release contém o marker `[FORCE-UPDATE]`.
+  /// Faz a atualização ser obrigatória IMEDIATAMENTE (sem esperar
+  /// o dia seguinte). Pra ativar: editar o release no GitHub e
+  /// incluir `[FORCE-UPDATE]` em qualquer lugar da descrição.
+  final bool forceUpdate;
 
   const AppVersionInfo({
     required this.outdated,
     this.latestBuild,
     this.apkDownloadUrl,
     this.publishedAt,
+    this.forceUpdate = false,
   });
 
   static const upToDate = AppVersionInfo(outdated: false);
 
-  /// Atualização obrigatória quando o release foi publicado em dia
-  /// anterior à data local de hoje. "Dia seguinte" = qualquer dia
-  /// posterior à data da publicação.
+  /// Atualização obrigatória em 2 cenários:
+  ///   1) Release marcado com `[FORCE-UPDATE]` no body — força agora;
+  ///   2) Release foi publicado em dia ANTERIOR a hoje — regra padrão
+  ///      "primeiro acesso no dia seguinte".
   bool get atualizacaoObrigatoria {
     if (!outdated) return false;
+    if (forceUpdate) return true;
     if (publishedAt == null) return false;
     final agora = DateTime.now();
     final hoje = DateTime(agora.year, agora.month, agora.day);
@@ -109,11 +116,18 @@ class VersionCheckService {
         publishedAt = DateTime.tryParse(pubRaw);
       }
 
+      // Marker `[FORCE-UPDATE]` no body do release dispara atualização
+      // obrigatória imediata (sem aguardar regra "dia seguinte").
+      final body = (json['body'] as String?) ?? '';
+      final forceUpdate =
+          body.toUpperCase().contains('[FORCE-UPDATE]');
+
       return AppVersionInfo(
         outdated: outdated,
         latestBuild: latestBuild,
         apkDownloadUrl: url,
         publishedAt: publishedAt,
+        forceUpdate: forceUpdate,
       );
     } catch (_) {
       return AppVersionInfo.upToDate;
