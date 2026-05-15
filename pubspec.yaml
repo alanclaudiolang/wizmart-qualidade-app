@@ -73,6 +73,9 @@ dependencies:
   system_info_plus: ^0.0.5
   disk_space_plus: ^0.2.4
 
+  # Nível de bateria — incluído nos auto-reports de erro
+  battery_plus: ^6.0.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

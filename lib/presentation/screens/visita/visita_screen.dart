@@ -26,6 +26,7 @@ import '../../../core/utils/last_visita_service.dart';
 import '../../../core/utils/watermark_queue.dart';
 import '../../../core/utils/gps_status_service.dart';
 import '../../../core/utils/performance_profile.dart';
+import '../../../core/utils/photo_error_reporter.dart';
 import '../../../core/utils/sync_logger.dart';
 import '../../../core/utils/app_colors.dart';
 import '../../widgets/bug_report_button.dart';
@@ -506,6 +507,14 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     } catch (e, stack) {
       logger.log('foto', 'Erro: $e', erro: true);
       debugPrint('Erro ao registrar foto ($slot): $e\n$stack');
+      // Auto-report assíncrono: cria issue no GitHub com contexto
+      // completo (promotor, device, RAM, storage, bateria, log).
+      // ignore: discarded_futures
+      PhotoErrorReporter.reportar(
+        contexto: '_tirarFoto slot=$slot',
+        erro: e,
+        stack: stack,
+      );
       if (mounted) {
         await _avisoBloqueante(
           'Foto não foi salva',
@@ -783,7 +792,13 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         pdvNome: pdvNome,
         promotorNome: promotorNome,
       );
-    } catch (e) {
+    } catch (e, stack) {
+      // ignore: discarded_futures
+      PhotoErrorReporter.reportar(
+        contexto: '_concluirFotosAntes visitaId=${widget.visitaId}',
+        erro: e,
+        stack: stack,
+      );
       if (mounted) {
         _showError('Não foi possível salvar. Tente novamente.');
       }
@@ -927,7 +942,13 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         await Future.delayed(const Duration(seconds: 1));
         if (mounted) context.go('/home');
       }
-    } catch (e) {
+    } catch (e, stack) {
+      // ignore: discarded_futures
+      PhotoErrorReporter.reportar(
+        contexto: '_finalizarVisita visitaId=${widget.visitaId}',
+        erro: e,
+        stack: stack,
+      );
       if (mounted) {
         setState(() => _busy = false);
         _showError('Não foi possível finalizar. Tente novamente.');

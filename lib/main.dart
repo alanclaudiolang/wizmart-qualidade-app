@@ -1,6 +1,7 @@
 // lib/main.dart
 
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -15,6 +16,8 @@ import 'core/network/version_check_service.dart';
 import 'core/utils/session_service.dart';
 import 'core/utils/gps_status_service.dart';
 import 'core/utils/permissions_status_service.dart';
+import 'core/utils/persistent_logger.dart';
+import 'core/utils/photo_error_reporter.dart';
 import 'core/utils/sync_logger.dart';
 import 'presentation/screens/home/home_screen.dart'
     show contadoresProvider, pdvsProvider, visitasHojeProvider;
@@ -23,6 +26,20 @@ import 'presentation/widgets/gps_guard.dart';
 import 'presentation/widgets/permissions_guard.dart';
 
 const _bgSyncTask = 'wizmart_bg_sync';
+
+/// Heurística pra decidir se um erro vem do fluxo de foto. Usado pelos
+/// handlers globais (FlutterError + PlatformDispatcher) pra acionar
+/// auto-report sem inundar com erros não-relacionados.
+bool _relacionadoAFoto(String stackStr) {
+  final s = stackStr.toLowerCase();
+  return s.contains('tirarfoto') ||
+      s.contains('watermark') ||
+      s.contains('concluirfotos') ||
+      s.contains('finalizarvisita') ||
+      s.contains('aplicarwatermark') ||
+      s.contains('image_picker') ||
+      s.contains('gal.');
+}
 const _oneOffSyncName = 'wizmart_oneoff_sync';
 
 /// Enfileira uma tentativa de sync com constraint de rede. O Android dispara
@@ -85,9 +102,40 @@ String? _initError;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Captura erros Flutter não tratados e exibe na tela
+  // Captura erros Flutter não tratados e exibe na tela. Também
+  // reporta automaticamente como issue se for relacionado ao flow
+  // de foto (heurística: stack contém "tirarFoto" / "watermark" /
+  // "concluirFotos" / "finalizarVisita").
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
+    final stackStr = details.stack?.toString() ?? '';
+    if (_relacionadoAFoto(stackStr)) {
+      // ignore: discarded_futures
+      PhotoErrorReporter.reportar(
+        contexto: 'FlutterError não tratado',
+        erro: details.exception,
+        stack: details.stack,
+      );
+    }
+    // ignore: discarded_futures
+    PersistentLogger.append('flutter-error',
+        '${details.exceptionAsString()} ($stackStr)',
+        erro: true);
+  };
+
+  // Erros assíncronos não tratados (Future sem catch, isolates).
+  PlatformDispatcher.instance.onError = (error, stack) {
+    if (_relacionadoAFoto(stack.toString())) {
+      // ignore: discarded_futures
+      PhotoErrorReporter.reportar(
+        contexto: 'PlatformDispatcher erro assíncrono',
+        erro: error,
+        stack: stack,
+      );
+    }
+    // ignore: discarded_futures
+    PersistentLogger.append('platform-error', '$error\n$stack', erro: true);
+    return true;
   };
 
   await runZonedGuarded(() async {

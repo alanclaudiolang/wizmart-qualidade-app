@@ -32,6 +32,8 @@ import 'package:gal/gal.dart';
 import '../database/app_database.dart';
 import '../network/sync_engine.dart';
 import 'performance_profile.dart';
+import 'persistent_logger.dart';
+import 'photo_error_reporter.dart';
 import 'session_service.dart';
 import 'watermark_util.dart';
 
@@ -82,8 +84,15 @@ class WatermarkQueueService {
         final item = _pending.removeAt(0);
         try {
           await _processarItem(item);
-        } catch (_) {
-          // Erro num item não pode travar a fila.
+        } catch (e, stack) {
+          // Erro num item não trava a fila — mas reporta pra debug.
+          // ignore: discarded_futures
+          PhotoErrorReporter.reportar(
+            contexto:
+                'WatermarkQueue.processarItem visitaId=${item.visitaId} slot=${item.slot}',
+            erro: e,
+            stack: stack,
+          );
         }
         // Pequeno respiro pra o UI thread renderizar entre fotos.
         await Future<void>.delayed(Duration.zero);
@@ -99,6 +108,9 @@ class WatermarkQueueService {
     final db = _ref.read(appDatabaseProvider);
     final pendentes =
         await db.getPendingPhotosByVisitaSlot(item.visitaId, item.slot);
+    await PersistentLogger.append('watermark',
+        'Iniciando visitaId=${item.visitaId} slot=${item.slot} '
+        'fotos=${pendentes.length}');
     if (pendentes.isEmpty) return;
 
     final novosCaminhos = <String>[];
