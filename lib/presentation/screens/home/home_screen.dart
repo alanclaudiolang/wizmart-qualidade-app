@@ -165,18 +165,32 @@ class _HomeContent extends ConsumerWidget {
 
   Future<void> _mostrarBloqueioObrigatorio(
       BuildContext context, WidgetRef ref, AppVersionInfo info) async {
-    final db = ref.read(appDatabaseProvider);
-    final pendentes = await db.countPendentesParaSync();
-    if (pendentes > 0) {
-      // Promotor ainda tem coisa pra sincronizar — não bloqueia.
-      // Quando finalizar tudo, próxima abertura ou re-checagem mostra.
+    final url = info.apkDownloadUrl;
+    if (url == null) {
       _bloqueioObrigatorioTratado = false;
       return;
     }
-    if (!context.mounted) return;
 
-    final url = info.apkDownloadUrl;
-    if (url == null) return;
+    // Pré-condição 1: zero pendências de sync. Se há, o promotor termina
+    // primeiro — bloquear agora arriscaria perder dados.
+    final db = ref.read(appDatabaseProvider);
+    final pendentes = await db.countPendentesParaSync();
+    if (pendentes > 0) {
+      _bloqueioObrigatorioTratado = false;
+      return;
+    }
+
+    // Pré-condição 2: APK realmente alcançável (HEAD com timeout 4s).
+    // Sem isso, o dialog mostraria mas o download falharia — promotor
+    // ficaria preso. Em wifi de hotel/captive portal/DNS quebrado,
+    // melhor deixar passar e tentar de novo no próximo gatilho.
+    final apkOk = await ApkUpdaterService.apkAcessivel(url);
+    if (!apkOk) {
+      _bloqueioObrigatorioTratado = false;
+      return;
+    }
+
+    if (!context.mounted) return;
 
     await showDialog<void>(
       context: context,

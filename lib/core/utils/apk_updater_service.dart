@@ -23,6 +23,29 @@ class ApkDownloadResult {
 class ApkUpdaterService {
   ApkUpdaterService._();
 
+  /// Testa se a URL da APK responde (HEAD em <4s). Usado pelo bloqueio
+  /// obrigatório pra evitar mostrar o dialog se a APK não vai conseguir
+  /// baixar de qualquer jeito (captive portal, DNS quebrado, GitHub fora).
+  static Future<bool> apkAcessivel(String url) async {
+    try {
+      final dio = Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 4),
+        receiveTimeout: const Duration(seconds: 4),
+        followRedirects: true,
+      ));
+      final res = await dio.head(url,
+          options: Options(
+            validateStatus: (_) => true,
+            // HEAD em GitHub redirect = 302 → segue pra objects.gh — tudo OK.
+          ));
+      return res.statusCode != null &&
+          res.statusCode! >= 200 &&
+          res.statusCode! < 400;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Baixa a APK, salva localmente e chama o instalador. O callback
   /// `onProgress` recebe 0.0..1.0 conforme bytes recebidos.
   static Future<ApkDownloadResult> downloadAndInstall({
