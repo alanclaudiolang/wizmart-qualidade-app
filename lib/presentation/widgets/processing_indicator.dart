@@ -1,25 +1,25 @@
 // lib/presentation/widgets/processing_indicator.dart
 //
-// Ícone de engrenagem girando — visível na AppBar da home enquanto
-// houver operação pesada em andamento (ProcessingCounter > 0).
-// Indica ao promotor que o app está trabalhando (watermark, sync,
-// upload) e o status pode demorar alguns segundos pra atualizar —
-// não está travado.
+// Ícone de engrenagem girando exibido ao lado do indicador de sync
+// no card de cada visita, enquanto a visita estiver sendo processada
+// (watermark + galeria + upload + envio pro servidor).
 
 import 'package:flutter/material.dart';
 
 import '../../core/utils/app_colors.dart';
-import '../../core/utils/processing_counter.dart';
+import '../../core/utils/processing_tracker.dart';
 
 class ProcessingIndicator extends StatelessWidget {
-  const ProcessingIndicator({super.key});
+  /// Mostra o ícone apenas quando ESTA visita estiver em processamento.
+  final int visitaId;
+  const ProcessingIndicator({super.key, required this.visitaId});
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<int>(
-      valueListenable: ProcessingCounter.notifier,
-      builder: (_, count, __) {
-        if (count <= 0) return const SizedBox.shrink();
+    return ValueListenableBuilder<Set<int>>(
+      valueListenable: ProcessingTracker.visitasAtivas,
+      builder: (_, ativas, __) {
+        if (!ativas.contains(visitaId)) return const SizedBox.shrink();
         return const _RotatingGear();
       },
     );
@@ -54,17 +54,14 @@ class _RotatingGearState extends State<_RotatingGear>
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      child: Tooltip(
-        message: 'Processando...',
-        child: RotationTransition(
-          turns: _controller,
-          child: const Icon(
-            Icons.settings,
-            color: AppColors.primary,
-            size: 20,
-          ),
+    return Tooltip(
+      message: 'Processando...',
+      child: RotationTransition(
+        turns: _controller,
+        child: Icon(
+          Icons.settings,
+          color: AppColors.primary.withValues(alpha: 0.7),
+          size: 14,
         ),
       ),
     );

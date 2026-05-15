@@ -13,6 +13,7 @@ import '../../../core/utils/apk_updater_service.dart';
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/logout_service.dart';
 import '../../../core/utils/app_colors.dart';
+import '../../../core/utils/processing_tracker.dart';
 import '../../widgets/processing_indicator.dart';
 
 final sessionProvider = FutureProvider<SessionData?>((ref) async => SessionService.getSession());
@@ -172,11 +173,13 @@ class _HomeContent extends ConsumerWidget {
       return;
     }
 
-    // Pré-condição 1: zero pendências de sync. Se há, o promotor termina
-    // primeiro — bloquear agora arriscaria perder dados.
+    // Pré-condição 1: zero pendências de sync E zero visitas em
+    // processamento ativo (watermark, upload em curso). Se há,
+    // o promotor termina primeiro — bloquear agora arriscaria
+    // perder dados em trânsito.
     final db = ref.read(appDatabaseProvider);
     final pendentes = await db.countPendentesParaSync();
-    if (pendentes > 0) {
+    if (pendentes > 0 || ProcessingTracker.total > 0) {
       _bloqueioObrigatorioTratado = false;
       return;
     }
@@ -318,7 +321,6 @@ class _HomeContent extends ConsumerWidget {
           ],
         ),
         actions: [
-          const ProcessingIndicator(),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
@@ -814,6 +816,8 @@ class _VisitaCard extends StatelessWidget {
                         else if (visita.syncStatus == 'synced')
                           Icon(Icons.cloud_done,
                               size: 14, color: AppColors.success),
+                        const SizedBox(width: 6),
+                        ProcessingIndicator(visitaId: visita.id),
                       ]),
                       if (info != null || idReal != null) ...[
                         const SizedBox(height: 4),

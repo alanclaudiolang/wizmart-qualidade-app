@@ -10,7 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../database/app_database.dart';
 import '../constants/app_constants.dart';
-import '../utils/processing_counter.dart';
+import '../utils/processing_tracker.dart';
 import '../utils/sync_logger.dart';
 import 'sync_pause.dart';
 
@@ -23,17 +23,14 @@ class SyncEngine {
   SyncEngine(this._db, this._supabase, this._logger);
 
   Future<void> pullAll(int promotorId) async {
-    ProcessingCounter.begin();
-    try {
-      _logger.log(
-          'início', 'Iniciando sincronização para promotor $promotorId');
-      await _pullPdvs(promotorId);
-      await _pullGabaritos(promotorId);
-      await _pullVisitasDia(promotorId);
-      _logger.log('fim', 'Sincronização concluída');
-    } finally {
-      ProcessingCounter.end();
-    }
+    // pullAll é trabalho global (não relacionado a visita específica),
+    // então não toca o ProcessingTracker (que é por-visita).
+    _logger.log(
+        'início', 'Iniciando sincronização para promotor $promotorId');
+    await _pullPdvs(promotorId);
+    await _pullGabaritos(promotorId);
+    await _pullVisitasDia(promotorId);
+    _logger.log('fim', 'Sincronização concluída');
   }
 
   /// Ciclo completo de sincronização usado por todos os gatilhos:
@@ -390,7 +387,6 @@ class SyncEngine {
       return;
     }
     _running = true;
-    ProcessingCounter.begin();
     try {
       // FOTOS PRIMEIRO: o upload em Storage gera URLs públicas e grava
       // em pending_photos.storageUrl. Quando o INSERT/UPDATE da visita
@@ -398,17 +394,26 @@ class SyncEngine {
       // tudo num único request — em vez de 1 INSERT + N UPDATEs.
       final photos = await _db.getPendingPhotos();
       for (final photo in photos) {
-        await _processPhotoUpload(photo);
+        ProcessingTracker.begin(photo.visitaId);
+        try {
+          await _processPhotoUpload(photo);
+        } finally {
+          ProcessingTracker.end(photo.visitaId);
+        }
       }
       // Reler outbox: o upload das fotos pode ter enfileirado UPDATEs
       // pra visitas com serverId já existente (fluxo de re-edição).
       final items = await _db.getPendingOutboxItems();
       for (final item in items) {
-        await _processOutboxItem(item);
+        ProcessingTracker.begin(item.entityId);
+        try {
+          await _processOutboxItem(item);
+        } finally {
+          ProcessingTracker.end(item.entityId);
+        }
       }
     } finally {
       _running = false;
-      ProcessingCounter.end();
     }
   }
 
