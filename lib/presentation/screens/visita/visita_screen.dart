@@ -26,7 +26,7 @@ import '../../../core/utils/last_visita_service.dart';
 import '../../../core/utils/watermark_queue.dart';
 import '../../../core/utils/gps_status_service.dart';
 import '../../../core/utils/performance_profile.dart';
-import '../../../core/utils/photo_error_reporter.dart';
+import '../../../core/utils/error_reporter.dart';
 import '../../../core/utils/sync_logger.dart';
 import '../../../core/utils/app_colors.dart';
 import '../../widgets/bug_report_button.dart';
@@ -510,7 +510,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       // Auto-report assíncrono: cria issue no GitHub com contexto
       // completo (promotor, device, RAM, storage, bateria, log).
       // ignore: discarded_futures
-      PhotoErrorReporter.reportar(
+      ErrorReporter.reportar(
         contexto: '_tirarFoto slot=$slot',
         erro: e,
         stack: stack,
@@ -794,7 +794,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       );
     } catch (e, stack) {
       // ignore: discarded_futures
-      PhotoErrorReporter.reportar(
+      ErrorReporter.reportar(
         contexto: '_concluirFotosAntes visitaId=${widget.visitaId}',
         erro: e,
         stack: stack,
@@ -944,7 +944,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       }
     } catch (e, stack) {
       // ignore: discarded_futures
-      PhotoErrorReporter.reportar(
+      ErrorReporter.reportar(
         contexto: '_finalizarVisita visitaId=${widget.visitaId}',
         erro: e,
         stack: stack,

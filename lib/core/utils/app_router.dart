@@ -8,12 +8,20 @@ import '../../presentation/screens/faltas/faltas_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/sync_logs/sync_logs_screen.dart';
 import '../../presentation/screens/visita/visita_screen.dart';
+import 'current_screen.dart';
 import 'device_info_service.dart';
 import 'last_visita_service.dart';
 import 'session_service.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/splash',
+  // Cada navegação atualiza o CurrentScreen — usado pelo ErrorReporter
+  // pra rotular issues por tela (label `screen:<nome>`). Implementado
+  // via redirect (que vê todas as navegações, inclusive `context.go`).
+  redirect: (_, state) {
+    CurrentScreen.setFromLocation(state.uri.toString());
+    return null; // não redireciona, só observa
+  },
   routes: [
     GoRoute(
       path: '/splash',
@@ -112,3 +120,4 @@ class _SplashRedirectState extends State<_SplashRedirect> {
     );
   }
 }
+

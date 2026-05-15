@@ -1,16 +1,19 @@
-// lib/core/utils/photo_error_reporter.dart
+// lib/core/utils/error_reporter.dart
 //
-// Cria issue no GitHub automaticamente quando algo falha no fluxo
-// de captura/processamento de foto. Anexa contexto suficiente pra
-// debugar sem precisar pedir info pro promotor:
-//   - Promotor (id, email, nome)
-//   - Device (marca, modelo, Android version, RAM total)
-//   - Estado no momento (RAM, storage, bateria)
-//   - Versão do app
-//   - Log persistente das últimas ~500 linhas
-//   - Stacktrace
+// Cria issue no GitHub automaticamente quando algo dá erro em
+// QUALQUER tela do app. Sucessor do PhotoErrorReporter (que
+// cobria só o fluxo de foto).
 //
-// Dedup: mesmo erro em janela de 10 min não duplica issue.
+// Estratégia:
+//   - A tela atual é detectada via CurrentScreen (alimentado por
+//     um NavigatorObserver no GoRouter).
+//   - Cooldown de 5 min POR TELA: erros sucessivos na mesma
+//     tela viram comentário no mesmo issue em vez de novo issue.
+//     Telas diferentes podem reportar em paralelo.
+//   - Labels: `bug`, `auto`, `screen:<nome>` — permite filtrar
+//     no GitHub e priorizar correção por área.
+//   - Anexa contexto completo: promotor, device, RAM, storage,
+//     bateria, versão, últimas 500 linhas do log persistente.
 
 import 'dart:convert';
 
@@ -22,35 +25,43 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:system_info_plus/system_info_plus.dart';
 
 import '../constants/app_constants.dart';
+import 'current_screen.dart';
 import 'persistent_logger.dart';
 import 'session_service.dart';
 
-class PhotoErrorReporter {
+class ErrorReporter {
   static const _repoOwner = 'alanclaudiolang';
   static const _repoName = 'wizmart-qualidade-app';
+  static const _cooldown = Duration(minutes: 5);
 
-  static String? _lastHash;
-  static DateTime? _lastAt;
+  /// Cooldown por screen — key: nome da tela.
+  static final Map<String, DateTime> _ultimoReportePorScreen = {};
 
+  /// Reporta um erro. `screen` é opcional — se não passado, lê o
+  /// `CurrentScreen.nome` atual.
   static Future<void> reportar({
     required String contexto,
     required Object erro,
     StackTrace? stack,
+    String? screen,
   }) async {
-    // Log local sempre (mesmo se não conseguir mandar pra GitHub)
-    await PersistentLogger.append('foto-erro',
-        'CONTEXTO=$contexto ERRO=$erro${stack != null ? '\n$stack' : ''}',
-        erro: true);
+    final tela = screen ?? CurrentScreen.nome;
 
-    // Dedup: mesmo "contexto+erro" em janela de 10 min vira no-op.
-    final hash = '$contexto::${erro.toString()}'.hashCode.toRadixString(16);
-    if (_lastHash == hash &&
-        _lastAt != null &&
-        DateTime.now().difference(_lastAt!) < const Duration(minutes: 10)) {
+    // Log sempre (mesmo se reporter for skipado por cooldown).
+    await PersistentLogger.append(
+        'erro:$tela', 'CONTEXTO=$contexto ERRO=$erro',
+        erro: true);
+    if (stack != null) {
+      await PersistentLogger.append('erro:$tela', '$stack', erro: true);
+    }
+
+    // Cooldown POR tela — janela de 5 min.
+    final ultimo = _ultimoReportePorScreen[tela];
+    if (ultimo != null &&
+        DateTime.now().difference(ultimo) < _cooldown) {
       return;
     }
-    _lastHash = hash;
-    _lastAt = DateTime.now();
+    _ultimoReportePorScreen[tela] = DateTime.now();
 
     final token = AppConstants.githubBugReportToken;
     if (token.isEmpty) return;
@@ -60,15 +71,16 @@ class PhotoErrorReporter {
       final logLines = await PersistentLogger.readRecent(lines: 500);
 
       final tituloErro = erro.toString();
-      final titleResumo = tituloErro.length > 80
-          ? '${tituloErro.substring(0, 80)}…'
+      final resumo = tituloErro.length > 70
+          ? '${tituloErro.substring(0, 70)}…'
           : tituloErro;
 
-      final title = '[BUG-FOTO] $contexto — $titleResumo';
+      final title = '[BUG][$tela] $resumo';
       final body = _montarBody(
         contexto: contexto,
         erro: erro,
         stack: stack,
+        tela: tela,
         ctx: ctx,
         log: logLines,
       );
@@ -85,19 +97,19 @@ class PhotoErrorReporter {
             body: jsonEncode({
               'title': title,
               'body': body,
-              'labels': ['bug-foto', 'auto-reportado'],
+              'labels': ['bug', 'auto', 'screen:$tela'],
             }),
           )
           .timeout(const Duration(seconds: 15));
     } catch (e) {
       await PersistentLogger.append(
-          'foto-erro', 'Falha ao postar issue: $e',
+          'erro:$tela', 'Falha ao postar issue: $e',
           erro: true);
     }
   }
 
   static Future<Map<String, dynamic>> _coletarContexto() async {
-    Map<String, dynamic> out = {};
+    final out = <String, dynamic>{};
     try {
       final session = await SessionService.getSession();
       out['promotor'] = {
@@ -131,10 +143,7 @@ class PhotoErrorReporter {
     } catch (_) {}
     try {
       final pkg = await PackageInfo.fromPlatform();
-      out['app'] = {
-        'versao': pkg.version,
-        'build': pkg.buildNumber,
-      };
+      out['app'] = {'versao': pkg.version, 'build': pkg.buildNumber};
     } catch (_) {}
     return out;
   }
@@ -143,11 +152,13 @@ class PhotoErrorReporter {
     required String contexto,
     required Object erro,
     StackTrace? stack,
+    required String tela,
     required Map<String, dynamic> ctx,
     required String log,
   }) {
     final b = StringBuffer();
     b.writeln('## Erro');
+    b.writeln('- **Tela:** `$tela`');
     b.writeln('- **Contexto:** $contexto');
     b.writeln('- **Erro:** `$erro`');
     if (stack != null) {

@@ -31,9 +31,9 @@ import 'package:gal/gal.dart';
 
 import '../database/app_database.dart';
 import '../network/sync_engine.dart';
+import 'error_reporter.dart';
 import 'performance_profile.dart';
 import 'persistent_logger.dart';
-import 'photo_error_reporter.dart';
 import 'session_service.dart';
 import 'watermark_util.dart';
 
@@ -87,7 +87,7 @@ class WatermarkQueueService {
         } catch (e, stack) {
           // Erro num item não trava a fila — mas reporta pra debug.
           // ignore: discarded_futures
-          PhotoErrorReporter.reportar(
+          ErrorReporter.reportar(
             contexto:
                 'WatermarkQueue.processarItem visitaId=${item.visitaId} slot=${item.slot}',
             erro: e,
