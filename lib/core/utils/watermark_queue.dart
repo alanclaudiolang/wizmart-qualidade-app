@@ -34,7 +34,7 @@ import '../network/sync_engine.dart';
 import 'error_reporter.dart';
 import 'performance_profile.dart';
 import 'persistent_logger.dart';
-import 'processing_counter.dart';
+import 'processing_tracker.dart';
 import 'session_service.dart';
 import 'watermark_util.dart';
 
@@ -80,7 +80,6 @@ class WatermarkQueueService {
   Future<void> _processNext() async {
     if (_running) return;
     _running = true;
-    ProcessingCounter.begin();
     try {
       while (_pending.isNotEmpty) {
         final item = _pending.removeAt(0);
@@ -101,13 +100,21 @@ class WatermarkQueueService {
       }
     } finally {
       _running = false;
-      ProcessingCounter.end();
     }
     // Tudo processado: dispara sync pra subir as fotos prontas.
     await _dispararSync();
   }
 
   Future<void> _processarItem(_QueueItem item) async {
+    ProcessingTracker.begin(item.visitaId);
+    try {
+      await _processarItemInner(item);
+    } finally {
+      ProcessingTracker.end(item.visitaId);
+    }
+  }
+
+  Future<void> _processarItemInner(_QueueItem item) async {
     final db = _ref.read(appDatabaseProvider);
     final pendentes =
         await db.getPendingPhotosByVisitaSlot(item.visitaId, item.slot);
