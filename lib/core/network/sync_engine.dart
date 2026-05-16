@@ -117,12 +117,14 @@ class SyncEngine {
       }
 
       // ── 3. Visitas avulsas ─────────────────────────────────────────────────
+      // SEM filtro de rota_associada: o supervisor pode criar a avulsa
+      // sem rota vinculada (ou com outra rota) — a visita ainda é do
+      // promotor e deve aparecer pra ele.
       _logger.log('avulsas', 'Buscando visitas avulsas do dia...');
       final avulsasRows = await _supabase
           .from('visitas')
           .select()
           .eq('id_promotor_associado', promotorId)
-          .eq('rota_associada', rotaId)
           .eq('visita_avulsa', true)
           .gte('dia_hora_agendado', inicioDia)
           .lt('dia_hora_agendado', fimDia);
