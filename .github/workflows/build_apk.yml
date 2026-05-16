@@ -124,17 +124,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete v-latest --yes --cleanup-tag 2>/dev/null || true
-          # [FORCE-UPDATE]: marker lido pelo VersionCheckService do app.
-          # Quando presente, o dialog de atualização obrigatória é
-          # disparado imediatamente (sem esperar D+1) — mas só se as 4
-          # pré-condições passarem (outdated + online + zero pendências
-          # de sync + APK alcançável). Toda nova versão em produção
-          # já entra forçada.
+          # Regra padrão D+1: o app só obriga atualização no primeiro
+          # acesso do DIA SEGUINTE ao publish. Pra forçar atualização
+          # imediata em algum build específico, edite o release no
+          # GitHub e adicione o marker `[FORCE-UPDATE]` no body.
           gh release create v-latest \
             "${{ steps.meta.outputs.apk_name }}" \
             "promotor-wizmart.apk" \
             --title "Promotor Wizmart v${{ steps.meta.outputs.version }} (build ${{ github.run_number }})" \
-            --notes "Build automático do commit ${{ github.sha }} em ${{ steps.meta.outputs.build_time }}. [FORCE-UPDATE]" \
+            --notes "Build automático do commit ${{ github.sha }} em ${{ steps.meta.outputs.build_time }}." \
             --target ${{ github.sha }}
 
       - name: Publicar release v-dev (TESTE)
