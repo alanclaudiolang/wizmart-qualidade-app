@@ -208,8 +208,7 @@ class _HomeContent extends ConsumerWidget {
             style: TextStyle(color: AppColors.textPrimary),
           ),
           content: Text(
-            'Há uma nova versão do app disponível há mais de um dia. '
-            'Para continuar usando, é necessário atualizar agora. '
+            'Há uma nova versão do app e a atualização é obrigatória. '
             'Build novo: ${info.latestBuild ?? '?'}.',
             style: const TextStyle(color: AppColors.textSecondary),
           ),
