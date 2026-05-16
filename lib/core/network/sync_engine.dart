@@ -161,11 +161,6 @@ class SyncEngine {
       _logger.log('salvar', 'Salvando visitas normais no SQLite...');
       int salvas = 0;
       int puladas = 0;
-      // Marca quais entradas do realizadasMap já foram aproveitadas no
-      // loop da edge function — as que sobrarem são órfãs (gabarito
-      // removido da rota mas visita já realizada/em andamento existe
-      // no servidor) e precisam ser recriadas no passo 6b.
-      final keysConsumidas = <String>{};
 
       for (final item in visitasNormais) {
         final gabaritoId = item['gabarito_id'] as int? ?? 0;
@@ -183,7 +178,6 @@ class SyncEngine {
 
         final key = '$gabaritoId|$pdvId|$turno';
         final realizadaServidor = realizadasMap[key];
-        if (realizadaServidor != null) keysConsumidas.add(key);
 
         // Se há row no servidor (realizada/andamento), usa esse status
         // convertido. Senão é uma "vaga" gerada pela edge function —
@@ -237,18 +231,26 @@ class SyncEngine {
 
       _logger.log('salvar', '$salvas visitas normais salvas, $puladas puladas (pending local)');
 
-      // ── 6b. Recria visitas realizadas/andamento órfãs ─────────────────────
-      // Visitas que estão no servidor com status 1 ou 2 mas cujo
-      // gabarito NÃO aparece mais na rota atual (supervisor removeu
-      // depois que o promotor já tinha começado/realizado). Sem este
-      // passo, elas seriam apagadas pelo deleteVisitasSincronizadas...
-      // e não voltariam pela edge function.
+      // ── 6b. Recria QUALQUER visita realizada/andamento do servidor
+      //     que não foi criada pelo loop principal ──────────────────────────
+      // Itera TODAS as rows com status 1 ou 2 do servidor (não só as
+      // que sobraram do realizadasMap). Cobre:
+      //   - Visitas órfãs (gabarito removido da rota pelo supervisor);
+      //   - Colisões de chave gabarito|pdv|turno (2 visitas no mesmo
+      //     trio, ex: 1 realizada + 1 avulsa nova do mesmo PDV) — antes,
+      //     o map sobrescrevia uma com a outra e o passo 6 só salvava 1.
+      // Upsert por ID: visitas já criadas no passo 6 (com mesmo ID)
+      // ficam idempotentes. Visitas com syncStatus='pending' local são
+      // PULADAS (não sobrescreve trabalho não sincronizado).
       int orfas = 0;
-      for (final entry in realizadasMap.entries) {
-        if (keysConsumidas.contains(entry.key)) continue;
-        final row = entry.value;
+      for (final row in realizadasRows) {
         final idVisita = row['id'] as int?;
         if (idVisita == null) continue;
+        final localExistente = await _db.getVisitaById(idVisita);
+        if (localExistente != null &&
+            localExistente.syncStatus == 'pending') {
+          continue;
+        }
         await _db.upsertVisita(VisitasCompanion(
           id: Value(idVisita),
           serverId: Value(idVisita),
@@ -262,7 +264,7 @@ class SyncEngine {
           titulo: Value(row['titulo'] as String?),
           previsaoTurnoRealizada:
               Value(row['previsao_turno_realizada'] as String?),
-          visitaAvulsa: const Value(false),
+          visitaAvulsa: Value(row['visita_avulsa'] as bool? ?? false),
           diaHoraRealizado: Value(row['dia_hora_realizado'] as String?),
           diaHoraAbertura: Value(row['dia_hora_abertura'] as String?),
           localizacaoAbertura:
