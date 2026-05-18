@@ -211,7 +211,11 @@ class SyncEngine {
             syncedAt: Value(DateTime.now().toIso8601String()),
           ));
         } else {
-          final idTemp = -(gabaritoId * 10000 + pdvId + turno.hashCode.abs() % 1000);
+          // Hash robusto da chave natural pra evitar colisão de idTemp.
+          // Fórmula antiga (gabarito*10000 + pdv + turno.hashCode%1000) colidia
+          // pra ids de PDV > 10000, fazendo pending_photos.visitaId apontar
+          // pra visita errada e fotos aparecerem misturadas no insert.
+          final idTemp = -(Object.hash(gabaritoId, pdvId, turno).abs() % 0x7FFFFFFF);
           await _db.upsertVisita(VisitasCompanion(
             id: Value(idTemp),
             // serverId fica null — sync_engine vai criar no servidor depois
@@ -692,12 +696,21 @@ class SyncEngine {
       }
       final nomeBase = _limparNomeArquivo(visita?.titulo ?? 'visita');
       final ext = photo.localPath.split('.').last.toLowerCase();
+      // Hash da chave natural da visita — incluído no nome do arquivo pra
+      // garantir caminho único mesmo se títulos forem parecidos ou outra
+      // visita do mesmo PDV existir. Defesa contra a mistura de fotos
+      // observada em produção (Wendel, 2026-05).
+      final visitaHash = Object.hash(
+        visita?.idGabaritoAssociado,
+        visita?.idPdvAssociado,
+        visita?.previsaoTurnoRealizada,
+      ).abs();
       // Sanitiza cada segmento — Supabase Storage rejeita :, espaços e acentos
       final dataSeg = _sanitizePathSegment(dataAgendadoBr);
       final nomeSeg = _sanitizePathSegment(nomeBase);
       final extSeg = _sanitizePathSegment(ext);
       final storagePath =
-          'abastecimentos/$authUid/$dataSeg/$nomeSeg-${photo.slot}-${photo.numero}.$extSeg';
+          'abastecimentos/$authUid/$dataSeg/$nomeSeg-$visitaHash-${photo.slot}-${photo.numero}.$extSeg';
 
       _logger.log('photo',
           'Upload photo id=${photo.id} path=$storagePath bytes=${(await file.length())}');
