@@ -1028,12 +1028,50 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     }
 
     if (_error != null) {
-      return Scaffold(
-        backgroundColor: AppColors.background,
-        appBar: AppBar(backgroundColor: AppColors.card),
-        body: Center(
-            child: Text(_error!,
-                style: const TextStyle(color: AppColors.textPrimary))),
+      // Caminho de escape obrigatório: se a visita sumiu do DB (idTemp
+      // reconciliado, sync de novo dia, etc.) o promotor ficava preso aqui
+      // sem botão de voltar e tinha que reinstalar o app. Limpa o
+      // last_visita_id pra splash não trazer de volta no próximo boot.
+      Future<void> sairDoErro() async {
+        final router = GoRouter.of(context);
+        await LastVisitaService.clear();
+        router.go('/home');
+      }
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) async {
+          if (didPop) return;
+          await sairDoErro();
+        },
+        child: Scaffold(
+          backgroundColor: AppColors.background,
+          appBar: AppBar(
+            backgroundColor: AppColors.card,
+            iconTheme: const IconThemeData(color: AppColors.textPrimary),
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+              onPressed: sairDoErro,
+            ),
+          ),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppColors.textPrimary)),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: sairDoErro,
+                    child: const Text('Voltar para o início'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       );
     }
 
