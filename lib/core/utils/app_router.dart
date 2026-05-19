@@ -5,7 +5,9 @@ import 'package:go_router/go_router.dart';
 import '../../presentation/screens/auth/auth_screen.dart';
 import '../../presentation/screens/faltas/faltas_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/screens/visita/visita_screen.dart';
+import '../network/sync_engine.dart';
 import 'current_screen.dart';
 import 'device_info_service.dart';
 import 'last_visita_service.dart';
@@ -48,14 +50,14 @@ final appRouter = GoRouter(
 );
 
 // Widget de splash que redireciona baseado na sessão
-class _SplashRedirect extends StatefulWidget {
+class _SplashRedirect extends ConsumerStatefulWidget {
   const _SplashRedirect();
 
   @override
-  State<_SplashRedirect> createState() => _SplashRedirectState();
+  ConsumerState<_SplashRedirect> createState() => _SplashRedirectState();
 }
 
-class _SplashRedirectState extends State<_SplashRedirect> {
+class _SplashRedirectState extends ConsumerState<_SplashRedirect> {
   @override
   void initState() {
     super.initState();
@@ -87,11 +89,27 @@ class _SplashRedirectState extends State<_SplashRedirect> {
     // Se o Android matou o app enquanto a câmera estava aberta (low memory)
     // ou o usuário trocou de app no meio da visita, restaura a tela onde
     // estava — não joga ele pra home perdido.
+    //
+    // ANTES de restaurar, valida que a visita ainda existe no DB local.
+    // O sync de início de dia pode ter limpado visitas antigas, ou o
+    // idTemp pode ter sido reconciliado pelo servidor — nesses casos o
+    // last_visita_id aponta pra um id morto e o usuário ficaria preso
+    // numa tela "Visita não encontrada" sem botão de voltar. Caso da
+    // reinstalação do Edilson em produção (2026-05).
     final lastVisitaId = await LastVisitaService.get();
     if (!mounted) return;
     if (lastVisitaId != null) {
-      context.go('/visita/$lastVisitaId');
-      return;
+      final db = ref.read(appDatabaseProvider);
+      final visita = await db.getVisitaById(lastVisitaId);
+      if (!mounted) return;
+      if (visita != null) {
+        context.go('/visita/$lastVisitaId');
+        return;
+      }
+      // Visita morta — limpa o pref pra não cair aqui de novo no próximo
+      // boot e segue pra home (onde o usuário vê a lista atual do dia).
+      await LastVisitaService.clear();
+      if (!mounted) return;
     }
 
     context.go('/home');
