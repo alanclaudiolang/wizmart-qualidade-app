@@ -174,12 +174,27 @@ class WatermarkQueueService {
           status: const drift.Value('pending'),
         ));
 
+        // Atualiza fotosXxxJson AGORA, antes de apagar o raw. Mantém o
+        // DB consistente com o sistema de arquivos — se a UI rebuildar
+        // (promotor volta do checklist), encontra wm_path no JSON e o
+        // arquivo wm ainda existe. Sem isso, havia uma janela em que o
+        // JSON ainda tinha raw_path mas o raw já estava deletado, e a
+        // grid quebrava com PathNotFoundException.
+        if (wmPath != p.localPath) {
+          await _trocarPathNoJson(
+            visitaId: item.visitaId,
+            slot: item.slot,
+            de: p.localPath,
+            para: wmPath,
+          );
+        }
+
         // Galeria — falha silenciosa (não crítico).
         try {
           await Gal.putImage(wmPath).timeout(const Duration(seconds: 5));
         } catch (_) {}
 
-        // Apaga o arquivo cru original.
+        // Apaga o arquivo cru original — JSON já não aponta mais pra ele.
         if (wmPath != p.localPath) {
           try {
             await File(p.localPath).delete();
@@ -208,6 +223,44 @@ class WatermarkQueueService {
       await db.updateVisita(VisitasCompanion(
         id: drift.Value(item.visitaId),
         fotosDepoisJson: drift.Value(jsonEncode(novosCaminhos)),
+      ));
+    }
+  }
+
+  /// Lê o JSON atual de fotosXxxJson, substitui [de] por [para] e grava
+  /// de volta. Mantém ordem original (importante — é o que o promotor vê
+  /// na grid). Se [de] não estiver na lista, não faz nada.
+  Future<void> _trocarPathNoJson({
+    required int visitaId,
+    required String slot,
+    required String de,
+    required String para,
+  }) async {
+    final db = _ref.read(appDatabaseProvider);
+    final visita = await db.getVisitaById(visitaId);
+    if (visita == null) return;
+    final atualJson =
+        slot == 'antes' ? visita.fotosAntesJson : visita.fotosDepoisJson;
+    if (atualJson == null || atualJson.isEmpty) return;
+    final lista = List<String>.from(jsonDecode(atualJson));
+    var alterou = false;
+    for (var i = 0; i < lista.length; i++) {
+      if (lista[i] == de) {
+        lista[i] = para;
+        alterou = true;
+      }
+    }
+    if (!alterou) return;
+    final novoJson = jsonEncode(lista);
+    if (slot == 'antes') {
+      await db.updateVisita(VisitasCompanion(
+        id: drift.Value(visitaId),
+        fotosAntesJson: drift.Value(novoJson),
+      ));
+    } else {
+      await db.updateVisita(VisitasCompanion(
+        id: drift.Value(visitaId),
+        fotosDepoisJson: drift.Value(novoJson),
       ));
     }
   }
