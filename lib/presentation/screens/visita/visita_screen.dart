@@ -146,8 +146,20 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         id: drift.Value(widget.visitaId),
         localState: const drift.Value('fotos_depois'),
       ));
+      // Recarrega fotosDepoisJson — watermark queue pode ter trocado
+      // _raw.jpg por _watermark.jpg e apagado os crus. Sem isso, a grid
+      // tenta renderizar paths mortos e cai no errorBuilder com
+      // placeholder em vez de mostrar as fotos reais.
+      final visitaAtualizada = await db.getVisitaById(widget.visitaId);
+      final fotosJson = visitaAtualizada?.fotosDepoisJson;
+      final fotosAtuais = fotosJson != null
+          ? List<String>.from(jsonDecode(fotosJson))
+          : <String>[];
       if (!mounted) return;
-      setState(() => _localState = 'fotos_depois');
+      setState(() {
+        _localState = 'fotos_depois';
+        _fotosDepois = fotosAtuais;
+      });
       _updateSyncPause('fotos_depois');
       return;
     }
@@ -1745,7 +1757,22 @@ class _PhotoTile extends StatelessWidget {
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(12),
-          child: Image.file(File(path), fit: BoxFit.cover),
+          child: Image.file(
+            File(path),
+            fit: BoxFit.cover,
+            // Watermark queue troca _raw.jpg por _watermark.jpg e deleta o
+            // arquivo cru. Se a UI rebuildar com path antigo (ex: promotor
+            // volta do checklist), o file pode não existir mais — placeholder
+            // em vez de crash. Reportado em produção (Cleiton, A05, 2026-05).
+            errorBuilder: (_, __, ___) => Container(
+              color: AppColors.card,
+              alignment: Alignment.center,
+              child: const Icon(
+                Icons.image_not_supported_outlined,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
         ),
 
         // Botão X (deletar) - canto superior direito
