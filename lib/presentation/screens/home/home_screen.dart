@@ -13,6 +13,7 @@ import '../../../core/utils/apk_updater_service.dart';
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/logout_service.dart';
 import '../../../core/utils/app_colors.dart';
+import '../../../core/utils/error_reporter.dart';
 import '../../../core/utils/processing_tracker.dart';
 import '../../widgets/processing_indicator.dart';
 
@@ -267,6 +268,102 @@ class _HomeContent extends ConsumerWidget {
     if (context.mounted) context.go('/auth');
   }
 
+  /// Diálogo "Reportar problema" — promotor descreve o que aconteceu,
+  /// app cria issue no GitHub com a descrição + log do dia + contexto
+  /// do device. Usado quando ele percebe um bug que não gerou crash
+  /// (e portanto o reporter automático não pegou).
+  Future<void> _reportarProblema(BuildContext context) async {
+    final ctrl = TextEditingController();
+    final descricao = await showDialog<String>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text(
+          'Reportar problema',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Descreva brevemente o que aconteceu. O log do app vai ser '
+              'enviado junto pra ajudar a investigar.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              maxLines: 5,
+              minLines: 3,
+              autofocus: true,
+              maxLength: 500,
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: InputDecoration(
+                hintText: 'Ex: cliquei em concluir e a tela ficou em branco…',
+                hintStyle: const TextStyle(color: AppColors.textMuted),
+                filled: true,
+                fillColor: AppColors.inputBg,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              final texto = ctrl.text.trim();
+              if (texto.isEmpty) return;
+              Navigator.of(dialogCtx).pop(texto);
+            },
+            child: const Text(
+              'Enviar',
+              style: TextStyle(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (descricao == null || descricao.isEmpty) return;
+    if (!context.mounted) return;
+
+    // Loading não bloqueante — promotor pode fechar e seguir vivendo.
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Enviando relato…'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    final numero = await ErrorReporter.reportarUsuario(descricao: descricao);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          numero != null
+              ? 'Relato enviado (#$numero). Obrigado!'
+              : 'Não foi possível enviar agora. Tente novamente quando tiver internet.',
+        ),
+        backgroundColor: numero != null ? AppColors.primary : AppColors.danger,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isOnline = ref.watch(connectivityProvider);
@@ -395,6 +492,9 @@ class _HomeContent extends ConsumerWidget {
                 case 'faltas':
                   if (context.mounted) context.push('/faltas');
                   break;
+                case 'reportar':
+                  if (context.mounted) await _reportarProblema(context);
+                  break;
                 case 'logout':
                   await _confirmarLogout(context, ref);
                   break;
@@ -421,6 +521,18 @@ class _HomeContent extends ConsumerWidget {
                         color: AppColors.danger, size: 20),
                     SizedBox(width: 8),
                     Text('Faltas',
+                        style: TextStyle(color: AppColors.textPrimary)),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'reportar',
+                child: Row(
+                  children: [
+                    Icon(Icons.bug_report_outlined,
+                        color: AppColors.primary, size: 20),
+                    SizedBox(width: 8),
+                    Text('Reportar problema',
                         style: TextStyle(color: AppColors.textPrimary)),
                   ],
                 ),
