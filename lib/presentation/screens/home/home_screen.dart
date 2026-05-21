@@ -13,6 +13,7 @@ import '../../../core/utils/apk_updater_service.dart';
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/logout_service.dart';
 import '../../../core/utils/app_colors.dart';
+import '../../../core/utils/error_reporter.dart';
 import '../../../core/utils/processing_tracker.dart';
 import '../../widgets/processing_indicator.dart';
 
@@ -267,6 +268,102 @@ class _HomeContent extends ConsumerWidget {
     if (context.mounted) context.go('/auth');
   }
 
+  /// Diálogo "Reportar problema" — promotor descreve o que aconteceu,
+  /// app cria issue no GitHub com a descrição + log do dia + contexto
+  /// do device. Usado quando ele percebe um bug que não gerou crash
+  /// (e portanto o reporter automático não pegou).
+  Future<void> _reportarProblema(BuildContext context) async {
+    final ctrl = TextEditingController();
+    final descricao = await showDialog<String>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text(
+          'Reportar problema',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Descreva brevemente o que aconteceu. O log do app vai ser '
+              'enviado junto pra ajudar a investigar.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              maxLines: 5,
+              minLines: 3,
+              autofocus: true,
+              maxLength: 500,
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: InputDecoration(
+                hintText: 'Ex: cliquei em concluir e a tela ficou em branco…',
+                hintStyle: const TextStyle(color: AppColors.textMuted),
+                filled: true,
+                fillColor: AppColors.inputBg,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              final texto = ctrl.text.trim();
+              if (texto.isEmpty) return;
+              Navigator.of(dialogCtx).pop(texto);
+            },
+            child: const Text(
+              'Enviar',
+              style: TextStyle(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (descricao == null || descricao.isEmpty) return;
+    if (!context.mounted) return;
+
+    // Loading não bloqueante — promotor pode fechar e seguir vivendo.
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Enviando relato…'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    final numero = await ErrorReporter.reportarUsuario(descricao: descricao);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          numero != null
+              ? 'Relato enviado (#$numero). Obrigado!'
+              : 'Não foi possível enviar agora. Tente novamente quando tiver internet.',
+        ),
+        backgroundColor: numero != null ? AppColors.primary : AppColors.danger,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isOnline = ref.watch(connectivityProvider);
@@ -395,6 +492,9 @@ class _HomeContent extends ConsumerWidget {
                 case 'faltas':
                   if (context.mounted) context.push('/faltas');
                   break;
+                case 'reportar':
+                  if (context.mounted) await _reportarProblema(context);
+                  break;
                 case 'logout':
                   await _confirmarLogout(context, ref);
                   break;
@@ -421,6 +521,18 @@ class _HomeContent extends ConsumerWidget {
                         color: AppColors.danger, size: 20),
                     SizedBox(width: 8),
                     Text('Faltas',
+                        style: TextStyle(color: AppColors.textPrimary)),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'reportar',
+                child: Row(
+                  children: [
+                    Icon(Icons.bug_report_outlined,
+                        color: AppColors.primary, size: 20),
+                    SizedBox(width: 8),
+                    Text('Reportar problema',
                         style: TextStyle(color: AppColors.textPrimary)),
                   ],
                 ),
@@ -496,6 +608,55 @@ class _HomeContent extends ConsumerWidget {
                 ),
               ),
             ),
+            // Banner global: enquanto houver processamento interno
+            // (watermark + salvar na galeria), aparece pra alinhar
+            // expectativa do promotor — "aguarde antes de tocar".
+            // Sincronismo com servidor NÃO entra aqui (roda em
+            // background sem bloquear). Sem isso, ele tocava em outra
+            // visita achando que nada estava acontecendo e duplicava o
+            // fluxo (caso Wendel 2026-05-20).
+            SliverToBoxAdapter(
+              child: ValueListenableBuilder<Set<int>>(
+                valueListenable: ProcessingTracker.visitasAtivas,
+                builder: (_, ativas, __) {
+                  if (ativas.isEmpty) return const SizedBox.shrink();
+                  return Container(
+                    margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.statusEmAndamento.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.statusEmAndamento.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: AppColors.statusEmAndamento,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Processando fotos da visita anterior — aguarde antes de iniciar outra.',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
             visitasAsync.when(
               loading: () => const SliverToBoxAdapter(
                 child: Center(child: Padding(padding: EdgeInsets.only(top: 40), child: CircularProgressIndicator(color: AppColors.primary))),
@@ -555,12 +716,27 @@ class _HomeContent extends ConsumerWidget {
                     (context, index) {
                       final v = sorted[index];
                       final pdv = v.idPdvAssociado != null ? pdvs[v.idPdvAssociado!] : null;
-                      final bloqueada = temEmAndamento && v.id != idEmAndamento && v.statusVisita == 1;
-                      return _VisitaCard(
-                        visita: v,
-                        pdv: pdv,
-                        bloqueada: bloqueada,
-                        onTap: () => context.push('/visita/${v.id}'),
+                      // Reativo ao ProcessingTracker — se houver visita
+                      // sendo processada, bloqueia todos os cards exceto
+                      // a própria que está processando (pra ele continuar
+                      // dentro dela se quiser).
+                      return ValueListenableBuilder<Set<int>>(
+                        valueListenable: ProcessingTracker.visitasAtivas,
+                        builder: (_, ativas, __) {
+                          final temProcessando = ativas.isNotEmpty;
+                          final bloqueioStatus = temEmAndamento &&
+                              v.id != idEmAndamento &&
+                              v.statusVisita == 1;
+                          final bloqueioProc =
+                              temProcessando && !ativas.contains(v.id);
+                          final bloqueada = bloqueioStatus || bloqueioProc;
+                          return _VisitaCard(
+                            visita: v,
+                            pdv: pdv,
+                            bloqueada: bloqueada,
+                            onTap: () => context.push('/visita/${v.id}'),
+                          );
+                        },
                       );
                     },
                     childCount: sorted.length,

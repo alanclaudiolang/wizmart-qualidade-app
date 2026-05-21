@@ -108,6 +108,111 @@ class ErrorReporter {
     }
   }
 
+  /// Cria issue MANUAL a partir de descrição do usuário (item
+  /// "Reportar problema" no menu). Diferente de [reportar]:
+  ///   - Sem cooldown (cada envio é uma nova issue).
+  ///   - Sem erro/stack — só a descrição livre do promotor.
+  ///   - Label `user-report` em vez de `auto`.
+  /// Retorna o número da issue criada (ou null em falha).
+  static Future<int?> reportarUsuario({
+    required String descricao,
+  }) async {
+    final tela = CurrentScreen.nome;
+    await PersistentLogger.append(
+      'user-report:$tela',
+      'Promotor reportou: $descricao',
+    );
+
+    final token = AppConstants.githubBugReportToken;
+    if (token.isEmpty) return null;
+
+    try {
+      final ctx = await _coletarContexto();
+      final logLines = await PersistentLogger.readRecent(lines: 1000);
+
+      final resumo = descricao.length > 60
+          ? '${descricao.substring(0, 60).replaceAll('\n', ' ')}…'
+          : descricao.replaceAll('\n', ' ');
+      final title = '[USUÁRIO][$tela] $resumo';
+
+      final b = StringBuffer();
+      b.writeln('## Relato do promotor');
+      b.writeln('> $descricao');
+      b.writeln();
+      b.writeln('- **Tela atual:** `$tela`');
+      b.writeln();
+      b.writeln('## Promotor');
+      final p = (ctx['promotor'] as Map?) ?? {};
+      b.writeln('- id: ${p['id'] ?? '?'}');
+      b.writeln('- email: ${p['email'] ?? '?'}');
+      b.writeln('- nome: ${p['nome'] ?? '?'}');
+      b.writeln();
+      b.writeln('## Device');
+      final d = (ctx['device'] as Map?) ?? {};
+      b.writeln('- marca: ${d['marca'] ?? '?'}');
+      b.writeln('- fabricante: ${d['fabricante'] ?? '?'}');
+      b.writeln('- modelo: ${d['modelo'] ?? '?'}');
+      b.writeln(
+          '- Android: ${d['androidVersion'] ?? '?'} (SDK ${d['sdkInt'] ?? '?'})');
+      b.writeln('- RAM total: ${ctx['ramTotalMb'] ?? '?'} MB');
+      b.writeln();
+      b.writeln('## Estado no momento');
+      b.writeln(
+          '- Storage livre: ${ctx['storageLivreMb'] ?? '?'} MB de ${ctx['storageTotalMb'] ?? '?'} MB');
+      b.writeln(
+          '- Bateria: ${ctx['bateriaPct'] ?? '?'}% (${ctx['bateriaEstado'] ?? '?'})');
+      b.writeln();
+      b.writeln('## App');
+      final a = (ctx['app'] as Map?) ?? {};
+      b.writeln('- versão: ${a['versao'] ?? '?'}+${a['build'] ?? '?'}');
+      b.writeln();
+      b.writeln('## Log (últimas 1000 linhas)');
+      b.writeln('```');
+      b.writeln(logLines);
+      b.writeln('```');
+      b.writeln();
+      b.writeln('_Issue criado pelo promotor via menu Reportar problema._');
+
+      final res = await http
+          .post(
+            Uri.parse(
+                'https://api.github.com/repos/$_repoOwner/$_repoName/issues'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Accept': 'application/vnd.github+json',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'title': title,
+              'body': b.toString(),
+              'labels': ['bug', 'user-report', 'screen:$tela'],
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        try {
+          final json = jsonDecode(res.body) as Map<String, dynamic>;
+          return json['number'] as int?;
+        } catch (_) {
+          return -1;
+        }
+      }
+      await PersistentLogger.append(
+        'user-report:$tela',
+        'POST falhou status=${res.statusCode} body=${res.body}',
+        erro: true,
+      );
+      return null;
+    } catch (e) {
+      await PersistentLogger.append(
+        'user-report:$tela',
+        'Exceção ao postar: $e',
+        erro: true,
+      );
+      return null;
+    }
+  }
+
   static Future<Map<String, dynamic>> _coletarContexto() async {
     final out = <String, dynamic>{};
     try {
