@@ -380,6 +380,11 @@ class _HomeContent extends ConsumerWidget {
           await engine.pullAll(session.userId);
           await engine.processOutbox();
         } catch (_) {}
+        // Widget pode ter sido descartado durante o sync (promotor saiu
+        // pra outra tela, logout, etc) — sem este guard, ref.invalidate
+        // joga "Bad state: Cannot use ref after disposed" e crasha o app
+        // na próxima abertura (caso Cleiton, 2026-05-21).
+        if (!context.mounted) return;
         ref.invalidate(contadoresProvider(session.userId));
         ref.invalidate(pdvsProvider);
         ref.invalidate(visitasHojeProvider(session.userId));
@@ -560,6 +565,8 @@ class _HomeContent extends ConsumerWidget {
             final syncEngine = ref.read(syncEngineProvider);
             await syncEngine.pullAll(session.userId);
             await syncEngine.processOutbox();
+            // Guard contra o widget ter sido descartado durante o sync.
+            if (!context.mounted) return;
             ref.invalidate(contadoresProvider(session.userId));
           }
         },
