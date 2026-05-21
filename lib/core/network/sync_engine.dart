@@ -10,7 +10,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../database/app_database.dart';
 import '../constants/app_constants.dart';
-import '../utils/processing_tracker.dart';
 import '../utils/sync_logger.dart';
 import 'sync_pause.dart';
 
@@ -400,25 +399,20 @@ class SyncEngine {
       // em pending_photos.storageUrl. Quando o INSERT/UPDATE da visita
       // rodar a seguir, o _buildVisitaPayload lê essas URLs e envia
       // tudo num único request — em vez de 1 INSERT + N UPDATEs.
+      // Upload e outbox NÃO marcam ProcessingTracker — engrenagem reflete
+      // só processamento interno (watermark + galeria), que é rápido
+      // e independe de internet. Sincronismo com servidor roda
+      // silenciosamente em background; bloquear a home por ele
+      // amarraria o promotor à conexão.
       final photos = await _db.getPendingPhotos();
       for (final photo in photos) {
-        ProcessingTracker.begin(photo.visitaId);
-        try {
-          await _processPhotoUpload(photo);
-        } finally {
-          ProcessingTracker.end(photo.visitaId);
-        }
+        await _processPhotoUpload(photo);
       }
       // Reler outbox: o upload das fotos pode ter enfileirado UPDATEs
       // pra visitas com serverId já existente (fluxo de re-edição).
       final items = await _db.getPendingOutboxItems();
       for (final item in items) {
-        ProcessingTracker.begin(item.entityId);
-        try {
-          await _processOutboxItem(item);
-        } finally {
-          ProcessingTracker.end(item.entityId);
-        }
+        await _processOutboxItem(item);
       }
     } finally {
       _running = false;

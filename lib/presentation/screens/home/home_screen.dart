@@ -496,6 +496,55 @@ class _HomeContent extends ConsumerWidget {
                 ),
               ),
             ),
+            // Banner global: enquanto houver processamento interno
+            // (watermark + salvar na galeria), aparece pra alinhar
+            // expectativa do promotor — "aguarde antes de tocar".
+            // Sincronismo com servidor NÃO entra aqui (roda em
+            // background sem bloquear). Sem isso, ele tocava em outra
+            // visita achando que nada estava acontecendo e duplicava o
+            // fluxo (caso Wendel 2026-05-20).
+            SliverToBoxAdapter(
+              child: ValueListenableBuilder<Set<int>>(
+                valueListenable: ProcessingTracker.visitasAtivas,
+                builder: (_, ativas, __) {
+                  if (ativas.isEmpty) return const SizedBox.shrink();
+                  return Container(
+                    margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.statusEmAndamento.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.statusEmAndamento.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: AppColors.statusEmAndamento,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Processando fotos da visita anterior — aguarde antes de iniciar outra.',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
             visitasAsync.when(
               loading: () => const SliverToBoxAdapter(
                 child: Center(child: Padding(padding: EdgeInsets.only(top: 40), child: CircularProgressIndicator(color: AppColors.primary))),
@@ -555,12 +604,27 @@ class _HomeContent extends ConsumerWidget {
                     (context, index) {
                       final v = sorted[index];
                       final pdv = v.idPdvAssociado != null ? pdvs[v.idPdvAssociado!] : null;
-                      final bloqueada = temEmAndamento && v.id != idEmAndamento && v.statusVisita == 1;
-                      return _VisitaCard(
-                        visita: v,
-                        pdv: pdv,
-                        bloqueada: bloqueada,
-                        onTap: () => context.push('/visita/${v.id}'),
+                      // Reativo ao ProcessingTracker — se houver visita
+                      // sendo processada, bloqueia todos os cards exceto
+                      // a própria que está processando (pra ele continuar
+                      // dentro dela se quiser).
+                      return ValueListenableBuilder<Set<int>>(
+                        valueListenable: ProcessingTracker.visitasAtivas,
+                        builder: (_, ativas, __) {
+                          final temProcessando = ativas.isNotEmpty;
+                          final bloqueioStatus = temEmAndamento &&
+                              v.id != idEmAndamento &&
+                              v.statusVisita == 1;
+                          final bloqueioProc =
+                              temProcessando && !ativas.contains(v.id);
+                          final bloqueada = bloqueioStatus || bloqueioProc;
+                          return _VisitaCard(
+                            visita: v,
+                            pdv: pdv,
+                            bloqueada: bloqueada,
+                            onTap: () => context.push('/visita/${v.id}'),
+                          );
+                        },
                       );
                     },
                     childCount: sorted.length,
