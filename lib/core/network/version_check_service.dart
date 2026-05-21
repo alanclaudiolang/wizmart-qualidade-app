@@ -21,7 +21,9 @@ class AppVersionInfo {
   final bool outdated;
   final String? latestBuild;
   final String? apkDownloadUrl;
-  /// Timestamp `published_at` do release no GitHub.
+  /// Timestamp `published_at` do release no GitHub. Mantido pra
+  /// telemetria/log — não é usado pra decidir D+1 (a referência é o
+  /// BUILD_TIME local, que viaja com o APK e não reseta a cada CI run).
   final DateTime? publishedAt;
   /// `true` quando o body do release contém o marker `[FORCE-UPDATE]`.
   /// Faz a atualização ser obrigatória IMEDIATAMENTE (sem esperar
@@ -41,17 +43,42 @@ class AppVersionInfo {
 
   /// Atualização obrigatória em 2 cenários:
   ///   1) Release marcado com `[FORCE-UPDATE]` no body — força agora;
-  ///   2) Release foi publicado em dia ANTERIOR a hoje — regra padrão
-  ///      "primeiro acesso no dia seguinte".
+  ///   2) Hoje é dia POSTERIOR à data em que o APK INSTALADO foi
+  ///      compilado pela CI. Usa AppConstants.buildTime (vem do
+  ///      `--dart-define=BUILD_TIME=...`) — info de servidor que viaja
+  ///      com o binário e nunca reseta. Antes usávamos publishedAt do
+  ///      v-latest, mas o workflow apaga/recria a release a cada push
+  ///      e o timestamp resetava — promotor ficava sem ser forçado
+  ///      mesmo estando 2+ dias atrasado.
   bool get atualizacaoObrigatoria {
     if (!outdated) return false;
     if (forceUpdate) return true;
-    if (publishedAt == null) return false;
+    final localBuildDate = _parseBuildTime(AppConstants.buildTime);
+    if (localBuildDate == null) return false;
     final agora = DateTime.now();
     final hoje = DateTime(agora.year, agora.month, agora.day);
-    final pubLocal = publishedAt!.toLocal();
-    final diaPub = DateTime(pubLocal.year, pubLocal.month, pubLocal.day);
-    return hoje.isAfter(diaPub);
+    final diaBuild = DateTime(
+      localBuildDate.year,
+      localBuildDate.month,
+      localBuildDate.day,
+    );
+    return hoje.isAfter(diaBuild);
+  }
+
+  /// Parseia `BUILD_TIME` no formato `dd/MM/yyyy HH:mm` (BR) gerado
+  /// pelo workflow. Em dev (defaultValue='local') ou formato
+  /// inesperado, retorna null — D+1 não dispara.
+  static DateTime? _parseBuildTime(String s) {
+    final m = RegExp(r'^(\d{2})/(\d{2})/(\d{4}) (\d{2}):(\d{2})$')
+        .firstMatch(s);
+    if (m == null) return null;
+    return DateTime(
+      int.parse(m.group(3)!),
+      int.parse(m.group(2)!),
+      int.parse(m.group(1)!),
+      int.parse(m.group(4)!),
+      int.parse(m.group(5)!),
+    );
   }
 }
 
