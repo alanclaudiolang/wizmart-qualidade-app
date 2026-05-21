@@ -11,6 +11,7 @@
 // no fluxo de fotos.
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
@@ -63,9 +64,19 @@ class PersistentLogger {
 
   static int _writesSinceRotation = 0;
 
+  /// Lê o arquivo de log tolerando bytes mal-formados em UTF-8.
+  /// f.readAsString() padrão usa decode strict e quebra inteiro o read
+  /// se aparecer 1 byte inválido (texto colado de fonte estranha,
+  /// caractere truncado por flush no meio, etc) — issue #8 mostrou o
+  /// log vindo vazio no body.
+  static Future<String> _readLenient(File f) async {
+    final bytes = await f.readAsBytes();
+    return utf8.decode(bytes, allowMalformed: true);
+  }
+
   static Future<void> _rotateIfNeeded(File f) async {
     try {
-      final content = await f.readAsString();
+      final content = await _readLenient(f);
       final lines = content.split('\n');
       if (lines.length > _maxLines) {
         final novo = lines.sublist(lines.length - _maxLines).join('\n');
@@ -79,7 +90,7 @@ class PersistentLogger {
     try {
       final f = await _file();
       if (!await f.exists()) return '(sem log persistido)';
-      final content = await f.readAsString();
+      final content = await _readLenient(f);
       final split = content.split('\n');
       final start = split.length > lines ? split.length - lines : 0;
       return split.sublist(start).join('\n');
