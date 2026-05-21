@@ -299,10 +299,20 @@ class AppDatabase extends _$AppDatabase {
       naoApagar.add(o.entityId);
     }
 
-    // IDs de visitas com fotos ainda em fila de upload.
+    // IDs de visitas com fotos ainda em fila — inclui 'watermark_pending'
+    // (não só pending/uploading). Sem isso, se o INSERT 'open' fosse
+    // processado por um _triggerSync da home ANTES da watermark queue
+    // terminar, o pull subsequente apagava a row id=idTemp e recriava
+    // com id=serverId. As pending_photos órfãs com visitaId=idTemp
+    // depois tentavam enfileirar 'photos_antes' UPDATE que era
+    // descartado por "visita não encontrada" — fotos subiam pro
+    // Storage mas o array fotos_antes na tabela ficava vazio.
+    // (Cleiton/Edilson 2026-05-19/20.)
     final photoRows = await (select(pendingPhotos)
           ..where((p) =>
-              p.status.equals('pending') | p.status.equals('uploading')))
+              p.status.equals('watermark_pending') |
+              p.status.equals('pending') |
+              p.status.equals('uploading')))
         .get();
     for (final p in photoRows) {
       naoApagar.add(p.visitaId);
