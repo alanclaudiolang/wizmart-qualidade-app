@@ -774,6 +774,50 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         'PDV ${_visita?.idPdvAssociado ?? '?'}';
   }
 
+  /// Dialog de confirmação antes de concluir a etapa de fotos.
+  /// Necessário porque o botão "Concluir" fica perto do "Tirar foto"
+  /// e o promotor estava clicando por engano. Só é chamado quando
+  /// o mínimo de fotos já foi atingido (botão fica desabilitado abaixo).
+  Future<void> _confirmarConcluirFotos(String slot) async {
+    final fotos = slot == 'antes' ? _fotosAntes : _fotosDepois;
+    final etapa = slot == 'antes' ? 'antes' : 'depois';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: Text(
+          'Concluir fotos $etapa?',
+          style: const TextStyle(color: AppColors.textPrimary),
+        ),
+        content: Text(
+          'Você tirou ${fotos.length} foto(s). Confirma que terminou '
+          'as fotos $etapa da reposição?',
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Sim, concluir',
+                style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    if (slot == 'antes') {
+      await _concluirFotosAntes();
+    } else {
+      await _concluirFotosDepois();
+    }
+  }
+
   Future<void> _concluirFotosAntes() async {
     if (_fotosAntes.isEmpty) {
       _showError('Tire pelo menos uma foto antes da reposição.');
@@ -1287,9 +1331,13 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     final limite = slot == 'antes'
         ? AppConstants.maxFotosAntes
         : AppConstants.maxFotosDepois;
+    final minimo = slot == 'antes'
+        ? AppConstants.minFotosAntes
+        : AppConstants.minFotosDepois;
     final cor = slot == 'antes'
         ? AppColors.statusAgendada
         : AppColors.primary;
+    final atingiuMinimo = fotos.length >= minimo;
 
     final tituloLabel = slot == 'antes' ? 'Foto Antes' : 'Foto Depois';
 
@@ -1391,31 +1439,41 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
                 ),
               const SizedBox(height: 12),
 
-              // Botão concluir
-              if (fotos.isNotEmpty)
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: slot == 'antes'
-                        ? _concluirFotosAntes
-                        : _concluirFotosDepois,
-                    icon: const Icon(Icons.check, color: Colors.white),
-                    label: Text(
-                      slot == 'antes'
-                          ? 'Concluir'
-                          : 'Concluir — ir para checklist',
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 16),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      padding:
-                          const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                    ),
+              // Botão concluir — sempre visível, esmaecido quando ainda
+              // não atingiu o mínimo de fotos (4). Confirma com dialog
+              // antes de prosseguir pra evitar clique acidental no
+              // botão de "Concluir" (que fica perto do "Tirar foto").
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: atingiuMinimo
+                      ? () => _confirmarConcluirFotos(slot)
+                      : null,
+                  icon: Icon(
+                    atingiuMinimo ? Icons.check : Icons.camera_alt,
+                    color: Colors.white,
+                  ),
+                  label: Text(
+                    atingiuMinimo
+                        ? (slot == 'antes'
+                            ? 'Concluir'
+                            : 'Concluir — ir para checklist')
+                        : 'Faltam ${minimo - fotos.length} foto(s) — mínimo $minimo',
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 16),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    disabledBackgroundColor:
+                        AppColors.primary.withValues(alpha: 0.35),
+                    disabledForegroundColor:
+                        Colors.white.withValues(alpha: 0.7),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
                   ),
                 ),
+              ),
             ],
           ),
         ),
