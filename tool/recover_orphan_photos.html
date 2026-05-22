@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Recuperação de fotos órfãs — Wizmart</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warning: #d97706;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 4px; font-size: 22px; }
+    h2 { margin: 0 0 12px; font-size: 16px; font-weight: 600; }
+    .sub { color: var(--muted); margin-bottom: 24px; }
+    .step {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 18px;
+    }
+    .step.disabled { opacity: 0.5; pointer-events: none; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .row > * { flex: 1 1 200px; }
+    label { display: block; font-weight: 500; margin-bottom: 4px; font-size: 12px; color: var(--muted); }
+    input, textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font: inherit;
+      background: white;
+    }
+    textarea { min-height: 80px; resize: vertical; font-family: monospace; }
+    button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 9px 16px;
+      border-radius: 6px;
+      font-weight: 500;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover { background: var(--primary-hover); }
+    button:disabled { background: var(--muted); cursor: not-allowed; }
+    button.secondary { background: white; color: var(--text); border: 1px solid var(--border); }
+    button.danger { background: var(--danger); }
+    button.success { background: var(--success); }
+    .promotor-block {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      background: #fafbfc;
+    }
+    .promotor-title { font-weight: 600; margin-bottom: 12px; font-size: 15px; }
+    .promotor-stats { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+    .stat { font-size: 12px; color: var(--muted); }
+    .stat strong { color: var(--text); font-size: 16px; display: block; }
+    .match {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 10px;
+      background: white;
+    }
+    .match-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+    .match-status { padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 500; }
+    .match-status.unica { background: #dcfce7; color: var(--success); }
+    .match-status.ambigua { background: #fef3c7; color: var(--warning); }
+    .match-status.aprovada { background: #dbeafe; color: var(--primary); }
+    .match-status.aplicada { background: #d1fae5; color: var(--success); }
+    .match-status.falha { background: #fee2e2; color: var(--danger); }
+    .match-detail { color: var(--muted); font-size: 12px; }
+    .thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+    .thumb {
+      width: 80px; height: 80px;
+      object-fit: cover;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: #f1f5f9;
+    }
+    select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font: inherit; }
+    .actions { display: flex; gap: 8px; margin-top: 10px; }
+    .actions button { padding: 5px 12px; font-size: 12px; }
+    .empty { color: var(--muted); font-style: italic; padding: 12px; text-align: center; }
+    .alert {
+      padding: 10px 12px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      font-size: 13px;
+    }
+    .alert.warn { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+    .alert.error { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+    .alert.info { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+    code { background: #f1f5f9; padding: 1px 6px; border-radius: 3px; font-size: 12px; }
+    .small { font-size: 12px; }
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid #e2e8f0; border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Recuperação de fotos órfãs</h1>
+  <p class="sub">
+    Identifica fotos no bucket que não foram vinculadas na coluna
+    <code>fotos_antes</code> da tabela <code>visitas</code> e cruza por
+    proximidade temporal com <code>dia_hora_fotos_antes</code>.
+  </p>
+
+  <!-- Step 1 -->
+  <div class="step" id="step1">
+    <h2>1. Credenciais</h2>
+    <div class="row">
+      <div>
+        <label>Supabase URL</label>
+        <input id="url" placeholder="https://&lt;projeto&gt;.supabase.co" />
+      </div>
+      <div>
+        <label>Service Role Key</label>
+        <input id="key" type="password" placeholder="eyJhbGciOi..." />
+      </div>
+    </div>
+    <div class="row" style="margin-top: 12px;">
+      <div>
+        <label>Desde (dia_hora_fotos_antes &gt;=)</label>
+        <input id="since" type="date" value="2026-05-19" />
+      </div>
+      <div>
+        <label>Até (dia_hora_fotos_antes &lt;=)</label>
+        <input id="until" type="date" value="2026-05-22" />
+      </div>
+      <div>
+        <label>Janela de tolerância (min)</label>
+        <input id="tolerancia" type="number" value="30" min="1" max="240" />
+      </div>
+    </div>
+    <p class="small" style="margin-top: 8px; color: var(--muted);">
+      A service_role key fica só na memória dessa página (não é salva). Recarregar perde.
+    </p>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="step" id="step2">
+    <h2>2. Promotores</h2>
+    <label>E-mails (um por linha)</label>
+    <textarea id="emails" placeholder="cleiton@exemplo.com&#10;edilson@exemplo.com"></textarea>
+    <div style="margin-top: 12px;">
+      <button id="analisarBtn" onclick="analisar()">Analisar</button>
+      <span id="analisarStatus" class="small" style="margin-left: 10px;"></span>
+    </div>
+  </div>
+
+  <!-- Step 3 -->
+  <div class="step disabled" id="step3">
+    <h2>3. Cruzamento</h2>
+    <div id="resultado"></div>
+  </div>
+
+  <!-- Step 4 -->
+  <div class="step disabled" id="step4">
+    <h2>4. Aplicar</h2>
+    <p class="small" style="color: var(--muted); margin-bottom: 12px;">
+      Só os matches marcados como <strong>aprovado</strong> serão aplicados.
+    </p>
+    <button id="aplicarBtn" onclick="aplicarTudo()">Aplicar UPDATEs aprovados</button>
+    <span id="aplicarStatus" class="small" style="margin-left: 10px;"></span>
+  </div>
+</div>
+
+<script>
+const state = {
+  baseUrl: '',
+  serviceKey: '',
+  matches: [], // { id, promotor, files, visitaCandidatas, escolhida, status }
+};
+
+function $(id) { return document.getElementById(id); }
+
+function setStepEnabled(stepId, enabled) {
+  const el = $(stepId);
+  if (enabled) el.classList.remove('disabled');
+  else el.classList.add('disabled');
+}
+
+async function api(method, path, body) {
+  const resp = await fetch(state.baseUrl + path, {
+    method,
+    headers: {
+      'apikey': state.serviceKey,
+      'Authorization': 'Bearer ' + state.serviceKey,
+      'Content-Type': 'application/json',
+      'Prefer': method === 'PATCH' ? 'return=minimal' : '',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(method + ' ' + path + ' -> ' + resp.status + ': ' + text);
+  }
+  if (resp.status === 204) return null;
+  return resp.json();
+}
+
+async function getPromotor(email) {
+  const list = await api('GET',
+    '/rest/v1/users?select=id,nome,email,uid&email=eq.' + encodeURIComponent(email));
+  return list[0] || null;
+}
+
+async function listarOrfaos(authUid) {
+  // Lista direto sob abastecimentos/{authUid} — arquivos com metadata != null.
+  const list = await api('POST', '/storage/v1/object/list/Arquivos', {
+    prefix: 'abastecimentos/' + authUid,
+    limit: 1000,
+    offset: 0,
+  });
+  const regex = /^visita-(\d+)-antes-(\d+)\.([a-zA-Z0-9]+)$/;
+  const orfaos = [];
+  for (const item of list) {
+    // Folders têm metadata=null; arquivos têm size, mimetype etc.
+    if (!item.metadata) continue;
+    const m = item.name.match(regex);
+    if (!m) continue;
+    orfaos.push({
+      name: item.name,
+      hash: m[1],
+      numero: parseInt(m[2], 10),
+      ext: m[3],
+      updated_at: item.updated_at || item.created_at,
+      authUid: authUid,
+    });
+  }
+  return orfaos;
+}
+
+async function listarVisitasSemAntes(promotorId, since, until) {
+  // fotos_antes IS NULL OR fotos_antes = '[]' (texto vazio) OR jsonb empty.
+  // O PostgREST `or=(fotos_antes.is.null,fotos_antes.eq.[])` cobre os 2 casos
+  // mais comuns. O tipo da coluna pode ser jsonb ou text — comparamos ambos.
+  const qs = [
+    'select=id,titulo,dia_hora_fotos_antes,dia_hora_agendado,fotos_antes',
+    'id_promotor_associado=eq.' + promotorId,
+    'dia_hora_fotos_antes=gte.' + since,
+    'dia_hora_fotos_antes=lte.' + until + 'T23:59:59',
+    'order=dia_hora_fotos_antes.asc',
+  ].join('&');
+  const list = await api('GET', '/rest/v1/visitas?' + qs);
+  // Filtra client-side pra ser robusto a vários tipos (null, '', '[]', [])
+  return list.filter(v => {
+    const fa = v.fotos_antes;
+    if (fa == null) return true;
+    if (typeof fa === 'string') return fa === '' || fa === '[]';
+    if (Array.isArray(fa)) return fa.length === 0;
+    return false;
+  });
+}
+
+function publicUrl(authUid, name) {
+  return state.baseUrl + '/storage/v1/object/public/Arquivos/abastecimentos/'
+    + authUid + '/' + name;
+}
+
+function parseDate(s) {
+  if (!s) return null;
+  // Trata as duas formas (com Z, sem TZ)
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function fmtDate(d) {
+  if (!d) return '-';
+  const pad = n => String(n).padStart(2, '0');
+  return pad(d.getDate()) + '/' + pad(d.getMonth()+1) + '/' + d.getFullYear()
+    + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+async function analisar() {
+  state.baseUrl = $('url').value.trim().replace(/\/$/, '');
+  state.serviceKey = $('key').value.trim();
+  const since = $('since').value;
+  const until = $('until').value;
+  const toleranciaMin = parseInt($('tolerancia').value, 10) || 30;
+  const emailsRaw = $('emails').value;
+
+  if (!state.baseUrl || !state.serviceKey) {
+    alert('Preencha URL e service_role key.');
+    return;
+  }
+  const emails = emailsRaw.split(/[\n,]/).map(s => s.trim()).filter(Boolean);
+  if (emails.length === 0) {
+    alert('Inclua pelo menos um email.');
+    return;
+  }
+
+  const btn = $('analisarBtn');
+  const status = $('analisarStatus');
+  btn.disabled = true;
+  status.innerHTML = '<span class="spinner"></span> Analisando...';
+  state.matches = [];
+  const container = $('resultado');
+  container.innerHTML = '';
+
+  try {
+    for (const email of emails) {
+      const block = document.createElement('div');
+      block.className = 'promotor-block';
+      container.appendChild(block);
+
+      const promotor = await getPromotor(email);
+      if (!promotor) {
+        block.innerHTML = '<div class="promotor-title">' + email + '</div>'
+          + '<div class="alert error">Promotor não encontrado em public.users.</div>';
+        continue;
+      }
+      if (!promotor.uid) {
+        block.innerHTML = '<div class="promotor-title">' + email + '</div>'
+          + '<div class="alert error">Promotor sem campo uid (auth_user.id). Não dá pra listar arquivos.</div>';
+        continue;
+      }
+
+      block.innerHTML = '<div class="promotor-title">'
+        + escapeHtml(promotor.nome || email)
+        + ' <span class="small" style="color:var(--muted)">(id ' + promotor.id + ')</span></div>'
+        + '<div class="small" style="color:var(--muted); margin-bottom:10px;">'
+        + 'Listando órfãos e visitas... <span class="spinner"></span></div>';
+
+      const [orfaos, visitas] = await Promise.all([
+        listarOrfaos(promotor.uid),
+        listarVisitasSemAntes(promotor.id, since, until),
+      ]);
+
+      // Agrupa órfãos por hash
+      const grupos = {};
+      for (const o of orfaos) {
+        (grupos[o.hash] = grupos[o.hash] || []).push(o);
+      }
+
+      // Cruza
+      const usadas = new Set();
+      const promotorMatches = [];
+      const gruposOrdenados = Object.entries(grupos).sort((a, b) => {
+        const ta = Math.max(...a[1].map(f => parseDate(f.updated_at).getTime()));
+        const tb = Math.max(...b[1].map(f => parseDate(f.updated_at).getTime()));
+        return ta - tb;
+      });
+
+      for (const [hash, files] of gruposOrdenados) {
+        files.sort((a,b) => a.numero - b.numero);
+        const tsUpload = new Date(Math.max(...files.map(f => parseDate(f.updated_at).getTime())));
+        const candidatas = visitas.filter(v => {
+          if (usadas.has(v.id)) return false;
+          const dhfa = parseDate(v.dia_hora_fotos_antes);
+          if (!dhfa) return false;
+          const delta = (tsUpload - dhfa) / 60000;
+          return delta >= 0 && delta <= toleranciaMin;
+        });
+        // Mais próxima/anterior
+        candidatas.sort((a,b) => {
+          return parseDate(a.dia_hora_fotos_antes) - parseDate(b.dia_hora_fotos_antes);
+        });
+        const melhor = candidatas[candidatas.length - 1] || null;
+        if (melhor) usadas.add(melhor.id);
+        const matchId = email + ':' + hash;
+        promotorMatches.push({
+          id: matchId,
+          email, promotor, hash, files, tsUpload,
+          visitaCandidatas: candidatas,
+          escolhida: melhor,
+          status: melhor
+            ? (candidatas.length > 1 ? 'ambigua' : 'unica')
+            : 'sem_candidata',
+        });
+      }
+
+      state.matches.push(...promotorMatches);
+
+      block.innerHTML = '<div class="promotor-title">'
+        + escapeHtml(promotor.nome || email)
+        + ' <span class="small" style="color:var(--muted)">(id ' + promotor.id + ')</span></div>'
+        + '<div class="promotor-stats">'
+        + '<div class="stat"><strong>' + Object.keys(grupos).length + '</strong>'
+        + 'grupos de fotos órfãs</div>'
+        + '<div class="stat"><strong>' + orfaos.length + '</strong>'
+        + 'arquivos no Storage</div>'
+        + '<div class="stat"><strong>' + visitas.length + '</strong>'
+        + 'visitas sem fotos_antes</div>'
+        + '</div>'
+        + '<div id="matches-' + cssEscape(email) + '"></div>';
+
+      const matchesContainer = block.querySelector('#matches-' + cssEscape(email));
+      if (promotorMatches.length === 0) {
+        matchesContainer.innerHTML = '<div class="empty">Nenhum grupo órfão encontrado.</div>';
+      } else {
+        for (const m of promotorMatches) {
+          matchesContainer.appendChild(renderMatch(m, visitas));
+        }
+      }
+    }
+
+    setStepEnabled('step3', true);
+    setStepEnabled('step4', true);
+    status.textContent = 'Análise concluída.';
+  } catch (e) {
+    status.innerHTML = '<span style="color: var(--danger);">Erro: ' + escapeHtml(e.message) + '</span>';
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderMatch(m, todasVisitas) {
+  const div = document.createElement('div');
+  div.className = 'match';
+  div.dataset.matchId = m.id;
+
+  const statusLabel = {
+    unica: 'única candidata',
+    ambigua: 'múltiplas — revisar',
+    sem_candidata: 'sem candidata na janela',
+    aprovada: 'aprovada',
+    aplicada: 'aplicada',
+    falha: 'falha',
+  }[m.status] || m.status;
+
+  const statusClass = m.status === 'unica' || m.status === 'aprovada'
+    ? 'unica' : m.status === 'ambigua' ? 'ambigua'
+    : m.status === 'aplicada' ? 'aplicada'
+    : m.status === 'falha' ? 'falha' : 'ambigua';
+
+  div.innerHTML = `
+    <div class="match-header">
+      <div>
+        <strong>Hash ${m.hash}</strong>
+        <span class="match-detail">— ${m.files.length} arquivo(s) — upload em ${fmtDate(m.tsUpload)}</span>
+      </div>
+      <div style="margin-left: auto;">
+        <span class="match-status ${statusClass}" data-status>${statusLabel}</span>
+      </div>
+    </div>
+    <div class="thumbs"></div>
+    <div>
+      <label>Vincular à visita:</label>
+      <select data-visita-select>
+        <option value="">— ignorar este grupo —</option>
+      </select>
+    </div>
+    <div class="actions">
+      <button class="success" data-aprovar>Aprovar</button>
+      <button class="secondary" data-ignorar>Ignorar</button>
+    </div>
+  `;
+
+  // Thumbs
+  const thumbs = div.querySelector('.thumbs');
+  for (const f of m.files) {
+    const img = document.createElement('img');
+    img.className = 'thumb';
+    img.src = publicUrl(m.promotor.uid, f.name);
+    img.title = f.name;
+    img.loading = 'lazy';
+    thumbs.appendChild(img);
+  }
+
+  // Select de visita (apenas candidatas + outras visitas do mesmo promotor sem fotos)
+  const sel = div.querySelector('[data-visita-select]');
+  // Adiciona candidatas no topo
+  const adicionadas = new Set();
+  for (const v of m.visitaCandidatas) {
+    const opt = document.createElement('option');
+    opt.value = v.id;
+    opt.textContent = '★ ' + (v.titulo || '(sem título)')
+      + ' — ' + fmtDate(parseDate(v.dia_hora_fotos_antes))
+      + ' (id ' + v.id + ')';
+    sel.appendChild(opt);
+    adicionadas.add(v.id);
+  }
+  // Outras (mesmo promotor, sem fotos_antes, mas fora da janela) — pra escolher manual
+  for (const v of todasVisitas) {
+    if (adicionadas.has(v.id)) continue;
+    const opt = document.createElement('option');
+    opt.value = v.id;
+    opt.textContent = (v.titulo || '(sem título)')
+      + ' — ' + fmtDate(parseDate(v.dia_hora_fotos_antes))
+      + ' (id ' + v.id + ')';
+    sel.appendChild(opt);
+  }
+  if (m.escolhida) sel.value = m.escolhida.id;
+
+  // Handlers
+  sel.addEventListener('change', () => {
+    const id = parseInt(sel.value, 10);
+    m.escolhida = todasVisitas.find(v => v.id === id) || null;
+    if (m.escolhida) {
+      m.status = m.visitaCandidatas.includes(m.escolhida) ? 'unica' : 'ambigua';
+    } else {
+      m.status = 'sem_candidata';
+    }
+    refreshStatus(div, m);
+  });
+
+  div.querySelector('[data-aprovar]').addEventListener('click', () => {
+    if (!m.escolhida) { alert('Escolha uma visita primeiro.'); return; }
+    m.status = 'aprovada';
+    refreshStatus(div, m);
+  });
+  div.querySelector('[data-ignorar]').addEventListener('click', () => {
+    m.escolhida = null;
+    sel.value = '';
+    m.status = 'sem_candidata';
+    refreshStatus(div, m);
+  });
+
+  return div;
+}
+
+function refreshStatus(div, m) {
+  const span = div.querySelector('[data-status]');
+  const statusLabel = {
+    unica: 'única candidata',
+    ambigua: 'múltiplas — revisar',
+    sem_candidata: 'sem candidata',
+    aprovada: 'aprovada',
+    aplicada: 'aplicada',
+    falha: 'falha',
+  }[m.status] || m.status;
+  span.textContent = statusLabel;
+  span.className = 'match-status ' + (
+    m.status === 'unica' || m.status === 'aprovada' ? 'unica'
+    : m.status === 'aplicada' ? 'aplicada'
+    : m.status === 'falha' ? 'falha' : 'ambigua'
+  );
+}
+
+async function aplicarTudo() {
+  const aprovados = state.matches.filter(m => m.status === 'aprovada');
+  if (aprovados.length === 0) {
+    alert('Nenhum match aprovado.');
+    return;
+  }
+  if (!confirm('Vai aplicar ' + aprovados.length + ' UPDATE(s) na tabela visitas. Continuar?')) return;
+  const btn = $('aplicarBtn');
+  const status = $('aplicarStatus');
+  btn.disabled = true;
+  let ok = 0, falha = 0;
+  for (const m of aprovados) {
+    status.innerHTML = '<span class="spinner"></span> Aplicando ' + (ok+falha+1) + '/' + aprovados.length + '...';
+    const urls = m.files.map(f => publicUrl(m.promotor.uid, f.name));
+    try {
+      await api('PATCH', '/rest/v1/visitas?id=eq.' + m.escolhida.id, { fotos_antes: urls });
+      m.status = 'aplicada';
+      ok++;
+    } catch (e) {
+      console.error('Falha visita ' + m.escolhida.id, e);
+      m.status = 'falha';
+      falha++;
+    }
+    const div = document.querySelector('[data-match-id="' + m.id + '"]');
+    if (div) refreshStatus(div, m);
+  }
+  status.innerHTML = '<strong>Concluído.</strong> ' + ok + ' ok, ' + falha + ' falha(s).';
+  btn.disabled = false;
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+function cssEscape(s) { return s.replace(/[^a-zA-Z0-9_-]/g, '_'); }
+</script>
+</body>
+</html>
