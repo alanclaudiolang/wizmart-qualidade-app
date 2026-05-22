@@ -20,6 +20,10 @@ class AppConstants {
   static const int maxSyncRetries = 10;
   static const int maxFotosAntes = 8;
   static const int maxFotosDepois = 8;
+  // Mínimo pra liberar o botão "Concluir" na etapa de fotos.
+  // Abaixo disso o botão fica desabilitado/cinza.
+  static const int minFotosAntes = 4;
+  static const int minFotosDepois = 4;
 
   // Status de visita (espelho do Supabase)
   static const int statusAgendada = 1;

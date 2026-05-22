@@ -18,18 +18,34 @@ class SyncEngine {
   final SupabaseClient _supabase;
   final SyncLoggerNotifier _logger;
   bool _running = false;
+  bool _pulling = false;
 
   SyncEngine(this._db, this._supabase, this._logger);
 
   Future<void> pullAll(int promotorId) async {
-    // pullAll é trabalho global (não relacionado a visita específica),
-    // então não toca o ProcessingTracker (que é por-visita).
+    // Trinco: vários gatilhos (volta pra home, lifecycle resumed,
+    // watermark queue, etc) podem disparar pullAll quase ao mesmo
+    // tempo. Sem o trinco eles rodam entrelaçados — o
+    // 'deleteVisitasSincronizadasSemPendencias' de um sobrepõe o
+    // re-insert do outro e abre uma janela onde a visita "some" do
+    // DB local. Promotor toca nela nesse intervalo → "Visita não
+    // encontrada" (caso reportado em 2026-05-22 issue #11).
+    if (_pulling) {
+      _logger.log('início',
+          'pullAll ignorado (outro já rodando) — promotor $promotorId');
+      return;
+    }
+    _pulling = true;
     _logger.log(
         'início', 'Iniciando sincronização para promotor $promotorId');
-    await _pullPdvs(promotorId);
-    await _pullGabaritos(promotorId);
-    await _pullVisitasDia(promotorId);
-    _logger.log('fim', 'Sincronização concluída');
+    try {
+      await _pullPdvs(promotorId);
+      await _pullGabaritos(promotorId);
+      await _pullVisitasDia(promotorId);
+      _logger.log('fim', 'Sincronização concluída');
+    } finally {
+      _pulling = false;
+    }
   }
 
   /// Ciclo completo de sincronização usado por todos os gatilhos:

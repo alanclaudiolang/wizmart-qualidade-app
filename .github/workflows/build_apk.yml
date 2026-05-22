@@ -60,13 +60,41 @@ jobs:
           VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //;s/+.*//' | tr -d ' \r\n')
           TIMESTAMP=$(date +'%Y%m%d-%H%M')
           BUILD_TIME=$(date +'%d/%m/%Y %H:%M')
-          APK_NAME="wizmart-app-v${VERSION}-build${{ github.run_number }}-${TIMESTAMP}.apk"
+          # Pra branch dev, marca o APK e o nome fixo de forma que dê
+          # pra coexistir com o de produção no mesmo celular (instalável
+          # lado a lado, dados isolados — applicationId diferente).
+          if [ "${{ github.ref }}" = "refs/heads/dev" ]; then
+            CHANNEL="DEV"
+            FIXED_NAME="promotor-wizmart-dev.apk"
+            APK_NAME="wizmart-app-DEV-v${VERSION}-build${{ github.run_number }}-${TIMESTAMP}.apk"
+          else
+            CHANNEL="PROD"
+            FIXED_NAME="promotor-wizmart.apk"
+            APK_NAME="wizmart-app-v${VERSION}-build${{ github.run_number }}-${TIMESTAMP}.apk"
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
           echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
           echo "apk_name=$APK_NAME" >> $GITHUB_OUTPUT
-          echo "Versão: $VERSION | Build: ${{ github.run_number }} | Time: $BUILD_TIME (BRT)"
-          echo "APK final: $APK_NAME"
+          echo "fixed_name=$FIXED_NAME" >> $GITHUB_OUTPUT
+          echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
+          echo "Canal: $CHANNEL | Versão: $VERSION | Build: ${{ github.run_number }} | Time: $BUILD_TIME (BRT)"
+          echo "APK final: $APK_NAME | Fixo: $FIXED_NAME"
+
+      - name: Diferenciar app dev (label + applicationId)
+        if: github.ref == 'refs/heads/dev'
+        run: |
+          # Label visível no launcher do Android.
+          sed -i 's|android:label="Promotor Wizmart"|android:label="Promotor Wizmart [DEV]"|' \
+            android/app/src/main/AndroidManifest.xml
+          # applicationId diferente faz o Android tratar como APP SEPARADO
+          # do de produção — instala lado a lado sem conflito, com dados
+          # totalmente isolados (DB, SharedPrefs, fotos locais).
+          sed -i 's|applicationId = "com.wizmart.wizmart_app"|applicationId = "com.wizmart.wizmart_app.dev"|' \
+            android/app/build.gradle.kts
+          # Confere que o sed pegou (falha o build se não).
+          grep -q '\[DEV\]' android/app/src/main/AndroidManifest.xml
+          grep -q 'wizmart_app.dev' android/app/build.gradle.kts
 
       - name: Decodificar upload-keystore
         if: ${{ env.UPLOAD_KEYSTORE_BASE64 != '' }}
@@ -102,8 +130,9 @@ jobs:
           # Cópia com nome FIXO — usada como URL estável pra compartilhar
           # com novos usuários (ex: link no WhatsApp). Sobrescreve a cada
           # build, então a mesma URL sempre serve a versão mais recente.
+          # Em dev o nome é '-dev' pra não colidir com o de produção.
           cp build/app/outputs/flutter-apk/app-release.apk \
-             "promotor-wizmart.apk"
+             "${{ steps.meta.outputs.fixed_name }}"
 
       - name: Upload APK (artifact)
         uses: actions/upload-artifact@v4
@@ -130,7 +159,7 @@ jobs:
           # GitHub e adicione o marker `[FORCE-UPDATE]` no body.
           gh release create v-latest \
             "${{ steps.meta.outputs.apk_name }}" \
-            "promotor-wizmart.apk" \
+            "${{ steps.meta.outputs.fixed_name }}" \
             --title "Promotor Wizmart v${{ steps.meta.outputs.version }} (build ${{ github.run_number }})" \
             --notes "Build automático do commit ${{ github.sha }} em ${{ steps.meta.outputs.build_time }}." \
             --target ${{ github.sha }}
@@ -143,8 +172,8 @@ jobs:
           gh release delete v-dev --yes --cleanup-tag 2>/dev/null || true
           gh release create v-dev \
             "${{ steps.meta.outputs.apk_name }}" \
-            "promotor-wizmart.apk" \
+            "${{ steps.meta.outputs.fixed_name }}" \
             --title "[DEV] Promotor Wizmart v${{ steps.meta.outputs.version }} (build ${{ github.run_number }})" \
-            --notes "Build de TESTE — não distribuir pra promotores. Commit ${{ github.sha }} em ${{ steps.meta.outputs.build_time }}." \
+            --notes "Build de TESTE — applicationId 'com.wizmart.wizmart_app.dev' (instala lado a lado com prod, dados isolados). Não distribuir pra promotores. Commit ${{ github.sha }} em ${{ steps.meta.outputs.build_time }}." \
             --prerelease \
             --target ${{ github.sha }}
