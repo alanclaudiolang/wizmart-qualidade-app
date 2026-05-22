@@ -503,6 +503,48 @@ class SyncEngine {
   }
 
   Future<void> _processOutboxItem(OutboxItem item) async {
+    // Princípio: não tocar no servidor sobre uma visita enquanto houver
+    // foto da mesma visita+slot ainda em processamento local
+    // (watermark_pending, pending, uploading, error). Sem isso, o
+    // INSERT 'open' subia com fotos_antes=[] e o servidor ficava com
+    // array vazio enquanto o app já considerava 'synced' — depois as
+    // URLs nunca eram vinculadas porque o pull apagava a row local e
+    // o photos_antes UPDATE subsequente era descartado por "visita não
+    // encontrada" (Cleiton/Edilson, 2026-05-20/21).
+    //
+    // Pra cada operação, identifica os slots que ela vai enviar:
+    //   - open / photos_antes  →  antes
+    //   - close                →  antes + depois (close re-envia tudo)
+    //   - photos_depois        →  depois
+    // Se algum slot ainda tem foto não-uploaded, sai sem mexer no
+    // outbox item. O próximo ciclo de sync (disparado pela watermark
+    // queue ao terminar) re-tenta — em geral em segundos.
+    final slotsRequeridos = <String>[];
+    switch (item.operation) {
+      case 'open':
+      case 'photos_antes':
+        slotsRequeridos.add('antes');
+        break;
+      case 'close':
+        slotsRequeridos.add('antes');
+        slotsRequeridos.add('depois');
+        break;
+      case 'photos_depois':
+        slotsRequeridos.add('depois');
+        break;
+    }
+    for (final slot in slotsRequeridos) {
+      final naoProntas =
+          await _db.countFotosNaoUploaded(item.entityId, slot);
+      if (naoProntas > 0) {
+        _logger.log(
+            'outbox',
+            'Posterga ${item.operation} visitaId=${item.entityId}: '
+            '$naoProntas foto(s) $slot ainda em processamento');
+        return;
+      }
+    }
+
     await _db.updateOutboxItem(OutboxItemsCompanion(
       id: Value(item.id),
       status: const Value('processing'),

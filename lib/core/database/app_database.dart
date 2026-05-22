@@ -438,6 +438,22 @@ class AppDatabase extends _$AppDatabase {
       (delete(pendingPhotos)..where((p) => p.localPath.equals(localPath)))
           .go();
 
+  /// Conta fotos da visita+slot que AINDA NÃO terminaram o ciclo local
+  /// (watermark_pending, pending, uploading, error). Usado pelo sync
+  /// engine pra postergar operações que tocariam o servidor antes do
+  /// processamento local terminar — princípio: nada vai pro servidor
+  /// sobre uma visita até todas as fotos daquele slot estarem em
+  /// 'uploaded'.
+  Future<int> countFotosNaoUploaded(int visitaId, String slot) async {
+    final rows = await (select(pendingPhotos)
+          ..where((p) =>
+              p.visitaId.equals(visitaId) &
+              p.slot.equals(slot) &
+              p.status.equals('uploaded').not()))
+        .get();
+    return rows.length;
+  }
+
   /// Retorna URLs públicas das fotos já uploadadas para uma visita+slot,
   /// ordenadas pelo número da foto. Usado pelo sync engine para preencher
   /// fotos_antes/fotos_depois no payload da visita.
