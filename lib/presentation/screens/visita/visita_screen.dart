@@ -206,20 +206,27 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       await _descartarFotosDaEtapa();
     }
 
+    // Captura referências ANTES de qualquer await — se o widget for
+    // descartado durante os awaits, ref.read joga "Bad state: Cannot
+    // use ref after the widget was disposed" e o ErrorReporter pega
+    // como crash (issues #10 e #12, 2026-05-22).
+    final isOnline = ref.read(connectivityProvider);
+    final syncEngine = isOnline ? ref.read(syncEngineProvider) : null;
+
     await LastVisitaService.clear();
 
     // Sempre dispara fullSync ao voltar pra home (push + pull). Mesmo
     // sem pendências locais, o pull pode trazer alterações que o
     // supervisor fez no servidor (nova visita, gabarito mudado etc).
     // Roda sem await pra não travar a navegação.
-    if (ref.read(connectivityProvider)) {
+    if (syncEngine != null) {
       final session = await SessionService.getSession();
       if (session != null) {
         // ignore: discarded_futures
-        ref.read(syncEngineProvider).fullSync(session.userId);
+        syncEngine.fullSync(session.userId);
       } else {
         // ignore: discarded_futures
-        ref.read(syncEngineProvider).processOutbox();
+        syncEngine.processOutbox();
       }
     }
     if (mounted) context.go('/home');
@@ -845,7 +852,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         syncStatus: const drift.Value('pending'),
       ));
 
-      await _enfileirarVisita('open', {
+      await _enfileirarVisita(db, 'open', {
         'id': widget.visitaId,
         'status_visita': AppConstants.statusEmAndamento,
         'dia_hora_abertura': atual?.diaHoraAbertura,
@@ -957,7 +964,11 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
     try {
       final agora = DateTime.now();
+      // Captura tudo do ref ANTES de qualquer await — proteção contra
+      // "Bad state: Cannot use ref after disposed" (issues #10/#12).
       final db = ref.read(appDatabaseProvider);
+      final isOnline = ref.read(connectivityProvider);
+      final syncEngine = ref.read(syncEngineProvider);
 
       await db.updateVisita(VisitasCompanion(
         id: drift.Value(widget.visitaId),
@@ -982,7 +993,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         syncStatus: const drift.Value('pending'),
       ));
 
-      await _enfileirarVisita('close', {
+      await _enfileirarVisita(db, 'close', {
         'id': widget.visitaId,
         'status_visita': AppConstants.statusRealizada,
         'dia_hora_realizado': agora.toIso8601String(),
@@ -1010,9 +1021,9 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       // home montava com a visita ainda em syncStatus='pending' local
       // e o pullAll subsequente pulava ela (regra do "não sobrescrever
       // pending"), deixando o status visualmente sem mudar.
-      if (ref.read(connectivityProvider)) {
+      if (isOnline) {
         try {
-          await ref.read(syncEngineProvider).processOutbox();
+          await syncEngine.processOutbox();
         } catch (_) {}
       }
 
@@ -1036,9 +1047,15 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     }
   }
 
+  /// Recebe o `db` como parâmetro pra não precisar chamar `ref.read`
+  /// aqui dentro — os callers (_concluirFotosAntes, _finalizarVisita)
+  /// têm awaits anteriores e podem chegar com o widget descartado.
+  /// Sem isso, "Bad state: Cannot use ref after disposed" crashava o
+  /// app na conclusão de visita (issue #10, 2026-05-22).
   Future<void> _enfileirarVisita(
-      String operation, Map<String, dynamic> payload) async {
-    final db = ref.read(appDatabaseProvider);
+      AppDatabase db,
+      String operation,
+      Map<String, dynamic> payload) async {
     final id = _uuid.v4();
     await db.insertOutboxItem(OutboxItemsCompanion(
       id: drift.Value(id),
