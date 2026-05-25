@@ -19,11 +19,22 @@ class PermissionsGuard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final status = ref.watch(permissionsStatusProvider);
     final pendencias = status.pendencias;
+    // Mostra UMA permissão de cada vez — câmera antes de mídia (galeria)
+    // pra não confundir o promotor com vários popups simultâneos.
+    final ordem = [PermissionItem.camera, PermissionItem.midia];
+    final proxima = ordem.firstWhere(
+      pendencias.contains,
+      orElse: () => PermissionItem.camera,
+    );
+    final temPendencia = pendencias.isNotEmpty;
     return Stack(
       children: [
         child,
-        if (pendencias.isNotEmpty)
-          _PermissionsBlocker(pendencias: pendencias, status: status),
+        if (temPendencia)
+          _PermissionsBlocker(
+            pendencias: [proxima],
+            status: status,
+          ),
       ],
     );
   }
