@@ -8,6 +8,8 @@ import '../../presentation/screens/faltas/faltas_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/screens/visita/visita_screen.dart';
+import '../../presentation/widgets/gps_guard.dart';
+import '../../presentation/widgets/permissions_guard.dart';
 import '../network/sync_engine.dart';
 import 'current_screen.dart';
 import 'device_info_service.dart';
@@ -24,32 +26,44 @@ final appRouter = GoRouter(
     return null; // não redireciona, só observa
   },
   routes: [
-    GoRoute(
-      path: '/splash',
-      builder: (_, __) => const _SplashRedirect(),
-    ),
-    GoRoute(
-      path: '/auth',
-      builder: (_, __) => const AuthScreen(),
-    ),
-    GoRoute(
-      path: '/home',
-      builder: (_, __) => const HomeScreen(),
-    ),
-    GoRoute(
-      path: '/visita/:id',
-      builder: (_, state) {
-        final id = int.parse(state.pathParameters['id']!);
-        return VisitaScreen(visitaId: id);
-      },
-    ),
-    GoRoute(
-      path: '/faltas',
-      builder: (_, __) => const FaltasScreen(),
-    ),
-    GoRoute(
-      path: '/onboarding-permissoes',
-      builder: (_, __) => const OnboardingPermissoesScreen(),
+    // ShellRoute envolve TODAS as rotas com os guards de permissão
+    // e GPS. Tem que ser ShellRoute (não wrap no MaterialApp.router
+    // builder) pra os guards ficarem DENTRO do Navigator do router
+    // — sem isso, showDialog/showBottomSheet dos botões "?" do guard
+    // quebram com "Null check on null Navigator" (issues #14, #15).
+    ShellRoute(
+      builder: (context, state, child) => PermissionsGuard(
+        child: GpsGuard(child: child),
+      ),
+      routes: [
+        GoRoute(
+          path: '/splash',
+          builder: (_, __) => const _SplashRedirect(),
+        ),
+        GoRoute(
+          path: '/auth',
+          builder: (_, __) => const AuthScreen(),
+        ),
+        GoRoute(
+          path: '/home',
+          builder: (_, __) => const HomeScreen(),
+        ),
+        GoRoute(
+          path: '/visita/:id',
+          builder: (_, state) {
+            final id = int.parse(state.pathParameters['id']!);
+            return VisitaScreen(visitaId: id);
+          },
+        ),
+        GoRoute(
+          path: '/faltas',
+          builder: (_, __) => const FaltasScreen(),
+        ),
+        GoRoute(
+          path: '/onboarding-permissoes',
+          builder: (_, __) => const OnboardingPermissoesScreen(),
+        ),
+      ],
     ),
   ],
 );
