@@ -126,14 +126,24 @@ class PermissionHelpButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      onPressed: () => _mostrar(context),
-      icon: const Icon(Icons.help_outline,
-          color: AppColors.textSecondary, size: 20),
-      tooltip: 'Ajuda',
-      padding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
-      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+    // Material + InkWell em vez de IconButton — área de toque maior,
+    // ripple visível confirmando o tap, sem riscos de layout/clip que
+    // possam ter quebrado o IconButton em algumas hierarquias.
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _mostrar(context),
+        child: const Padding(
+          padding: EdgeInsets.all(8),
+          child: Icon(
+            Icons.help_outline,
+            color: AppColors.textSecondary,
+            size: 22,
+          ),
+        ),
+      ),
     );
   }
 }
