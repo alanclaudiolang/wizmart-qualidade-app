@@ -37,6 +37,33 @@ class GpsStatusService extends Notifier<GpsState> {
 
   Future<void> refresh() => _check();
 
+  /// Pede a permissão de localização de forma BLINDADA:
+  /// 1. Se já está permanentemente negada, vai direto pras configs.
+  /// 2. Tenta pedir via dialog nativo.
+  /// 3. Se ainda não foi concedida após o pedido, abre as configs
+  ///    do app — única saída que funciona em todo Android/ROM.
+  Future<void> pedir() async {
+    final antes = await Geolocator.checkPermission();
+    if (antes == LocationPermission.deniedForever) {
+      await Geolocator.openAppSettings();
+      await _check();
+      return;
+    }
+    final depois = await Geolocator.requestPermission();
+    final ok = depois == LocationPermission.whileInUse ||
+        depois == LocationPermission.always;
+    if (!ok) {
+      await Geolocator.openAppSettings();
+    }
+    await _check();
+  }
+
+  /// Abre a tela do sistema pra ligar o GPS (quando service está off).
+  Future<void> abrirConfigsGps() async {
+    await Geolocator.openLocationSettings();
+    await _check();
+  }
+
   Future<void> _check() async {
     final enabled = await Geolocator.isLocationServiceEnabled();
     if (!enabled) {

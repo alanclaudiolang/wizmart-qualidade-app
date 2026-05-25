@@ -60,14 +60,30 @@ class PermissionsStatusService extends Notifier<PermissionsStatus> {
 
   Future<void> refresh() => _check();
 
-  /// Pede ao usuário a permissão. Se permanentlyDenied, abre configs.
+  /// Pede ao usuário a permissão de forma BLINDADA — funciona em
+  /// qualquer Android (ROMs Samsung/Xiaomi/etc) e em qualquer estado
+  /// (denied / permanentlyDenied):
+  ///
+  /// 1. Se já está permanently denied (Android decidiu não perguntar
+  ///    mais), vai DIRETO pras configurações.
+  /// 2. Senão, mostra o dialog nativo do Android.
+  /// 3. Depois do dialog, se o usuário não concedeu (negou, fechou,
+  ///    ou o dialog nem apareceu por bug da ROM), abre as
+  ///    configurações automaticamente — é a única coisa que funciona
+  ///    em 100% dos celulares.
+  ///
+  /// Promotor nunca fica "preso" achando que o botão não funciona.
   Future<void> pedir(PermissionItem item) async {
     final perm = _permissaoNativa(item);
-    final atual = await perm.status;
-    if (atual.isPermanentlyDenied) {
+    final antes = await perm.status;
+    if (antes.isPermanentlyDenied) {
       await openAppSettings();
-    } else {
-      await perm.request();
+      await _check();
+      return;
+    }
+    final depois = await perm.request();
+    if (!depois.isGranted && !depois.isLimited) {
+      await openAppSettings();
     }
     await _check();
   }
