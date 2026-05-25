@@ -65,6 +65,17 @@ class _OnboardingPermissoesScreenState
     final midOk = perms.midia == PermissionState.granted;
     final tudoOk = gpsOk && camOk && midOk;
 
+    // Sequência fixa: câmera → galeria → GPS. Mostra um card de
+    // cada vez (ou nenhum quando tudo OK). O promotor não fica
+    // confuso com vários itens ao mesmo tempo.
+    final String? proxima = !camOk
+        ? 'camera'
+        : !midOk
+            ? 'midia'
+            : !gpsOk
+                ? 'gps'
+                : null;
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -96,81 +107,27 @@ class _OnboardingPermissoesScreenState
               ),
               const SizedBox(height: 24),
               Expanded(
-                child: ListView(
-                  children: [
-                    _Item(
-                      icone: Icons.location_on_outlined,
-                      titulo: 'Localização (GPS)',
-                      descricao:
-                          'Pra registrar onde você está em cada visita.',
-                      concedida: gpsOk,
-                      passosManuais: gps == GpsState.serviceDisabled
-                          ? const [
-                              'Puxar a barra de notificações',
-                              'Tocar no ícone de Localização/GPS',
-                              'Voltar pro app e verificar',
-                            ]
-                          : const [
-                              'Configurações → Apps → Promotor Wizmart',
-                              'Permissões → Localização',
-                              'Ativar',
-                              'Voltar pro app e tocar em "Já concedi"',
-                            ],
-                      onConceder: () async {
-                        final notifier =
-                            ref.read(gpsStatusProvider.notifier);
-                        if (gps == GpsState.serviceDisabled) {
-                          await notifier.abrirConfigsGps();
-                        } else {
-                          await notifier.pedir();
-                        }
-                      },
-                      onRecheck: () => ref
-                          .read(gpsStatusProvider.notifier)
-                          .refresh(),
-                    ),
-                    const SizedBox(height: 12),
-                    _Item(
-                      icone: Icons.camera_alt_outlined,
-                      titulo: 'Câmera',
-                      descricao:
-                          'Pra tirar as fotos antes e depois das visitas.',
-                      concedida: camOk,
-                      passosManuais: const [
-                        'Configurações → Apps → Promotor Wizmart',
-                        'Permissões → Câmera',
-                        'Ativar',
-                        'Voltar pro app e tocar em "Já concedi"',
-                      ],
-                      onConceder: () => ref
-                          .read(permissionsStatusProvider.notifier)
-                          .pedir(PermissionItem.camera),
-                      onRecheck: () => ref
-                          .read(permissionsStatusProvider.notifier)
-                          .refresh(),
-                    ),
-                    const SizedBox(height: 12),
-                    _Item(
-                      icone: Icons.photo_library_outlined,
-                      titulo: 'Fotos / Galeria',
-                      descricao: 'Pra salvar as fotos no seu celular.',
-                      concedida: midOk,
-                      passosManuais: const [
-                        'Configurações → Apps → Promotor Wizmart',
-                        'Permissões → Fotos e mídia (ou Arquivos)',
-                        'Ativar',
-                        'Voltar pro app e tocar em "Já concedi"',
-                      ],
-                      onConceder: () => ref
-                          .read(permissionsStatusProvider.notifier)
-                          .pedir(PermissionItem.midia),
-                      onRecheck: () => ref
-                          .read(permissionsStatusProvider.notifier)
-                          .refresh(),
-                    ),
-                  ],
+                child: Center(
+                  child: SingleChildScrollView(
+                    child: _buildProximoCard(proxima, gps),
+                  ),
                 ),
               ),
+              // Indicador de progresso 1/3, 2/3, 3/3.
+              if (!tudoOk)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _Step(concluido: camOk, label: 'Câmera'),
+                      _StepLine(concluido: camOk),
+                      _Step(concluido: midOk, label: 'Galeria'),
+                      _StepLine(concluido: midOk),
+                      _Step(concluido: gpsOk, label: 'Localização'),
+                    ],
+                  ),
+                ),
               const SizedBox(height: 16),
               SizedBox(
                 height: 50,
@@ -193,7 +150,7 @@ class _OnboardingPermissoesScreenState
                   child: Text(
                     tudoOk
                         ? 'Continuar'
-                        : 'Conceda as permissões pendentes',
+                        : 'Conceda a permissão acima pra continuar',
                     style: const TextStyle(
                         fontSize: 16, fontWeight: FontWeight.w600),
                   ),
@@ -202,6 +159,166 @@ class _OnboardingPermissoesScreenState
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildProximoCard(String? proxima, GpsState gps) {
+    if (proxima == null) {
+      // Tudo concedido — mostra um confirmador alegre.
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.check_circle,
+              color: AppColors.primary, size: 72),
+          const SizedBox(height: 16),
+          const Text(
+            'Tudo pronto!',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Todas as permissões foram concedidas. '
+            'Toque em Continuar.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                color: AppColors.textSecondary, fontSize: 14),
+          ),
+        ],
+      );
+    }
+    switch (proxima) {
+      case 'camera':
+        return _Item(
+          icone: Icons.camera_alt_outlined,
+          titulo: 'Câmera',
+          descricao: 'Pra tirar as fotos antes e depois das visitas.',
+          concedida: false,
+          passosManuais: const [
+            'Configurações → Apps → Promotor Wizmart',
+            'Permissões → Câmera',
+            'Ativar',
+            'Voltar pro app e tocar em "Já concedi"',
+          ],
+          onConceder: () => ref
+              .read(permissionsStatusProvider.notifier)
+              .pedir(PermissionItem.camera),
+          onRecheck: () => ref
+              .read(permissionsStatusProvider.notifier)
+              .refresh(),
+        );
+      case 'midia':
+        return _Item(
+          icone: Icons.photo_library_outlined,
+          titulo: 'Fotos / Galeria',
+          descricao: 'Pra salvar as fotos no seu celular.',
+          concedida: false,
+          passosManuais: const [
+            'Configurações → Apps → Promotor Wizmart',
+            'Permissões → Fotos e mídia (ou Arquivos)',
+            'Ativar',
+            'Voltar pro app e tocar em "Já concedi"',
+          ],
+          onConceder: () => ref
+              .read(permissionsStatusProvider.notifier)
+              .pedir(PermissionItem.midia),
+          onRecheck: () => ref
+              .read(permissionsStatusProvider.notifier)
+              .refresh(),
+        );
+      case 'gps':
+        return _Item(
+          icone: Icons.location_on_outlined,
+          titulo: 'Localização (GPS)',
+          descricao: 'Pra registrar onde você está em cada visita.',
+          concedida: false,
+          passosManuais: gps == GpsState.serviceDisabled
+              ? const [
+                  'Puxar a barra de notificações',
+                  'Tocar no ícone de Localização/GPS',
+                  'Voltar pro app e verificar',
+                ]
+              : const [
+                  'Configurações → Apps → Promotor Wizmart',
+                  'Permissões → Localização',
+                  'Ativar',
+                  'Voltar pro app e tocar em "Já concedi"',
+                ],
+          onConceder: () async {
+            final notifier = ref.read(gpsStatusProvider.notifier);
+            if (gps == GpsState.serviceDisabled) {
+              await notifier.abrirConfigsGps();
+            } else {
+              await notifier.pedir();
+            }
+          },
+          onRecheck: () => ref.read(gpsStatusProvider.notifier).refresh(),
+        );
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+}
+
+class _Step extends StatelessWidget {
+  final bool concluido;
+  final String label;
+  const _Step({required this.concluido, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: concluido ? AppColors.primary : AppColors.inputBg,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: concluido ? AppColors.primary : AppColors.border,
+            ),
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            concluido ? Icons.check : Icons.circle_outlined,
+            size: 16,
+            color: concluido ? Colors.white : AppColors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: concluido
+                ? AppColors.primary
+                : AppColors.textSecondary,
+            fontWeight: concluido ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StepLine extends StatelessWidget {
+  final bool concluido;
+  const _StepLine({required this.concluido});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Container(
+        width: 24,
+        height: 2,
+        color: concluido ? AppColors.primary : AppColors.border,
       ),
     );
   }
