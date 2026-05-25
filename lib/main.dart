@@ -16,13 +16,10 @@ import 'core/network/version_check_service.dart';
 import 'core/utils/session_service.dart';
 import 'core/utils/gps_status_service.dart';
 import 'core/utils/permissions_status_service.dart';
-import 'core/utils/persistent_logger.dart';
 import 'core/utils/error_reporter.dart';
 import 'core/utils/sync_logger.dart';
 import 'presentation/screens/home/home_screen.dart'
     show contadoresProvider, pdvsProvider, visitasHojeProvider;
-import 'presentation/widgets/gps_guard.dart';
-import 'presentation/widgets/permissions_guard.dart';
 
 const _bgSyncTask = 'wizmart_bg_sync';
 const _oneOffSyncName = 'wizmart_oneoff_sync';
@@ -235,16 +232,13 @@ class _WizMartAppState extends ConsumerState<WizMartApp>
         useMaterial3: true,
       ),
       routerConfig: appRouter,
-      builder: (context, child) {
-        // PermissionsGuard (câmera/galeria) + GpsGuard envolvem TUDO.
-        // Se qualquer permissão crítica for negada ou o GPS desligar,
-        // um overlay bloqueia a UI até resolver.
-        return PermissionsGuard(
-          child: GpsGuard(
-            child: child ?? const SizedBox.shrink(),
-          ),
-        );
-      },
+      // PermissionsGuard + GpsGuard foram movidos pra DENTRO do
+      // GoRouter via ShellRoute (em app_router.dart). Estavam aqui
+      // antes mas o contexto do builder do MaterialApp.router fica
+      // FORA do Navigator do router — qualquer showDialog/sheet
+      // dentro dos guards quebrava com "Null check on null Navigator"
+      // (issues #14, #15). ShellRoute envolve as rotas no mesmo
+      // Navigator, dando contexto correto.
     );
   }
 }
