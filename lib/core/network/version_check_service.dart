@@ -11,6 +11,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -164,6 +165,12 @@ class VersionCheckService {
 
 /// Provider — checa uma vez ao montar e expõe o resultado. Usar
 /// `ref.invalidate(appVersionProvider)` para forçar nova checagem.
+///
+/// iOS não tem auto-update OTA (Apple proíbe). Lá o app é distribuído
+/// via TestFlight e atualizações chegam pelo próprio TestFlight, então
+/// retornamos `upToDate` sempre — sem badge "atualizar" e sem dialog de
+/// bloqueio obrigatório.
 final appVersionProvider = FutureProvider<AppVersionInfo>((ref) async {
+  if (!Platform.isAndroid) return AppVersionInfo.upToDate;
   return VersionCheckService.check();
 });
