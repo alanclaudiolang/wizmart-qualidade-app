@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/device_info_service.dart';
 import '../../../core/constants/app_constants.dart';
+import 'onboarding_permissoes_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -115,7 +116,12 @@ class _AuthScreenState extends State<AuthScreen> {
       // email, update direto na tabela users). Falha silenciosa.
       // ignore: discarded_futures
       DeviceInfoService.updateForEmail(email);
-      if (mounted) context.go('/home');
+      // Se ainda não passou pelo onboarding de permissões (primeira
+      // instalação), abre essa tela antes da home. Senão, vai direto.
+      final onboardingFeito =
+          await OnboardingPermissoesScreen.jaConcluido();
+      if (!mounted) return;
+      context.go(onboardingFeito ? '/home' : '/onboarding-permissoes');
     } on AuthException catch (e) {
       // Mensagens canônicas do Supabase em PT-BR.
       final msg = e.message.toLowerCase();

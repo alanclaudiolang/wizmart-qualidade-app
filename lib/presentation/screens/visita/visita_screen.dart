@@ -76,9 +76,18 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
   final _picker = ImagePicker();
 
+  /// Capturado uma vez no initState — usado em vez de
+  /// ref.read(appDatabaseProvider) em métodos que rodam DEPOIS de
+  /// awaits. Sem isso, "Bad state: Cannot use ref after disposed"
+  /// crashava o app em vários fluxos (issues #10, #12, #13).
+  /// O AppDatabase é singleton via Provider, então capturar uma vez
+  /// é equivalente a chamar ref.read várias.
+  late final AppDatabase _db;
+
   @override
   void initState() {
     super.initState();
+    _db = ref.read(appDatabaseProvider);
     // Marca esta visita como "atualmente aberta" para o SplashRedirect
     // restaurar o usuário aqui caso o Android mate o app durante a
     // captura (low memory + câmera aberta = caso comum em devices fracos).
@@ -141,7 +150,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     // não pra home. Promotor pode estar revisando ou tirando mais
     // fotos antes de finalizar.
     if (_localState == 'checklist') {
-      final db = ref.read(appDatabaseProvider);
+      final db = _db;
       await db.updateVisita(VisitasCompanion(
         id: drift.Value(widget.visitaId),
         localState: const drift.Value('fotos_depois'),
@@ -237,7 +246,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   /// 'fotos_antes', também reverte a abertura (volta a 'idle'), pra que
   /// a próxima abertura da visita comece do zero.
   Future<void> _descartarFotosDaEtapa() async {
-    final db = ref.read(appDatabaseProvider);
+    final db = _db;
     final paths = _localState == 'fotos_antes'
         ? List<String>.from(_fotosAntes)
         : List<String>.from(_fotosDepois);
@@ -282,7 +291,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   }
 
   Future<void> _loadVisita() async {
-    final db = ref.read(appDatabaseProvider);
+    final db = _db;
     final visita = await db.getVisitaById(widget.visitaId);
     if (visita == null) {
       setState(() {
@@ -598,7 +607,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   /// Reuso pra que o `_tirarFoto` faça DB write antes do setState do grid.
   Future<void> _persistirListaEMetadados(String slot, List<String> lista,
       String? loc, DateTime capturedAt) async {
-    final db = ref.read(appDatabaseProvider);
+    final db = _db;
     if (slot == 'antes') {
       await db.updateVisita(VisitasCompanion(
         id: drift.Value(widget.visitaId),
@@ -620,7 +629,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
   Future<void> _salvarFotosLocalmente(
       String slot, String? loc, DateTime capturedAt) async {
-    final db = ref.read(appDatabaseProvider);
+    final db = _db;
 
     if (slot == 'antes') {
       await db.updateVisita(VisitasCompanion(
@@ -645,7 +654,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
   Future<void> _enfileirarUploadFoto(
       String path, String slot, int numero, DateTime capturedAt) async {
-    final db = ref.read(appDatabaseProvider);
+    final db = _db;
 
     final id = _uuid.v4();
     await db.insertPendingPhoto(PendingPhotosCompanion(
@@ -714,7 +723,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     await _persistirOrdemFotos(slot);
 
     // Cancela upload pendente desta foto, se ainda não foi enviado
-    final db = ref.read(appDatabaseProvider);
+    final db = _db;
     await db.deletePendingPhotosByPath(path);
 
     // Remove arquivo local
@@ -725,7 +734,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   }
 
   Future<void> _persistirOrdemFotos(String slot) async {
-    final db = ref.read(appDatabaseProvider);
+    final db = _db;
     if (slot == 'antes') {
       await db.updateVisita(VisitasCompanion(
         id: drift.Value(widget.visitaId),
@@ -748,12 +757,15 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       _busy = true;
       _busyLabel = 'Obtendo localização...';
     });
+    // Captura db ANTES do await — _capturarLocalizacao pode demorar
+    // segundos (GPS) e se o widget for descartado nesse meio o
+    // ref.read joga "Bad state: ref after disposed" (issue #13).
+    final db = _db;
     // GPS é "best effort" — se falhar (modo avião, sinal fraco, timeout),
     // segue em frente com loc = null. O servidor aceita null.
     final loc = await _capturarLocalizacao();
 
     final agora = DateTime.now();
-    final db = ref.read(appDatabaseProvider);
 
     // Persiste apertura SOMENTE local. Status fica 1 (agendada) e nada
     // entra na outbox: se o promotor desistir antes de concluir as fotos
@@ -838,7 +850,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       final pdvNome = _pdvNomeParaWatermark();
       final promotorNome = _promotorNome;
 
-      final db = ref.read(appDatabaseProvider);
+      final db = _db;
       final session = await SessionService.getSession();
       final atual = await db.getVisitaById(widget.visitaId);
 
@@ -852,7 +864,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         syncStatus: const drift.Value('pending'),
       ));
 
-      await _enfileirarVisita(db, 'open', {
+      await _enfileirarVisita('open', {
         'id': widget.visitaId,
         'status_visita': AppConstants.statusEmAndamento,
         'dia_hora_abertura': atual?.diaHoraAbertura,
@@ -912,7 +924,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
 
     final loc = await _capturarLocalizacao();
 
-    final db = ref.read(appDatabaseProvider);
+    final db = _db;
 
     await db.updateVisita(VisitasCompanion(
       id: drift.Value(widget.visitaId),
@@ -966,7 +978,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       final agora = DateTime.now();
       // Captura tudo do ref ANTES de qualquer await — proteção contra
       // "Bad state: Cannot use ref after disposed" (issues #10/#12).
-      final db = ref.read(appDatabaseProvider);
+      final db = _db;
       final isOnline = ref.read(connectivityProvider);
       final syncEngine = ref.read(syncEngineProvider);
 
@@ -993,7 +1005,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         syncStatus: const drift.Value('pending'),
       ));
 
-      await _enfileirarVisita(db, 'close', {
+      await _enfileirarVisita('close', {
         'id': widget.visitaId,
         'status_visita': AppConstants.statusRealizada,
         'dia_hora_realizado': agora.toIso8601String(),
@@ -1047,17 +1059,14 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     }
   }
 
-  /// Recebe o `db` como parâmetro pra não precisar chamar `ref.read`
-  /// aqui dentro — os callers (_concluirFotosAntes, _finalizarVisita)
-  /// têm awaits anteriores e podem chegar com o widget descartado.
-  /// Sem isso, "Bad state: Cannot use ref after disposed" crashava o
-  /// app na conclusão de visita (issue #10, 2026-05-22).
+  /// Usa o _db capturado no initState (não chama ref.read aqui dentro).
+  /// Os callers ficam livres pra chamar essa função depois de awaits
+  /// sem risco de "Bad state: ref after disposed".
   Future<void> _enfileirarVisita(
-      AppDatabase db,
       String operation,
       Map<String, dynamic> payload) async {
     final id = _uuid.v4();
-    await db.insertOutboxItem(OutboxItemsCompanion(
+    await _db.insertOutboxItem(OutboxItemsCompanion(
       id: drift.Value(id),
       entityType: const drift.Value('visita'),
       operation: drift.Value(operation),

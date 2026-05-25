@@ -6,10 +6,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:geolocator/geolocator.dart';
 
 import '../../core/utils/app_colors.dart';
 import '../../core/utils/gps_status_service.dart';
+import 'permission_help_button.dart';
 
 class GpsGuard extends ConsumerWidget {
   final Widget child;
@@ -75,21 +75,43 @@ class _GpsBlocker extends ConsumerWidget {
   }
 
   Future<void> _agir(WidgetRef ref) async {
+    final notifier = ref.read(gpsStatusProvider.notifier);
     switch (status) {
       case GpsState.serviceDisabled:
-        await Geolocator.openLocationSettings();
+        await notifier.abrirConfigsGps();
         break;
       case GpsState.permissionDenied:
-        await Geolocator.requestPermission();
-        break;
       case GpsState.permissionDeniedForever:
-        await Geolocator.openAppSettings();
+        // pedir() já trata as duas situações (dialog nativo + fallback
+        // pras configurações se ainda não foi concedida).
+        await notifier.pedir();
         break;
       default:
         break;
     }
-    // Força nova checagem ao voltar.
-    await ref.read(gpsStatusProvider.notifier).refresh();
+  }
+
+  List<String> get _passosManuais {
+    switch (status) {
+      case GpsState.serviceDisabled:
+        return const [
+          'Puxar a barra de notificações',
+          'Tocar no ícone de Localização/GPS pra ativar',
+          'Voltar pro app e tocar em "Já concedi"',
+        ];
+      case GpsState.permissionDenied:
+      case GpsState.permissionDeniedForever:
+        return const [
+          'Abrir Configurações do celular',
+          'Tocar em Apps (ou Aplicativos)',
+          'Encontrar e tocar em "Promotor Wizmart"',
+          'Tocar em Permissões',
+          'Encontrar "Localização" e ativar',
+          'Voltar pro app e tocar em "Já concedi"',
+        ];
+      default:
+        return const [];
+    }
   }
 
   @override
@@ -129,8 +151,21 @@ class _GpsBlocker extends ConsumerWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.location_off,
-                            color: AppColors.danger, size: 56),
+                        Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            const Icon(Icons.location_off,
+                                color: AppColors.danger, size: 56),
+                            Positioned(
+                              right: -8,
+                              top: -8,
+                              child: PermissionHelpButton(
+                                titulo: _titulo,
+                                passos: _passosManuais,
+                              ),
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 16),
                         Text(
                           _titulo,
@@ -166,6 +201,29 @@ class _GpsBlocker extends ConsumerWidget {
                               _labelBotao,
                               style: const TextStyle(
                                   fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton(
+                            onPressed: () => ref
+                                .read(gpsStatusProvider.notifier)
+                                .refresh(),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.primary,
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 10),
+                              side: const BorderSide(
+                                  color: AppColors.primary),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: const Text(
+                              'Já concedi — verificar',
+                              style: TextStyle(fontWeight: FontWeight.w500),
                             ),
                           ),
                         ),

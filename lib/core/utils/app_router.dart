@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../presentation/screens/auth/auth_screen.dart';
+import '../../presentation/screens/auth/onboarding_permissoes_screen.dart';
 import '../../presentation/screens/faltas/faltas_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -45,6 +46,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/faltas',
       builder: (_, __) => const FaltasScreen(),
+    ),
+    GoRoute(
+      path: '/onboarding-permissoes',
+      builder: (_, __) => const OnboardingPermissoesScreen(),
     ),
   ],
 );
@@ -110,6 +115,20 @@ class _SplashRedirectState extends ConsumerState<_SplashRedirect> {
       // boot e segue pra home (onde o usuário vê a lista atual do dia).
       await LastVisitaService.clear();
       if (!mounted) return;
+    }
+
+    // Onboarding de permissões: na PRIMEIRA abertura após instalar,
+    // o app pede TODAS as permissões críticas (GPS, câmera, galeria)
+    // de uma só vez. Depois de concluído (flag em SharedPreferences),
+    // pula direto pra home nas próximas aberturas. Se o promotor
+    // revogar algo depois, os guards (GpsGuard/PermissionsGuard)
+    // continuam ativos como rede de segurança.
+    final onboardingFeito =
+        await OnboardingPermissoesScreen.jaConcluido();
+    if (!mounted) return;
+    if (!onboardingFeito) {
+      context.go('/onboarding-permissoes');
+      return;
     }
 
     context.go('/home');

@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/utils/app_colors.dart';
 import '../../core/utils/permissions_status_service.dart';
+import 'permission_help_button.dart';
 
 class PermissionsGuard extends ConsumerWidget {
   final Widget child;
@@ -77,6 +78,18 @@ class _PermissionsBlocker extends ConsumerWidget {
     return 'Conceder permissão';
   }
 
+  List<String> _passosManuais(PermissionItem item) {
+    final nome = item == PermissionItem.camera ? 'Câmera' : 'Fotos e mídia';
+    return [
+      'Abrir Configurações do celular',
+      'Tocar em Apps (ou Aplicativos)',
+      'Encontrar e tocar em "Promotor Wizmart"',
+      'Tocar em Permissões',
+      'Encontrar "$nome" e ativar',
+      'Voltar pro app e tocar em "Já concedi"',
+    ];
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Positioned.fill(
@@ -137,9 +150,13 @@ class _PermissionsBlocker extends ConsumerWidget {
                             descricao: _descricao(item),
                             estado: _estado(item),
                             labelBotao: _labelBotao(_estado(item)),
+                            passosManuais: _passosManuais(item),
                             onTap: () => ref
                                 .read(permissionsStatusProvider.notifier)
                                 .pedir(item),
+                            onRecheck: () => ref
+                                .read(permissionsStatusProvider.notifier)
+                                .refresh(),
                           ),
                           const SizedBox(height: 12),
                         ],
@@ -162,7 +179,9 @@ class _PermissionRow extends StatelessWidget {
   final String descricao;
   final PermissionState estado;
   final String labelBotao;
+  final List<String> passosManuais;
   final VoidCallback onTap;
+  final VoidCallback onRecheck;
 
   const _PermissionRow({
     required this.icone,
@@ -170,7 +189,9 @@ class _PermissionRow extends StatelessWidget {
     required this.descricao,
     required this.estado,
     required this.labelBotao,
+    required this.passosManuais,
     required this.onTap,
+    required this.onRecheck,
   });
 
   @override
@@ -189,19 +210,23 @@ class _PermissionRow extends StatelessWidget {
             children: [
               Icon(icone, color: AppColors.danger, size: 22),
               const SizedBox(width: 8),
-              Text(
-                titulo,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
+              Expanded(
+                child: Text(
+                  titulo,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
                 ),
               ),
-              if (estado == PermissionState.permanentlyDenied) ...[
-                const SizedBox(width: 6),
+              if (estado == PermissionState.permanentlyDenied)
                 const Icon(Icons.warning_amber_rounded,
                     color: AppColors.warning, size: 16),
-              ],
+              PermissionHelpButton(
+                titulo: titulo,
+                passos: passosManuais,
+              ),
             ],
           ),
           const SizedBox(height: 4),
@@ -225,6 +250,24 @@ class _PermissionRow extends StatelessWidget {
               child: Text(labelBotao,
                   style: const TextStyle(
                       fontWeight: FontWeight.bold, fontSize: 13)),
+            ),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: onRecheck,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                side: const BorderSide(color: AppColors.primary),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6)),
+              ),
+              child: const Text(
+                'Já concedi — verificar',
+                style: TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
+              ),
             ),
           ),
         ],
