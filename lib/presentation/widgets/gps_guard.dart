@@ -151,22 +151,23 @@ class _GpsBlocker extends ConsumerWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Stack(
-                          alignment: Alignment.center,
+                        // Linha com ícone central + botão de ajuda no
+                        // canto. Sem Positioned negativo (que estava
+                        // fazendo o botão cair fora da área tocável).
+                        Row(
                           children: [
+                            const SizedBox(width: 40),
+                            const Spacer(),
                             const Icon(Icons.location_off,
                                 color: AppColors.danger, size: 56),
-                            Positioned(
-                              right: -8,
-                              top: -8,
-                              child: PermissionHelpButton(
-                                titulo: _titulo,
-                                passos: _passosManuais,
-                              ),
+                            const Spacer(),
+                            PermissionHelpButton(
+                              titulo: _titulo,
+                              passos: _passosManuais,
                             ),
                           ],
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 8),
                         Text(
                           _titulo,
                           style: const TextStyle(
