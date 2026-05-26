@@ -13,6 +13,7 @@ import '../../../core/utils/apk_updater_service.dart';
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/logout_service.dart';
 import '../../../core/utils/app_colors.dart';
+import '../../../core/utils/current_screen.dart';
 import '../../../core/utils/error_reporter.dart';
 import '../../../core/utils/processing_tracker.dart';
 import '../../widgets/apk_download_dialog.dart';
@@ -171,6 +172,16 @@ class _HomeContent extends ConsumerWidget {
       BuildContext context, WidgetRef ref, AppVersionInfo info) async {
     final url = info.apkDownloadUrl;
     if (url == null) {
+      _bloqueioObrigatorioTratado = false;
+      return;
+    }
+
+    // Pré-condição 0: só dispara o modal quando o promotor está NA
+    // tela Home. Se estiver em qualquer tela de visita (captura,
+    // checklist, etc), pode ter foto não persistida no grid — uma
+    // atualização agora derruba esse trabalho. Quando ele voltar
+    // pra home, o re-trigger do appVersionProvider tenta de novo.
+    if (CurrentScreen.nome != 'home') {
       _bloqueioObrigatorioTratado = false;
       return;
     }
