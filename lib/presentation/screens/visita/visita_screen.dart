@@ -186,7 +186,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       final qtd = temFotosAntes ? _fotosAntes.length : _fotosDepois.length;
       final ok = await showDialog<bool>(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (dialogCtx) => AlertDialog(
           backgroundColor: AppColors.card,
           title: const Text(
             'Descartar fotos?',
@@ -199,12 +199,16 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              // dialogCtx (do builder) em vez do context outer — se
+              // o State pai for descartado durante o dialog (race em
+              // navegação concorrente), State.context joga "Null check
+              // operator" e o app crasha (issue #16, 2026-05-26).
+              onPressed: () => Navigator.of(dialogCtx).pop(false),
               child: const Text('Cancelar',
                   style: TextStyle(color: AppColors.textSecondary)),
             ),
             TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () => Navigator.of(dialogCtx).pop(true),
               child: const Text('Descartar',
                   style: TextStyle(color: AppColors.danger)),
             ),
@@ -586,7 +590,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     if (!mounted) return;
     await showDialog<void>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         backgroundColor: AppColors.card,
         title: Text(titulo,
             style: const TextStyle(color: AppColors.textPrimary)),
@@ -594,7 +598,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
             style: const TextStyle(color: AppColors.textSecondary)),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(dialogCtx).pop(),
             child: const Text('Entendi',
                 style: TextStyle(color: AppColors.primary)),
           ),
@@ -692,7 +696,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   Future<void> _removerFoto(String slot, int index) async {
     final confirma = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         backgroundColor: AppColors.card,
         title: const Text('Remover foto?',
             style: TextStyle(color: AppColors.textPrimary)),
@@ -702,12 +706,12 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
             child: const Text('Cancelar',
                 style: TextStyle(color: AppColors.textSecondary)),
           ),
           TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
             child: const Text('Remover',
                 style: TextStyle(color: AppColors.danger)),
           ),

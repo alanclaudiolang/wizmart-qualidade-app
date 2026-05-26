@@ -128,7 +128,7 @@ class _HomeContent extends ConsumerWidget {
       if (!context.mounted) return;
       await showDialog<void>(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (dialogCtx) => AlertDialog(
           backgroundColor: AppColors.card,
           title: const Text(
             'Não dá pra atualizar agora',
@@ -143,7 +143,7 @@ class _HomeContent extends ConsumerWidget {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(dialogCtx).pop(),
               child: const Text('Entendi',
                   style: TextStyle(color: AppColors.primary)),
             ),
@@ -237,7 +237,7 @@ class _HomeContent extends ConsumerWidget {
   Future<void> _confirmarLogout(BuildContext context, WidgetRef ref) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         backgroundColor: AppColors.card,
         title: const Text('Sair do app?',
             style: TextStyle(color: AppColors.textPrimary)),
@@ -249,12 +249,12 @@ class _HomeContent extends ConsumerWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
             child: const Text('Cancelar',
                 style: TextStyle(color: AppColors.textSecondary)),
           ),
           TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
             child: const Text('Sair',
                 style: TextStyle(color: AppColors.danger)),
           ),
