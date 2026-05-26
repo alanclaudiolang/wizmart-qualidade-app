@@ -1,0 +1,102 @@
+# Codemagic CI — build iOS + publicação automática no TestFlight.
+#
+# Espelha o pipeline Android de .github/workflows/build_apk.yml, mas
+# pra iOS: gera .ipa assinado e sobe pro App Store Connect → TestFlight.
+#
+# Pré-requisitos no Codemagic (configurados na UI):
+#   1. Repo conectado: alanclaudiolang/wizmart-qualidade-app
+#   2. Integração "App Store Connect" criada com nome `app_store_connect`:
+#      - Issuer ID, Key ID e Private Key (.p8) gerados em
+#        appstoreconnect.apple.com → Users and Access → Keys.
+#   3. Variável `GITHUB_BUG_TOKEN` no grupo `wizmart-secrets` (PAT
+#      com escopo `repo` pra auto-reportar issues, mesmo do Android).
+
+workflows:
+  ios-testflight:
+    name: iOS TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+
+    environment:
+      groups:
+        - wizmart-secrets
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.wizmart.promotor
+      flutter: 3.35.0
+      xcode: latest
+      cocoapods: default
+
+    integrations:
+      app_store_connect: app_store_connect
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+        - pattern: dev
+          include: true
+          source: true
+
+    scripts:
+      - name: Flutter packages
+        script: |
+          flutter packages pub get
+
+      - name: Gerar código Drift
+        script: |
+          dart run build_runner build --delete-conflicting-outputs
+
+      - name: Instalar pods
+        script: |
+          find . -name "Podfile" -execdir pod install \;
+
+      - name: Configurar signing automático
+        # Baixa o cert + provisioning profile via integração App Store
+        # Connect e aplica no Xcode project. Auto-cria o profile na
+        # primeira execução se não existir pro bundle id.
+        script: |
+          xcode-project use-profiles
+
+      - name: Computar metadados do build
+        script: |
+          export TZ=America/Sao_Paulo
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //;s/+.*//' | tr -d ' \r\n')
+          BUILD_TIME=$(date +'%d/%m/%Y %H:%M')
+          echo "APP_VERSION=$VERSION" >> $CM_ENV
+          echo "BUILD_TIME=$BUILD_TIME" >> $CM_ENV
+          echo "Versão: $VERSION | Build: $BUILD_NUMBER | Time: $BUILD_TIME (BRT)"
+
+      - name: Build IPA
+        # CFBundleVersion (build number iOS) precisa ser estritamente
+        # crescente em cada submission no TestFlight. $BUILD_NUMBER é
+        # injetado pelo Codemagic e incrementa a cada execução.
+        script: |
+          flutter build ipa --release \
+            --build-name=$APP_VERSION \
+            --build-number=$BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist \
+            --dart-define=GITHUB_BUG_TOKEN="$GITHUB_BUG_TOKEN" \
+            --dart-define=APP_VERSION="$APP_VERSION" \
+            --dart-define=BUILD_TIME="$BUILD_TIME" \
+            --dart-define=BUILD_NUMBER="$BUILD_NUMBER"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        # `false` na primeira execução — sobe o build pro App Store
+        # Connect mas não envia pro TestFlight. Útil pra revisar antes
+        # de distribuir. Quando o fluxo estiver estável, mudar pra true.
+        submit_to_testflight: false
+        # Quando ativar submit_to_testflight, descomente e ajuste com
+        # o nome do grupo de teste criado no App Store Connect:
+        # beta_groups:
+        #   - Promotores Teste
