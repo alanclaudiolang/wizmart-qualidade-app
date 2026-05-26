@@ -74,37 +74,62 @@ class PermissionsStatusService extends Notifier<PermissionsStatus> {
   ///
   /// Promotor nunca fica "preso" achando que o botão não funciona.
   Future<void> pedir(PermissionItem item) async {
-    final perm = _permissaoNativa(item);
-    final antes = await perm.status;
-    if (antes.isPermanentlyDenied) {
+    final perms = _permissoesNativas(item);
+    // Checa o estado COMBINADO antes — se já está permanente negada em
+    // todas, vai direto pras configs.
+    final antesStatus = await _checkCombinado(perms);
+    if (antesStatus == PermissionState.permanentlyDenied) {
       await openAppSettings();
       await _check();
       return;
     }
-    final depois = await perm.request();
-    if (!depois.isGranted && !depois.isLimited) {
+    // Pede TODAS as permissões nativas associadas ao item (em Android
+    // 12- precisa storage; em 13+ precisa photos). O sistema só mostra
+    // dialog pras que ele de fato suporta — as outras retornam denied
+    // mas sem afetar a UX (nada visível pro usuário).
+    for (final perm in perms) {
+      await perm.request();
+    }
+    final depoisStatus = await _checkCombinado(perms);
+    if (depoisStatus != PermissionState.granted) {
       await openAppSettings();
     }
     await _check();
   }
 
-  Permission _permissaoNativa(PermissionItem item) {
+  /// Retorna a lista de Permission nativas que satisfazem o item.
+  /// Pra mídia em Android: tanto READ_MEDIA_IMAGES (Permission.photos
+  /// em Android 13+) quanto READ_EXTERNAL_STORAGE (Permission.storage
+  /// em Android 12-). Se QUALQUER UMA estiver granted, considera ok.
+  List<Permission> _permissoesNativas(PermissionItem item) {
     switch (item) {
       case PermissionItem.camera:
-        return Permission.camera;
+        return [Permission.camera];
       case PermissionItem.midia:
-        // Android 13+ usa READ_MEDIA_IMAGES → Permission.photos.
-        // Versões antigas usam WRITE_EXTERNAL_STORAGE → Permission.storage.
-        // permission_handler resolve no plugin, mas precisamos escolher
-        // a permission "certa" pra checar.
         if (Platform.isAndroid) {
-          // Heurística: tenta photos primeiro (existe em Android 13+)
-          // e cai pra storage. Em sdk < 33 photos retorna granted
-          // automaticamente, então o teste funciona pros dois.
-          return Permission.photos;
+          return [Permission.photos, Permission.storage];
         }
-        return Permission.photos;
+        return [Permission.photos];
     }
+  }
+
+  /// Combina o status de várias permissions: granted se QUALQUER UMA
+  /// está granted/limited; permanentlyDenied se TODAS estão; denied
+  /// caso contrário.
+  Future<PermissionState> _checkCombinado(List<Permission> perms) async {
+    PermissionState melhor = PermissionState.denied;
+    bool todasPermanente = perms.isNotEmpty;
+    for (final perm in perms) {
+      final s = await perm.status;
+      if (s.isGranted || s.isLimited) {
+        return PermissionState.granted;
+      }
+      if (!s.isPermanentlyDenied) {
+        todasPermanente = false;
+      }
+    }
+    if (todasPermanente) melhor = PermissionState.permanentlyDenied;
+    return melhor;
   }
 
   PermissionState _mapStatus(PermissionStatus s) {
@@ -115,10 +140,10 @@ class PermissionsStatusService extends Notifier<PermissionsStatus> {
 
   Future<void> _check() async {
     final cam = await Permission.camera.status;
-    final mid = await Permission.photos.status;
+    final midia = await _checkCombinado(_permissoesNativas(PermissionItem.midia));
     final novo = PermissionsStatus(
       camera: _mapStatus(cam),
-      midia: _mapStatus(mid),
+      midia: midia,
     );
     if (novo.camera != state.camera || novo.midia != state.midia) {
       state = novo;

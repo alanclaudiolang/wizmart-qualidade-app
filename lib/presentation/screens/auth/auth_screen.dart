@@ -1,22 +1,31 @@
 import 'dart:async';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/device_info_service.dart';
+import '../../../core/utils/apk_updater_service.dart';
+import '../../../core/utils/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/network/version_check_service.dart';
+import '../../widgets/apk_download_dialog.dart';
 import 'onboarding_permissoes_screen.dart';
 
-class AuthScreen extends StatefulWidget {
+class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({super.key});
   @override
-  State<AuthScreen> createState() => _AuthScreenState();
+  ConsumerState<AuthScreen> createState() => _AuthScreenState();
 }
 
 enum _ConexaoStatus { verificando, online, offline, servidorInacessivel }
 
-class _AuthScreenState extends State<AuthScreen> {
+class _AuthScreenState extends ConsumerState<AuthScreen> {
+  // Trava pra não abrir o modal de force-update várias vezes no mesmo
+  // ciclo. Reseta no dispose.
+  bool _bloqueioForceUpdateAberto = false;
   final _emailController = TextEditingController();
   final _senhaController = TextEditingController();
   bool _loading = false;
@@ -196,6 +205,21 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Force-update OBRIGATÓRIO pra usuário deslogado quando há build
+    // novo — não espera D+1. Quem ainda não fez login não tem dados
+    // locais pra perder, então atualizar imediato é seguro e garante
+    // que promotor novo SEMPRE entra pela versão mais recente.
+    ref.listen<AsyncValue<AppVersionInfo>>(appVersionProvider, (_, next) {
+      final info = next.asData?.value;
+      if (info == null) return;
+      if (!info.outdated) return;
+      if (_bloqueioForceUpdateAberto) return;
+      _bloqueioForceUpdateAberto = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _mostrarForceUpdateDeslogado(info);
+      });
+    });
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -291,6 +315,68 @@ class _AuthScreenState extends State<AuthScreen> {
               Text(_versao, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, color: Color(0xFF8892B0))),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Bloqueia a tela de login com modal de atualização obrigatória
+  /// quando há build novo disponível. Diferente do bloqueio da home,
+  /// aqui NÃO espera D+1 — promotor ainda não tem dados locais, então
+  /// pode/deve atualizar imediatamente.
+  Future<void> _mostrarForceUpdateDeslogado(AppVersionInfo info) async {
+    final url = info.apkDownloadUrl;
+    if (url == null) {
+      _bloqueioForceUpdateAberto = false;
+      return;
+    }
+    final apkOk = await ApkUpdaterService.apkAcessivel(url);
+    if (!apkOk) {
+      _bloqueioForceUpdateAberto = false;
+      return;
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          backgroundColor: Colors.white,
+          title: const Text(
+            'Atualização obrigatória',
+            style: TextStyle(color: AppColors.textPrimary),
+          ),
+          content: Text(
+            'Há uma nova versão do app. Atualize antes de entrar.\n\n'
+            'Build novo: ${info.latestBuild ?? '?'}.',
+            style: const TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF38A169),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                Navigator.of(dialogCtx).pop();
+                if (mounted) {
+                  final cancelToken = CancelToken();
+                  await showDialog<void>(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (_) => ApkDownloadDialog(
+                      url: url,
+                      cancelToken: cancelToken,
+                    ),
+                  );
+                }
+                _bloqueioForceUpdateAberto = false;
+                if (mounted) ref.invalidate(appVersionProvider);
+              },
+              child: const Text('Atualizar agora'),
+            ),
+          ],
         ),
       ),
     );
