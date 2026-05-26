@@ -34,6 +34,12 @@ class ErrorReporter {
   static const _repoName = 'wizmart-qualidade-app';
   static const _cooldown = Duration(minutes: 5);
 
+  /// GitHub Issues limita body a 65536 chars. Margem de ~5k pra cabeçalho
+  /// do split, fallback de markdown e contagem de bytes vs chars em UTF-8.
+  /// Acima disso, o body é dividido em partes — 1ª vira o issue, demais
+  /// viram comments no mesmo issue.
+  static const _maxBodyChars = 60000;
+
   /// Cooldown por screen — key: nome da tela.
   static final Map<String, DateTime> _ultimoReportePorScreen = {};
 
@@ -85,22 +91,13 @@ class ErrorReporter {
         log: logLines,
       );
 
-      await http
-          .post(
-            Uri.parse(
-                'https://api.github.com/repos/$_repoOwner/$_repoName/issues'),
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Accept': 'application/vnd.github+json',
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode({
-              'title': title,
-              'body': body,
-              'labels': ['bug', 'auto', 'screen:$tela'],
-            }),
-          )
-          .timeout(const Duration(seconds: 15));
+      await _postarIssueParticionado(
+        token: token,
+        title: title,
+        body: body,
+        labels: ['bug', 'auto', 'screen:$tela'],
+        logTag: 'erro:$tela',
+      );
     } catch (e) {
       await PersistentLogger.append(
           'erro:$tela', 'Falha ao postar issue: $e',
@@ -173,36 +170,13 @@ class ErrorReporter {
       b.writeln();
       b.writeln('_Issue criado pelo promotor via menu Reportar problema._');
 
-      final res = await http
-          .post(
-            Uri.parse(
-                'https://api.github.com/repos/$_repoOwner/$_repoName/issues'),
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Accept': 'application/vnd.github+json',
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode({
-              'title': title,
-              'body': b.toString(),
-              'labels': ['bug', 'user-report', 'screen:$tela'],
-            }),
-          )
-          .timeout(const Duration(seconds: 20));
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        try {
-          final json = jsonDecode(res.body) as Map<String, dynamic>;
-          return json['number'] as int?;
-        } catch (_) {
-          return -1;
-        }
-      }
-      await PersistentLogger.append(
-        'user-report:$tela',
-        'POST falhou status=${res.statusCode} body=${res.body}',
-        erro: true,
+      return await _postarIssueParticionado(
+        token: token,
+        title: title,
+        body: b.toString(),
+        labels: ['bug', 'user-report', 'screen:$tela'],
+        logTag: 'user-report:$tela',
       );
-      return null;
     } catch (e) {
       await PersistentLogger.append(
         'user-report:$tela',
@@ -302,5 +276,124 @@ class ErrorReporter {
     b.writeln();
     b.writeln('_Issue criado automaticamente pelo app._');
     return b.toString();
+  }
+
+  /// Cria issue no GitHub. Se o body excede [_maxBodyChars] (limite ~65k
+  /// do GitHub Issues), divide em partes — a 1ª vira o issue, as demais
+  /// viram comments no mesmo issue (concatenação visual). Retorna o
+  /// número do issue criado, ou null em falha do POST principal.
+  static Future<int?> _postarIssueParticionado({
+    required String token,
+    required String title,
+    required String body,
+    required List<String> labels,
+    required String logTag,
+  }) async {
+    final partes = _dividirBody(body, _maxBodyChars);
+    final n = partes.length;
+
+    final tituloIssue = n > 1 ? '$title [1/$n]' : title;
+    final corpoIssue = n > 1
+        ? '${partes[0]}\n\n_⚠️ Continua nos comentários (parte 1 de $n)._'
+        : partes[0];
+
+    final res = await http
+        .post(
+          Uri.parse(
+              'https://api.github.com/repos/$_repoOwner/$_repoName/issues'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Accept': 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'title': tituloIssue,
+            'body': corpoIssue,
+            'labels': labels,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      await PersistentLogger.append(
+        logTag,
+        'POST issue falhou status=${res.statusCode} body=${res.body}',
+        erro: true,
+      );
+      return null;
+    }
+
+    int? issueNumber;
+    try {
+      final j = jsonDecode(res.body) as Map<String, dynamic>;
+      issueNumber = j['number'] as int?;
+    } catch (_) {/* segue null */}
+    if (issueNumber == null || n == 1) return issueNumber;
+
+    // Demais partes viram comentários. Falha em comment não invalida o
+    // issue — só registra no log local. O promotor já consegue identificar
+    // o issue pelo número retornado.
+    for (var i = 1; i < n; i++) {
+      try {
+        final corpo = '## Parte ${i + 1} de $n\n\n${partes[i]}';
+        final c = await http
+            .post(
+              Uri.parse(
+                  'https://api.github.com/repos/$_repoOwner/$_repoName/issues/$issueNumber/comments'),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Accept': 'application/vnd.github+json',
+                'Content-Type': 'application/json',
+              },
+              body: jsonEncode({'body': corpo}),
+            )
+            .timeout(const Duration(seconds: 15));
+        if (c.statusCode < 200 || c.statusCode >= 300) {
+          await PersistentLogger.append(
+            logTag,
+            'Comment parte ${i + 1}/$n falhou status=${c.statusCode}',
+            erro: true,
+          );
+        }
+      } catch (e) {
+        await PersistentLogger.append(
+          logTag,
+          'Comment parte ${i + 1}/$n exceção: $e',
+          erro: true,
+        );
+      }
+    }
+    return issueNumber;
+  }
+
+  /// Divide [body] em partes de no máximo [maxChars] caracteres,
+  /// quebrando em `\n` quando possível (não corta linha pela metade).
+  /// Se uma linha sozinha excede o limite (raro — payload JSON gigante),
+  /// quebra por chars mesmo.
+  static List<String> _dividirBody(String body, int maxChars) {
+    if (body.length <= maxChars) return [body];
+    final partes = <String>[];
+    final buf = StringBuffer();
+    for (final linha in body.split('\n')) {
+      // +1 pelo \n que será adicionado depois desta linha.
+      final tamanhoApos = buf.length + linha.length + 1;
+      if (tamanhoApos > maxChars && buf.isNotEmpty) {
+        partes.add(buf.toString());
+        buf.clear();
+      }
+      // Linha sozinha maior que o limite: quebra forçada.
+      if (linha.length + 1 > maxChars) {
+        var resto = linha;
+        while (resto.length > maxChars) {
+          partes.add(resto.substring(0, maxChars));
+          resto = resto.substring(maxChars);
+        }
+        if (resto.isNotEmpty) buf.writeln(resto);
+      } else {
+        buf.writeln(linha);
+      }
+    }
+    if (buf.isNotEmpty) partes.add(buf.toString());
+    return partes;
   }
 }
