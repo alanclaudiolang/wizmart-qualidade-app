@@ -514,6 +514,17 @@ class SyncEngine {
     final fotosAntesUrls = await _db.getUploadedPhotoUrls(v.id, 'antes');
     final fotosDepoisUrls = await _db.getUploadedPhotoUrls(v.id, 'depois');
 
+    // INSTRUMENTAÇÃO: compara o que o promotor CAPTUROU (fotosAntesJson/
+    // fotosDepoisJson = paths locais, fonte de verdade do grid) com o que
+    // está pronto pra subir (URLs uploaded). Discrepância = a visita vai
+    // pro servidor com MENOS fotos do que tirou — exatamente o sintoma
+    // dos casos Jessica/Leandro, mas que antes passava silencioso. Loga
+    // ERRO (vai pro auto-issue) com os números, pra detecção proativa.
+    _logDiscrepanciaFotos(v, operation, 'antes', fotosAntesUrls.length);
+    if (operation == 'close') {
+      _logDiscrepanciaFotos(v, operation, 'depois', fotosDepoisUrls.length);
+    }
+
     final payload = <String, dynamic>{
       'status_visita': _toServerStatus(v.statusVisita),
       'id_pdv_associado': v.idPdvAssociado,
@@ -565,6 +576,31 @@ class SyncEngine {
     return payload;
   }
 
+  /// Loga ERRO quando o nº de fotos capturadas localmente (paths no
+  /// fotosAntesJson/fotosDepoisJson) é MAIOR que o nº de URLs prontas pra
+  /// subir. Sinal de fotos que ficaram pra trás (upload incompleto, id
+  /// órfão, watermark travado). Vai pro auto-issue — detecção proativa
+  /// do sintoma "visita sincronizou com fotos faltando".
+  void _logDiscrepanciaFotos(
+      Visita v, String operation, String slot, int uploaded) {
+    final json = slot == 'antes' ? v.fotosAntesJson : v.fotosDepoisJson;
+    if (json == null || json.isEmpty) return;
+    int capturadas;
+    try {
+      capturadas = (jsonDecode(json) as List).length;
+    } catch (_) {
+      return;
+    }
+    if (capturadas > uploaded) {
+      _logger.log(
+          'integridade',
+          'DISCREPÂNCIA fotos $slot visitaId=${v.id} serverId=${v.serverId} '
+          'op=$operation: capturadas=$capturadas uploaded=$uploaded '
+          '(faltam ${capturadas - uploaded}) titulo=${v.titulo}',
+          erro: true);
+    }
+  }
+
   Future<void> _processOutboxItem(OutboxItem item) async {
     // Resolve o entityId pela migração da rodada: se um item anterior
     // (open) consolidou a visita idTemp→serverId, o entityId deste item
@@ -573,19 +609,20 @@ class SyncEngine {
     final entityId = _idsMigradosNaRodada[item.entityId] ?? item.entityId;
 
     // Princípio: não tocar no servidor sobre uma visita enquanto houver
-    // foto da mesma visita+slot ainda em processamento local
-    // (watermark_pending, pending, uploading, error). Sem isso, o
-    // INSERT 'open' subia com fotos_antes=[] e o servidor ficava com
-    // array vazio enquanto o app já considerava 'synced' — depois as
-    // URLs nunca eram vinculadas porque o pull apagava a row local e
-    // o photos_antes UPDATE subsequente era descartado por "visita não
-    // encontrada" (Cleiton/Edilson, 2026-05-20/21).
+    // foto da mesma visita+slot ainda EM PROGRESSO local (watermark_pending,
+    // pending, uploading). Sem isso, o INSERT 'open' subia com
+    // fotos_antes=[] e o servidor ficava com array vazio enquanto o app
+    // já considerava 'synced' (Cleiton/Edilson, 2026-05-20/21).
+    //
+    // 'error' (arquivo local sumiu — irrecuperável) NÃO posterga: antes
+    // travava o outbox da visita pra sempre e ela nunca sincronizava.
+    // Agora a visita vai pro servidor com as fotos que subiram.
     //
     // Pra cada operação, identifica os slots que ela vai enviar:
     //   - open / photos_antes  →  antes
     //   - close                →  antes + depois (close re-envia tudo)
     //   - photos_depois        →  depois
-    // Se algum slot ainda tem foto não-uploaded, sai sem mexer no
+    // Se algum slot ainda tem foto em progresso, sai sem mexer no
     // outbox item. O próximo ciclo de sync (disparado pela watermark
     // queue ao terminar) re-tenta — em geral em segundos.
     final slotsRequeridos = <String>[];
@@ -603,13 +640,13 @@ class SyncEngine {
         break;
     }
     for (final slot in slotsRequeridos) {
-      final naoProntas =
-          await _db.countFotosNaoUploaded(entityId, slot);
-      if (naoProntas > 0) {
+      final emProgresso =
+          await _db.countFotosEmProgresso(entityId, slot);
+      if (emProgresso > 0) {
         _logger.log(
             'outbox',
             'Posterga ${item.operation} visitaId=$entityId: '
-            '$naoProntas foto(s) $slot ainda em processamento');
+            '$emProgresso foto(s) $slot ainda em processamento');
         return;
       }
     }
@@ -623,8 +660,19 @@ class SyncEngine {
       // todos os campos relevantes (replicando o app FlutterFlow antigo).
       final visita = await _db.getVisitaById(entityId);
       if (visita == null) {
-        _logger.log('outbox',
-            'Visita local id=$entityId não encontrada — descartando outbox',
+        // Sinal de id órfão: a fila aponta pra uma visita que não existe
+        // mais (pivot mal resolvido, delete prematuro). Loga contexto rico
+        // — se houver fotos uploaded penduradas nesse entityId, elas vão
+        // virar órfãs no bucket. Detecção proativa do bug-classe.
+        final fotosOrfas = await _db.getUploadedPhotoUrls(entityId, 'antes');
+        final fotosOrfasDepois =
+            await _db.getUploadedPhotoUrls(entityId, 'depois');
+        _logger.log(
+            'outbox',
+            'ÓRFÃO: visita id=$entityId (item.entityId=${item.entityId}) '
+            'não encontrada — descartando outbox op=${item.operation}. '
+            'Fotos penduradas: antes=${fotosOrfas.length} '
+            'depois=${fotosOrfasDepois.length}',
             erro: true);
         await _db.deleteOutboxItem(item.id);
         return;
@@ -655,8 +703,6 @@ class SyncEngine {
             .select()
             .single();
         final novoServerId = res['id'] as int;
-        _logger.log('outbox',
-            'INSERT OK: serverId=$novoServerId pra local id=$entityId');
         // Consolida a PK local em serverId E re-vincula fotos+outbox na
         // mesma transação. Sem isso, idTemp e serverId divergiam e as
         // fotos/outbox ficavam órfãos (causa raiz das fotos sumindo).
@@ -665,6 +711,11 @@ class SyncEngine {
         // (o snapshot do outbox foi lido com o entityId antigo).
         if (entityId != novoServerId) {
           _idsMigradosNaRodada[entityId] = novoServerId;
+          _logger.log('outbox',
+              'PIVOT idTemp=$entityId → serverId=$novoServerId consolidado '
+              '(fotos+outbox re-vinculados)');
+        } else {
+          _logger.log('outbox', 'INSERT OK serverId=$novoServerId');
         }
       } else {
         final res = await _supabase

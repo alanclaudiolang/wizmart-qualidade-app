@@ -331,7 +331,10 @@ class AppDatabase extends _$AppDatabase {
   Future<void> upsertVisita(VisitasCompanion visita) =>
       into(visitas).insertOnConflictUpdate(visita);
 
-  Future<void> updateVisita(VisitasCompanion visita) =>
+  /// Retorna o nº de linhas afetadas. 0 = a visita com aquele id não
+  /// existe (id obsoleto/órfão) — o caller pode logar pra detectar o
+  /// "write silenciosamente perdido" que o id pivotado causaria.
+  Future<int> updateVisita(VisitasCompanion visita) =>
       (update(visitas)..where((v) => v.id.equals(visita.id.value)))
           .write(visita);
 
@@ -490,18 +493,25 @@ class AppDatabase extends _$AppDatabase {
       (delete(pendingPhotos)..where((p) => p.localPath.equals(localPath)))
           .go();
 
-  /// Conta fotos da visita+slot que AINDA NÃO terminaram o ciclo local
-  /// (watermark_pending, pending, uploading, error). Usado pelo sync
-  /// engine pra postergar operações que tocariam o servidor antes do
-  /// processamento local terminar — princípio: nada vai pro servidor
-  /// sobre uma visita até todas as fotos daquele slot estarem em
-  /// 'uploaded'.
-  Future<int> countFotosNaoUploaded(int visitaId, String slot) async {
+  /// Conta fotos da visita+slot que ainda estão EM PROGRESSO local
+  /// (watermark_pending, pending, uploading). Usado pelo sync engine
+  /// pra postergar operações que tocariam o servidor antes do
+  /// processamento local terminar.
+  ///
+  /// 'error' NÃO conta como em-progresso: é estado terminal e
+  /// irrecuperável (o arquivo local sumiu — ver _processPhotoUpload).
+  /// Antes 'error' era contado e travava o outbox da visita PRA SEMPRE
+  /// — a operação era postergada indefinidamente e a visita nunca
+  /// sincronizava. Agora a visita sincroniza com as fotos que subiram;
+  /// a que falhou (arquivo inexistente) fica de fora, sem bloquear.
+  Future<int> countFotosEmProgresso(int visitaId, String slot) async {
     final rows = await (select(pendingPhotos)
           ..where((p) =>
               p.visitaId.equals(visitaId) &
               p.slot.equals(slot) &
-              p.status.equals('uploaded').not()))
+              (p.status.equals('watermark_pending') |
+                  p.status.equals('pending') |
+                  p.status.equals('uploading'))))
         .get();
     return rows.length;
   }
