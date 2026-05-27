@@ -95,7 +95,12 @@ class ErrorReporter {
         token: token,
         title: title,
         body: body,
-        labels: ['bug', 'auto', 'screen:$tela'],
+        labels: [
+          'bug',
+          'auto',
+          'screen:$tela',
+          'build:${AppConstants.buildNumber}',
+        ],
         logTag: 'erro:$tela',
       );
     } catch (e) {
@@ -161,7 +166,10 @@ class ErrorReporter {
       b.writeln();
       b.writeln('## App');
       final a = (ctx['app'] as Map?) ?? {};
-      b.writeln('- versão: ${a['versao'] ?? '?'}+${a['build'] ?? '?'}');
+      b.writeln('- **BUILD: ${a['buildNumberReal'] ?? '?'}** '
+          '(compilado ${a['buildTime'] ?? '?'})');
+      b.writeln('- versão define: ${a['appVersionDefine'] ?? '?'}');
+      b.writeln('- pubspec: ${a['versao'] ?? '?'}+${a['build'] ?? '?'}');
       b.writeln();
       b.writeln('## Log (últimas 1000 linhas)');
       b.writeln('```');
@@ -174,7 +182,12 @@ class ErrorReporter {
         token: token,
         title: title,
         body: b.toString(),
-        labels: ['bug', 'user-report', 'screen:$tela'],
+        labels: [
+          'bug',
+          'user-report',
+          'screen:$tela',
+          'build:${AppConstants.buildNumber}',
+        ],
         logTag: 'user-report:$tela',
       );
     } catch (e) {
@@ -222,8 +235,24 @@ class ErrorReporter {
     } catch (_) {}
     try {
       final pkg = await PackageInfo.fromPlatform();
-      out['app'] = {'versao': pkg.version, 'build': pkg.buildNumber};
-    } catch (_) {}
+      out['app'] = {
+        'versao': pkg.version,
+        'build': pkg.buildNumber,
+        // BUILD REAL do dart-define (injetado pelo CI). pkg.version/build
+        // vêm do pubspec e são IGUAIS em todo build — inúteis pra saber
+        // se o promotor já tem uma correção. buildNumber/buildTime aqui
+        // identificam exatamente qual APK ele roda (ex: 163 / 27/05 13:30).
+        'buildNumberReal': AppConstants.buildNumber,
+        'buildTime': AppConstants.buildTime,
+        'appVersionDefine': AppConstants.appVersion,
+      };
+    } catch (_) {
+      out['app'] = {
+        'buildNumberReal': AppConstants.buildNumber,
+        'buildTime': AppConstants.buildTime,
+        'appVersionDefine': AppConstants.appVersion,
+      };
+    }
     return out;
   }
 
@@ -267,7 +296,10 @@ class ErrorReporter {
     b.writeln();
     b.writeln('## App');
     final a = (ctx['app'] as Map?) ?? {};
-    b.writeln('- versão: ${a['versao'] ?? '?'}+${a['build'] ?? '?'}');
+    b.writeln('- **BUILD: ${a['buildNumberReal'] ?? '?'}** '
+        '(compilado ${a['buildTime'] ?? '?'})');
+    b.writeln('- versão define: ${a['appVersionDefine'] ?? '?'}');
+    b.writeln('- pubspec: ${a['versao'] ?? '?'}+${a['build'] ?? '?'}');
     b.writeln();
     b.writeln('## Log (últimas 500 linhas)');
     b.writeln('```');
