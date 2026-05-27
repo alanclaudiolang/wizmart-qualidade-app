@@ -17,25 +17,27 @@ class SyncEngine {
   final AppDatabase _db;
   final SupabaseClient _supabase;
   final SyncLoggerNotifier _logger;
-  bool _running = false;
-  bool _pulling = false;
+  /// Lock ÚNICO compartilhado entre pullAll e processOutbox. Antes
+  /// eram dois trincos separados (_pulling e _running) e push/pull
+  /// rodavam em paralelo — abria janela onde:
+  ///   1) pull buscava `realizadasRows` do servidor (snapshot antigo)
+  ///   2) push concorrente inseria visita nova no servidor
+  ///   3) pull deletava local synced (sem ver a visita recém-criada)
+  ///   4) pull recriava como vaga agendada usando a Edge Function
+  /// O outbox item subsequente era descartado (visita local sumiu),
+  /// fotos no bucket ficavam órfãs e a row no servidor `visitas`
+  /// nunca era criada (Jessica/AKAD-SEGUROS+ENEL-SOCORRO 2026-05-26).
+  bool _syncing = false;
 
   SyncEngine(this._db, this._supabase, this._logger);
 
   Future<void> pullAll(int promotorId) async {
-    // Trinco: vários gatilhos (volta pra home, lifecycle resumed,
-    // watermark queue, etc) podem disparar pullAll quase ao mesmo
-    // tempo. Sem o trinco eles rodam entrelaçados — o
-    // 'deleteVisitasSincronizadasSemPendencias' de um sobrepõe o
-    // re-insert do outro e abre uma janela onde a visita "some" do
-    // DB local. Promotor toca nela nesse intervalo → "Visita não
-    // encontrada" (caso reportado em 2026-05-22 issue #11).
-    if (_pulling) {
+    if (_syncing) {
       _logger.log('início',
-          'pullAll ignorado (outro já rodando) — promotor $promotorId');
+          'pullAll ignorado (sync em andamento) — promotor $promotorId');
       return;
     }
-    _pulling = true;
+    _syncing = true;
     _logger.log(
         'início', 'Iniciando sincronização para promotor $promotorId');
     try {
@@ -44,7 +46,7 @@ class SyncEngine {
       await _pullVisitasDia(promotorId);
       _logger.log('fim', 'Sincronização concluída');
     } finally {
-      _pulling = false;
+      _syncing = false;
     }
   }
 
@@ -401,7 +403,7 @@ class SyncEngine {
   }
 
   Future<void> processOutbox() async {
-    if (_running) return;
+    if (_syncing) return;
     // Bloqueio único pra TODOS os gatilhos: durante captura (grid de fotos
     // ou câmera aberta), nada sincroniza, independentemente da origem
     // do trigger (foreground, WorkManager, listener, etc.).
@@ -409,7 +411,7 @@ class SyncEngine {
       _logger.log('sync', 'Pausado (captura ativa) — pulando ciclo.');
       return;
     }
-    _running = true;
+    _syncing = true;
     try {
       // FOTOS PRIMEIRO: o upload em Storage gera URLs públicas e grava
       // em pending_photos.storageUrl. Quando o INSERT/UPDATE da visita
@@ -431,7 +433,7 @@ class SyncEngine {
         await _processOutboxItem(item);
       }
     } finally {
-      _running = false;
+      _syncing = false;
     }
   }
 
@@ -442,7 +444,15 @@ class SyncEngine {
   /// Servidor: 1=realizada, 2=andamento, 5=falta (não há 'agendada' no servidor)
   int _toServerStatus(int? appStatus) {
     if (appStatus == AppConstants.statusRealizada) return 1; // 3 -> 1
-    return appStatus ?? AppConstants.statusEmAndamento;
+    if (appStatus == AppConstants.statusEmAndamento) return 2; // 2 -> 2
+    if (appStatus == AppConstants.statusFalta) return 5; // 5 -> 5
+    // Local=agendada (1) ou null: NÃO existe equivalente "agendada" no
+    // servidor. Default seguro: 2 (em andamento). Antes caía no fallback
+    // `appStatus ?? statusEmAndamento` que retornava 1 — e 1 no servidor
+    // significa REALIZADA. Resultado: qualquer UPDATE com local=1 marcava
+    // a visita como realizada no servidor sem dia_hora_realizado nem
+    // fotos_depois (caso Jessica/visita-113248 2026-05-26).
+    return 2;
   }
 
   /// Inverso de `_toServerStatus`. Servidor → App.
@@ -484,8 +494,12 @@ class SyncEngine {
       'localizacao_abertura': v.localizacaoAbertura,
       'dia_hora_fotos_antes': v.diaHoraFotosAntes,
       'localizacao_fotos_antes': v.localizacaoFotosAntes,
-      // Array de URLs públicas — só inclui se houver pelo menos uma
+      // Arrays de URLs públicas — incluídos em QUALQUER operação que
+      // tenha URLs. Antes fotos_depois só ia no `close`, então se o
+      // close demorasse (ou falhasse) as URLs ficavam órfãs no bucket
+      // sem chegar à tabela (caso Jessica 2026-05-26).
       if (fotosAntesUrls.isNotEmpty) 'fotos_antes': fotosAntesUrls,
+      if (fotosDepoisUrls.isNotEmpty) 'fotos_depois': fotosDepoisUrls,
     };
 
     if (operation == 'close') {
@@ -509,7 +523,6 @@ class SyncEngine {
         'obs_pergunta_6': v.obsPergunta6,
         'check_pergunta_7': v.checkPergunta7,
         'obs_pergunta_7': v.obsPergunta7,
-        if (fotosDepoisUrls.isNotEmpty) 'fotos_depois': fotosDepoisUrls,
       });
     }
 
