@@ -335,6 +335,58 @@ class AppDatabase extends _$AppDatabase {
       (update(visitas)..where((v) => v.id.equals(visita.id.value)))
           .write(visita);
 
+  Future<Visita?> getVisitaByServerId(int serverId) =>
+      (select(visitas)..where((v) => v.serverId.equals(serverId)))
+          .getSingleOrNull();
+
+  /// Consolida uma visita recém-inserida no servidor sob a PK = serverId.
+  ///
+  /// CAUSA RAIZ histórica: a visita "vaga" nascia com PK = idTemp negativo
+  /// (-hash). PendingPhotos.visitaId e OutboxItems.entityId apontavam pra
+  /// esse idTemp. O INSERT setava só o campo serverId, mantendo a PK idTemp
+  /// — mas o pull recriava a visita com PK = serverId (upsert). As duas
+  /// premissas conflitavam: a row idTemp era deletada/duplicada e as fotos
+  /// + outbox ficavam ÓRFÃS (getUploadedPhotoUrls não achava as URLs,
+  /// _processOutboxItem descartava por "visita não encontrada"). Fotos
+  /// iam pro bucket mas nunca eram vinculadas à tabela.
+  ///
+  /// Solução: ao receber o serverId no INSERT, migra a PK idTemp→serverId
+  /// E re-vincula fotos e outbox na MESMA transação. A partir daí tudo
+  /// referencia serverId — alinhado com o que o pull (upsert id=serverId)
+  /// já espera. Sem órfãos, sem duplicatas, sem pivot.
+  Future<void> consolidarVisitaNoServer(int idLocal, int serverId) async {
+    final agora = DateTime.now().toIso8601String();
+    if (idLocal == serverId) {
+      // Já alinhado (re-edição de visita já sincronizada). Só marca synced.
+      await (update(visitas)..where((v) => v.id.equals(idLocal))).write(
+        VisitasCompanion(
+          serverId: Value(serverId),
+          syncStatus: const Value('synced'),
+          syncedAt: Value(agora),
+        ),
+      );
+      return;
+    }
+    await transaction(() async {
+      // Remove duplicata órfã com PK=serverId que um pull anterior possa
+      // ter criado (pivot histórico). A row idLocal abaixo é a fonte real
+      // — ela tem as fotos/outbox vinculados.
+      await (delete(visitas)..where((v) => v.id.equals(serverId))).go();
+      await (update(visitas)..where((v) => v.id.equals(idLocal))).write(
+        VisitasCompanion(
+          id: Value(serverId),
+          serverId: Value(serverId),
+          syncStatus: const Value('synced'),
+          syncedAt: Value(agora),
+        ),
+      );
+      await (update(pendingPhotos)..where((p) => p.visitaId.equals(idLocal)))
+          .write(PendingPhotosCompanion(visitaId: Value(serverId)));
+      await (update(outboxItems)..where((o) => o.entityId.equals(idLocal)))
+          .write(OutboxItemsCompanion(entityId: Value(serverId)));
+    });
+  }
+
   Future<Map<String, int>> getContadoresHoje(int promotorId) async {
     final hoje = DateTime.now();
     final inicioDia =

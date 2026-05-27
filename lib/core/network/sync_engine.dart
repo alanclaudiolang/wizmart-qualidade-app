@@ -29,6 +29,13 @@ class SyncEngine {
   /// nunca era criada (Jessica/AKAD-SEGUROS+ENEL-SOCORRO 2026-05-26).
   bool _syncing = false;
 
+  /// Migrações idTemp→serverId feitas durante a rodada atual de
+  /// processOutbox. O snapshot do outbox é lido de uma vez no início;
+  /// quando o 1º item (open) consolida a visita em serverId, os demais
+  /// itens do snapshot ainda carregam o entityId antigo em memória —
+  /// este mapa resolve isso sem precisar re-ler a fila a cada item.
+  final Map<int, int> _idsMigradosNaRodada = {};
+
   SyncEngine(this._db, this._supabase, this._logger);
 
   Future<void> pullAll(int promotorId) async {
@@ -412,6 +419,7 @@ class SyncEngine {
       return;
     }
     _syncing = true;
+    _idsMigradosNaRodada.clear();
     try {
       // FOTOS PRIMEIRO: o upload em Storage gera URLs públicas e grava
       // em pending_photos.storageUrl. Quando o INSERT/UPDATE da visita
@@ -532,6 +540,12 @@ class SyncEngine {
   }
 
   Future<void> _processOutboxItem(OutboxItem item) async {
+    // Resolve o entityId pela migração da rodada: se um item anterior
+    // (open) consolidou a visita idTemp→serverId, o entityId deste item
+    // no snapshot ainda é o idTemp. Sem isso, getVisitaById(idTemp) daria
+    // null e o item seria descartado — fotos órfãs de novo.
+    final entityId = _idsMigradosNaRodada[item.entityId] ?? item.entityId;
+
     // Princípio: não tocar no servidor sobre uma visita enquanto houver
     // foto da mesma visita+slot ainda em processamento local
     // (watermark_pending, pending, uploading, error). Sem isso, o
@@ -564,11 +578,11 @@ class SyncEngine {
     }
     for (final slot in slotsRequeridos) {
       final naoProntas =
-          await _db.countFotosNaoUploaded(item.entityId, slot);
+          await _db.countFotosNaoUploaded(entityId, slot);
       if (naoProntas > 0) {
         _logger.log(
             'outbox',
-            'Posterga ${item.operation} visitaId=${item.entityId}: '
+            'Posterga ${item.operation} visitaId=$entityId: '
             '$naoProntas foto(s) $slot ainda em processamento');
         return;
       }
@@ -581,10 +595,10 @@ class SyncEngine {
     try {
       // Lê estado completo e atual da visita no SQLite e monta payload com
       // todos os campos relevantes (replicando o app FlutterFlow antigo).
-      final visita = await _db.getVisitaById(item.entityId);
+      final visita = await _db.getVisitaById(entityId);
       if (visita == null) {
         _logger.log('outbox',
-            'Visita local id=${item.entityId} não encontrada — descartando outbox',
+            'Visita local id=$entityId não encontrada — descartando outbox',
             erro: true);
         await _db.deleteOutboxItem(item.id);
         return;
@@ -598,7 +612,7 @@ class SyncEngine {
       final fotosDepoisNoPayload = payload['fotos_depois'];
       _logger.log(
           'outbox',
-          'Payload visita id=${item.entityId} op=${item.operation} '
+          'Payload visita id=$entityId op=${item.operation} '
           'campos=${payload.keys.length} '
           'fotos_antes=${fotosAntesNoPayload is List ? fotosAntesNoPayload.length : 0}urls '
           'fotos_depois=${fotosDepoisNoPayload is List ? fotosDepoisNoPayload.length : 0}urls');
@@ -606,11 +620,9 @@ class SyncEngine {
       // Decide INSERT vs UPDATE pelo serverId, não pelo id local.
       // - serverId == null: visita ainda não existe no servidor → INSERT
       // - serverId != null: já existe → UPDATE eq('id', serverId)
-      // O id local NUNCA muda — PendingPhotos/OutboxItems sempre referenciam
-      // o mesmo id estável.
       if (visita.serverId == null) {
         _logger.log('outbox',
-            'INSERT visita local id=${item.entityId} (sem serverId)');
+            'INSERT visita local id=$entityId (sem serverId)');
         final res = await _supabase
             .from('visitas')
             .insert(payload)
@@ -618,13 +630,16 @@ class SyncEngine {
             .single();
         final novoServerId = res['id'] as int;
         _logger.log('outbox',
-            'INSERT OK: serverId=$novoServerId pra local id=${item.entityId}');
-        await _db.updateVisita(VisitasCompanion(
-          id: Value(item.entityId),
-          serverId: Value(novoServerId),
-          syncStatus: const Value('synced'),
-          syncedAt: Value(DateTime.now().toIso8601String()),
-        ));
+            'INSERT OK: serverId=$novoServerId pra local id=$entityId');
+        // Consolida a PK local em serverId E re-vincula fotos+outbox na
+        // mesma transação. Sem isso, idTemp e serverId divergiam e as
+        // fotos/outbox ficavam órfãos (causa raiz das fotos sumindo).
+        await _db.consolidarVisitaNoServer(entityId, novoServerId);
+        // Registra a migração pra resolver os demais itens DESTA rodada
+        // (o snapshot do outbox foi lido com o entityId antigo).
+        if (entityId != novoServerId) {
+          _idsMigradosNaRodada[entityId] = novoServerId;
+        }
       } else {
         final res = await _supabase
             .from('visitas')
@@ -633,7 +648,7 @@ class SyncEngine {
             .select();
         _logger.log(
             'outbox',
-            'UPDATE OK localId=${item.entityId} serverId=${visita.serverId} '
+            'UPDATE OK localId=$entityId serverId=${visita.serverId} '
             'op=${item.operation} rowsAfetadas=${res.length}');
         if (res.isEmpty) {
           _logger.log(
@@ -642,14 +657,14 @@ class SyncEngine {
               erro: true);
         }
         await _db.updateVisita(VisitasCompanion(
-          id: Value(item.entityId),
+          id: Value(entityId),
           syncStatus: const Value('synced'),
           syncedAt: Value(DateTime.now().toIso8601String()),
         ));
       }
       await _db.deleteOutboxItem(item.id);
     } catch (e) {
-      _logger.log('outbox', 'Falha entityId=${item.entityId}: $e', erro: true);
+      _logger.log('outbox', 'Falha entityId=$entityId: $e', erro: true);
       final attempts = item.attempts + 1;
       final delaySeconds = min(pow(2, attempts).toInt() * 30, 1800);
       final nextRetry =
