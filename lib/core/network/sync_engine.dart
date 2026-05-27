@@ -17,48 +17,83 @@ class SyncEngine {
   final AppDatabase _db;
   final SupabaseClient _supabase;
   final SyncLoggerNotifier _logger;
-  /// Lock ÚNICO compartilhado entre pullAll e processOutbox. Antes
-  /// eram dois trincos separados (_pulling e _running) e push/pull
-  /// rodavam em paralelo — abria janela onde:
-  ///   1) pull buscava `realizadasRows` do servidor (snapshot antigo)
-  ///   2) push concorrente inseria visita nova no servidor
-  ///   3) pull deletava local synced (sem ver a visita recém-criada)
-  ///   4) pull recriava como vaga agendada usando a Edge Function
-  /// O outbox item subsequente era descartado (visita local sumiu),
-  /// fotos no bucket ficavam órfãs e a row no servidor `visitas`
-  /// nunca era criada (Jessica/AKAD-SEGUROS+ENEL-SOCORRO 2026-05-26).
+
+  /// Lock de re-entrância DESTE isolate. Cobre o caso de dois gatilhos
+  /// do mesmo app dispararem sync ao mesmo tempo. NÃO basta sozinho: o
+  /// WorkManager roda noutro isolate, com outra instância de SyncEngine
+  /// e outro `_syncing`. Por isso o lock real é o cross-process do
+  /// SQLite (tryAcquireSyncLock) — sem ele, push de um processo e pull
+  /// do outro concorriam e deixavam fotos/outbox órfãos (a recorrência
+  /// que persistia mesmo após os fixes anteriores).
   bool _syncing = false;
+
+  /// Identidade desta instância pra dono do lock cross-process.
+  final String _instanceId = const Uuid().v4();
+
+  /// TTL do lock cross-process. Folgado vs. a duração real de um ciclo
+  /// (~10-30s) mas curto o bastante pra liberar se um isolate morrer
+  /// segurando o lock.
+  static const _lockTtlMs = 240000;
+
+  /// Migrações idTemp→serverId feitas durante a rodada atual de
+  /// processOutbox. O snapshot do outbox é lido de uma vez no início;
+  /// quando o 1º item (open) consolida a visita em serverId, os demais
+  /// itens do snapshot ainda carregam o entityId antigo em memória —
+  /// este mapa resolve isso sem precisar re-ler a fila a cada item.
+  final Map<int, int> _idsMigradosNaRodada = {};
 
   SyncEngine(this._db, this._supabase, this._logger);
 
-  Future<void> pullAll(int promotorId) async {
+  /// Executa [action] sob exclusão mútua: re-entrância no mesmo isolate
+  /// (_syncing) + lock cross-process no SQLite (app ↔ WorkManager).
+  /// Se já houver sync rodando em qualquer processo, pula o ciclo.
+  Future<void> _runExclusive(String label, Future<void> Function() action) async {
     if (_syncing) {
-      _logger.log('início',
-          'pullAll ignorado (sync em andamento) — promotor $promotorId');
+      _logger.log('sync', '$label ignorado (sync em andamento neste app)');
+      return;
+    }
+    final adquiriu = await _db.tryAcquireSyncLock(
+        holder: _instanceId, ttlMs: _lockTtlMs);
+    if (!adquiriu) {
+      _logger.log('sync', '$label ignorado (outro processo sincronizando)');
       return;
     }
     _syncing = true;
-    _logger.log(
-        'início', 'Iniciando sincronização para promotor $promotorId');
     try {
-      await _pullPdvs(promotorId);
-      await _pullGabaritos(promotorId);
-      await _pullVisitasDia(promotorId);
-      _logger.log('fim', 'Sincronização concluída');
+      await action();
     } finally {
       _syncing = false;
+      await _db.releaseSyncLock(_instanceId);
     }
+  }
+
+  Future<void> pullAll(int promotorId) =>
+      _runExclusive('pullAll', () => _pullAllImpl(promotorId));
+
+  Future<void> _pullAllImpl(int promotorId) async {
+    _logger.log(
+        'início', 'Iniciando sincronização para promotor $promotorId');
+    await _pullPdvs(promotorId);
+    await _pullGabaritos(promotorId);
+    await _pullVisitasDia(promotorId);
+    _logger.log('fim', 'Sincronização concluída');
   }
 
   /// Ciclo completo de sincronização usado por todos os gatilhos:
   ///   1) PUSH: envia tudo que está pendente local pro servidor
   ///   2) PULL: apaga local sincronizado e re-baixa do servidor
-  /// Garante que app e servidor fiquem idênticos após cada execução.
-  /// Push antes de pull pra não perder dados locais que ainda não
-  /// foram enviados.
+  /// Push e pull rodam sob o MESMO lock — são uma unidade atômica, sem
+  /// outro processo entrando entre o push e o pull. Push antes de pull
+  /// pra não perder dados locais que ainda não foram enviados.
   Future<void> fullSync(int promotorId) async {
-    await processOutbox();
-    await pullAll(promotorId);
+    if (await SyncPause.isPaused()) {
+      _logger.log('sync', 'fullSync pausado (captura ativa).');
+      return;
+    }
+    await _runExclusive('fullSync', () async {
+      await _processOutboxImpl();
+      await _pullAllImpl(promotorId);
+    });
   }
 
   Future<void> _pullVisitasDia(int promotorId) async {
@@ -403,37 +438,36 @@ class SyncEngine {
   }
 
   Future<void> processOutbox() async {
-    if (_syncing) return;
-    // Bloqueio único pra TODOS os gatilhos: durante captura (grid de fotos
-    // ou câmera aberta), nada sincroniza, independentemente da origem
-    // do trigger (foreground, WorkManager, listener, etc.).
+    // Bloqueio durante captura (grid de fotos ou câmera aberta): nada
+    // sincroniza, independentemente da origem do trigger (foreground,
+    // WorkManager, listener, etc.).
     if (await SyncPause.isPaused()) {
       _logger.log('sync', 'Pausado (captura ativa) — pulando ciclo.');
       return;
     }
-    _syncing = true;
-    try {
-      // FOTOS PRIMEIRO: o upload em Storage gera URLs públicas e grava
-      // em pending_photos.storageUrl. Quando o INSERT/UPDATE da visita
-      // rodar a seguir, o _buildVisitaPayload lê essas URLs e envia
-      // tudo num único request — em vez de 1 INSERT + N UPDATEs.
-      // Upload e outbox NÃO marcam ProcessingTracker — engrenagem reflete
-      // só processamento interno (watermark + galeria), que é rápido
-      // e independe de internet. Sincronismo com servidor roda
-      // silenciosamente em background; bloquear a home por ele
-      // amarraria o promotor à conexão.
-      final photos = await _db.getPendingPhotos();
-      for (final photo in photos) {
-        await _processPhotoUpload(photo);
-      }
-      // Reler outbox: o upload das fotos pode ter enfileirado UPDATEs
-      // pra visitas com serverId já existente (fluxo de re-edição).
-      final items = await _db.getPendingOutboxItems();
-      for (final item in items) {
-        await _processOutboxItem(item);
-      }
-    } finally {
-      _syncing = false;
+    await _runExclusive('processOutbox', _processOutboxImpl);
+  }
+
+  Future<void> _processOutboxImpl() async {
+    _idsMigradosNaRodada.clear();
+    // FOTOS PRIMEIRO: o upload em Storage gera URLs públicas e grava
+    // em pending_photos.storageUrl. Quando o INSERT/UPDATE da visita
+    // rodar a seguir, o _buildVisitaPayload lê essas URLs e envia
+    // tudo num único request — em vez de 1 INSERT + N UPDATEs.
+    // Upload e outbox NÃO marcam ProcessingTracker — engrenagem reflete
+    // só processamento interno (watermark + galeria), que é rápido
+    // e independe de internet. Sincronismo com servidor roda
+    // silenciosamente em background; bloquear a home por ele
+    // amarraria o promotor à conexão.
+    final photos = await _db.getPendingPhotos();
+    for (final photo in photos) {
+      await _processPhotoUpload(photo);
+    }
+    // Reler outbox: o upload das fotos pode ter enfileirado UPDATEs
+    // pra visitas com serverId já existente (fluxo de re-edição).
+    final items = await _db.getPendingOutboxItems();
+    for (final item in items) {
+      await _processOutboxItem(item);
     }
   }
 
@@ -479,6 +513,17 @@ class SyncEngine {
     // URLs vêm de PendingPhotos.storageUrl (preenchido pelo upload).
     final fotosAntesUrls = await _db.getUploadedPhotoUrls(v.id, 'antes');
     final fotosDepoisUrls = await _db.getUploadedPhotoUrls(v.id, 'depois');
+
+    // INSTRUMENTAÇÃO: compara o que o promotor CAPTUROU (fotosAntesJson/
+    // fotosDepoisJson = paths locais, fonte de verdade do grid) com o que
+    // está pronto pra subir (URLs uploaded). Discrepância = a visita vai
+    // pro servidor com MENOS fotos do que tirou — exatamente o sintoma
+    // dos casos Jessica/Leandro, mas que antes passava silencioso. Loga
+    // ERRO (vai pro auto-issue) com os números, pra detecção proativa.
+    _logDiscrepanciaFotos(v, operation, 'antes', fotosAntesUrls.length);
+    if (operation == 'close') {
+      _logDiscrepanciaFotos(v, operation, 'depois', fotosDepoisUrls.length);
+    }
 
     final payload = <String, dynamic>{
       'status_visita': _toServerStatus(v.statusVisita),
@@ -531,21 +576,53 @@ class SyncEngine {
     return payload;
   }
 
+  /// Loga ERRO quando o nº de fotos capturadas localmente (paths no
+  /// fotosAntesJson/fotosDepoisJson) é MAIOR que o nº de URLs prontas pra
+  /// subir. Sinal de fotos que ficaram pra trás (upload incompleto, id
+  /// órfão, watermark travado). Vai pro auto-issue — detecção proativa
+  /// do sintoma "visita sincronizou com fotos faltando".
+  void _logDiscrepanciaFotos(
+      Visita v, String operation, String slot, int uploaded) {
+    final json = slot == 'antes' ? v.fotosAntesJson : v.fotosDepoisJson;
+    if (json == null || json.isEmpty) return;
+    int capturadas;
+    try {
+      capturadas = (jsonDecode(json) as List).length;
+    } catch (_) {
+      return;
+    }
+    if (capturadas > uploaded) {
+      _logger.log(
+          'integridade',
+          'DISCREPÂNCIA fotos $slot visitaId=${v.id} serverId=${v.serverId} '
+          'op=$operation: capturadas=$capturadas uploaded=$uploaded '
+          '(faltam ${capturadas - uploaded}) titulo=${v.titulo}',
+          erro: true);
+    }
+  }
+
   Future<void> _processOutboxItem(OutboxItem item) async {
+    // Resolve o entityId pela migração da rodada: se um item anterior
+    // (open) consolidou a visita idTemp→serverId, o entityId deste item
+    // no snapshot ainda é o idTemp. Sem isso, getVisitaById(idTemp) daria
+    // null e o item seria descartado — fotos órfãs de novo.
+    final entityId = _idsMigradosNaRodada[item.entityId] ?? item.entityId;
+
     // Princípio: não tocar no servidor sobre uma visita enquanto houver
-    // foto da mesma visita+slot ainda em processamento local
-    // (watermark_pending, pending, uploading, error). Sem isso, o
-    // INSERT 'open' subia com fotos_antes=[] e o servidor ficava com
-    // array vazio enquanto o app já considerava 'synced' — depois as
-    // URLs nunca eram vinculadas porque o pull apagava a row local e
-    // o photos_antes UPDATE subsequente era descartado por "visita não
-    // encontrada" (Cleiton/Edilson, 2026-05-20/21).
+    // foto da mesma visita+slot ainda EM PROGRESSO local (watermark_pending,
+    // pending, uploading). Sem isso, o INSERT 'open' subia com
+    // fotos_antes=[] e o servidor ficava com array vazio enquanto o app
+    // já considerava 'synced' (Cleiton/Edilson, 2026-05-20/21).
+    //
+    // 'error' (arquivo local sumiu — irrecuperável) NÃO posterga: antes
+    // travava o outbox da visita pra sempre e ela nunca sincronizava.
+    // Agora a visita vai pro servidor com as fotos que subiram.
     //
     // Pra cada operação, identifica os slots que ela vai enviar:
     //   - open / photos_antes  →  antes
     //   - close                →  antes + depois (close re-envia tudo)
     //   - photos_depois        →  depois
-    // Se algum slot ainda tem foto não-uploaded, sai sem mexer no
+    // Se algum slot ainda tem foto em progresso, sai sem mexer no
     // outbox item. O próximo ciclo de sync (disparado pela watermark
     // queue ao terminar) re-tenta — em geral em segundos.
     final slotsRequeridos = <String>[];
@@ -563,13 +640,13 @@ class SyncEngine {
         break;
     }
     for (final slot in slotsRequeridos) {
-      final naoProntas =
-          await _db.countFotosNaoUploaded(item.entityId, slot);
-      if (naoProntas > 0) {
+      final emProgresso =
+          await _db.countFotosEmProgresso(entityId, slot);
+      if (emProgresso > 0) {
         _logger.log(
             'outbox',
-            'Posterga ${item.operation} visitaId=${item.entityId}: '
-            '$naoProntas foto(s) $slot ainda em processamento');
+            'Posterga ${item.operation} visitaId=$entityId: '
+            '$emProgresso foto(s) $slot ainda em processamento');
         return;
       }
     }
@@ -581,10 +658,21 @@ class SyncEngine {
     try {
       // Lê estado completo e atual da visita no SQLite e monta payload com
       // todos os campos relevantes (replicando o app FlutterFlow antigo).
-      final visita = await _db.getVisitaById(item.entityId);
+      final visita = await _db.getVisitaById(entityId);
       if (visita == null) {
-        _logger.log('outbox',
-            'Visita local id=${item.entityId} não encontrada — descartando outbox',
+        // Sinal de id órfão: a fila aponta pra uma visita que não existe
+        // mais (pivot mal resolvido, delete prematuro). Loga contexto rico
+        // — se houver fotos uploaded penduradas nesse entityId, elas vão
+        // virar órfãs no bucket. Detecção proativa do bug-classe.
+        final fotosOrfas = await _db.getUploadedPhotoUrls(entityId, 'antes');
+        final fotosOrfasDepois =
+            await _db.getUploadedPhotoUrls(entityId, 'depois');
+        _logger.log(
+            'outbox',
+            'ÓRFÃO: visita id=$entityId (item.entityId=${item.entityId}) '
+            'não encontrada — descartando outbox op=${item.operation}. '
+            'Fotos penduradas: antes=${fotosOrfas.length} '
+            'depois=${fotosOrfasDepois.length}',
             erro: true);
         await _db.deleteOutboxItem(item.id);
         return;
@@ -598,7 +686,7 @@ class SyncEngine {
       final fotosDepoisNoPayload = payload['fotos_depois'];
       _logger.log(
           'outbox',
-          'Payload visita id=${item.entityId} op=${item.operation} '
+          'Payload visita id=$entityId op=${item.operation} '
           'campos=${payload.keys.length} '
           'fotos_antes=${fotosAntesNoPayload is List ? fotosAntesNoPayload.length : 0}urls '
           'fotos_depois=${fotosDepoisNoPayload is List ? fotosDepoisNoPayload.length : 0}urls');
@@ -606,25 +694,29 @@ class SyncEngine {
       // Decide INSERT vs UPDATE pelo serverId, não pelo id local.
       // - serverId == null: visita ainda não existe no servidor → INSERT
       // - serverId != null: já existe → UPDATE eq('id', serverId)
-      // O id local NUNCA muda — PendingPhotos/OutboxItems sempre referenciam
-      // o mesmo id estável.
       if (visita.serverId == null) {
         _logger.log('outbox',
-            'INSERT visita local id=${item.entityId} (sem serverId)');
+            'INSERT visita local id=$entityId (sem serverId)');
         final res = await _supabase
             .from('visitas')
             .insert(payload)
             .select()
             .single();
         final novoServerId = res['id'] as int;
-        _logger.log('outbox',
-            'INSERT OK: serverId=$novoServerId pra local id=${item.entityId}');
-        await _db.updateVisita(VisitasCompanion(
-          id: Value(item.entityId),
-          serverId: Value(novoServerId),
-          syncStatus: const Value('synced'),
-          syncedAt: Value(DateTime.now().toIso8601String()),
-        ));
+        // Consolida a PK local em serverId E re-vincula fotos+outbox na
+        // mesma transação. Sem isso, idTemp e serverId divergiam e as
+        // fotos/outbox ficavam órfãos (causa raiz das fotos sumindo).
+        await _db.consolidarVisitaNoServer(entityId, novoServerId);
+        // Registra a migração pra resolver os demais itens DESTA rodada
+        // (o snapshot do outbox foi lido com o entityId antigo).
+        if (entityId != novoServerId) {
+          _idsMigradosNaRodada[entityId] = novoServerId;
+          _logger.log('outbox',
+              'PIVOT idTemp=$entityId → serverId=$novoServerId consolidado '
+              '(fotos+outbox re-vinculados)');
+        } else {
+          _logger.log('outbox', 'INSERT OK serverId=$novoServerId');
+        }
       } else {
         final res = await _supabase
             .from('visitas')
@@ -633,7 +725,7 @@ class SyncEngine {
             .select();
         _logger.log(
             'outbox',
-            'UPDATE OK localId=${item.entityId} serverId=${visita.serverId} '
+            'UPDATE OK localId=$entityId serverId=${visita.serverId} '
             'op=${item.operation} rowsAfetadas=${res.length}');
         if (res.isEmpty) {
           _logger.log(
@@ -642,14 +734,14 @@ class SyncEngine {
               erro: true);
         }
         await _db.updateVisita(VisitasCompanion(
-          id: Value(item.entityId),
+          id: Value(entityId),
           syncStatus: const Value('synced'),
           syncedAt: Value(DateTime.now().toIso8601String()),
         ));
       }
       await _db.deleteOutboxItem(item.id);
     } catch (e) {
-      _logger.log('outbox', 'Falha entityId=${item.entityId}: $e', erro: true);
+      _logger.log('outbox', 'Falha entityId=$entityId: $e', erro: true);
       final attempts = item.attempts + 1;
       final delaySeconds = min(pow(2, attempts).toInt() * 30, 1800);
       final nextRetry =

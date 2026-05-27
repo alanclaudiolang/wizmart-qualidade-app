@@ -28,6 +28,7 @@ import '../../../core/utils/watermark_queue.dart';
 import '../../../core/utils/gps_status_service.dart';
 import '../../../core/utils/performance_profile.dart';
 import '../../../core/utils/error_reporter.dart';
+import '../../../core/utils/persistent_logger.dart';
 import '../../../core/utils/sync_logger.dart';
 import '../../../core/utils/app_colors.dart';
 
@@ -986,7 +987,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       final isOnline = ref.read(connectivityProvider);
       final syncEngine = ref.read(syncEngineProvider);
 
-      await db.updateVisita(VisitasCompanion(
+      final rowsAfetadas = await db.updateVisita(VisitasCompanion(
         id: drift.Value(widget.visitaId),
         statusVisita: const drift.Value(AppConstants.statusRealizada),
         diaHoraRealizado: drift.Value(agora.toIso8601String()),
@@ -1008,6 +1009,18 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         localState: const drift.Value('finalizada'),
         syncStatus: const drift.Value('pending'),
       ));
+      // INSTRUMENTAÇÃO: 0 linhas = a row com widget.visitaId não existe
+      // mais (id foi consolidado/pivotado pra serverId enquanto a tela
+      // segurava o idTemp). O finalizar seria perdido em silêncio. Loga
+      // pra confirmar se essa janela acontece em campo.
+      if (rowsAfetadas == 0) {
+        await PersistentLogger.append(
+          'integridade',
+          'FINALIZAR visitaId=${widget.visitaId} afetou 0 linhas — '
+          'id obsoleto (pivot durante a tela aberta?)',
+          erro: true,
+        );
+      }
 
       await _enfileirarVisita('close', {
         'id': widget.visitaId,

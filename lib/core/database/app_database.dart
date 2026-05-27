@@ -331,9 +331,64 @@ class AppDatabase extends _$AppDatabase {
   Future<void> upsertVisita(VisitasCompanion visita) =>
       into(visitas).insertOnConflictUpdate(visita);
 
-  Future<void> updateVisita(VisitasCompanion visita) =>
+  /// Retorna o nº de linhas afetadas. 0 = a visita com aquele id não
+  /// existe (id obsoleto/órfão) — o caller pode logar pra detectar o
+  /// "write silenciosamente perdido" que o id pivotado causaria.
+  Future<int> updateVisita(VisitasCompanion visita) =>
       (update(visitas)..where((v) => v.id.equals(visita.id.value)))
           .write(visita);
+
+  Future<Visita?> getVisitaByServerId(int serverId) =>
+      (select(visitas)..where((v) => v.serverId.equals(serverId)))
+          .getSingleOrNull();
+
+  /// Consolida uma visita recém-inserida no servidor sob a PK = serverId.
+  ///
+  /// CAUSA RAIZ histórica: a visita "vaga" nascia com PK = idTemp negativo
+  /// (-hash). PendingPhotos.visitaId e OutboxItems.entityId apontavam pra
+  /// esse idTemp. O INSERT setava só o campo serverId, mantendo a PK idTemp
+  /// — mas o pull recriava a visita com PK = serverId (upsert). As duas
+  /// premissas conflitavam: a row idTemp era deletada/duplicada e as fotos
+  /// + outbox ficavam ÓRFÃS (getUploadedPhotoUrls não achava as URLs,
+  /// _processOutboxItem descartava por "visita não encontrada"). Fotos
+  /// iam pro bucket mas nunca eram vinculadas à tabela.
+  ///
+  /// Solução: ao receber o serverId no INSERT, migra a PK idTemp→serverId
+  /// E re-vincula fotos e outbox na MESMA transação. A partir daí tudo
+  /// referencia serverId — alinhado com o que o pull (upsert id=serverId)
+  /// já espera. Sem órfãos, sem duplicatas, sem pivot.
+  Future<void> consolidarVisitaNoServer(int idLocal, int serverId) async {
+    final agora = DateTime.now().toIso8601String();
+    if (idLocal == serverId) {
+      // Já alinhado (re-edição de visita já sincronizada). Só marca synced.
+      await (update(visitas)..where((v) => v.id.equals(idLocal))).write(
+        VisitasCompanion(
+          serverId: Value(serverId),
+          syncStatus: const Value('synced'),
+          syncedAt: Value(agora),
+        ),
+      );
+      return;
+    }
+    await transaction(() async {
+      // Remove duplicata órfã com PK=serverId que um pull anterior possa
+      // ter criado (pivot histórico). A row idLocal abaixo é a fonte real
+      // — ela tem as fotos/outbox vinculados.
+      await (delete(visitas)..where((v) => v.id.equals(serverId))).go();
+      await (update(visitas)..where((v) => v.id.equals(idLocal))).write(
+        VisitasCompanion(
+          id: Value(serverId),
+          serverId: Value(serverId),
+          syncStatus: const Value('synced'),
+          syncedAt: Value(agora),
+        ),
+      );
+      await (update(pendingPhotos)..where((p) => p.visitaId.equals(idLocal)))
+          .write(PendingPhotosCompanion(visitaId: Value(serverId)));
+      await (update(outboxItems)..where((o) => o.entityId.equals(idLocal)))
+          .write(OutboxItemsCompanion(entityId: Value(serverId)));
+    });
+  }
 
   Future<Map<String, int>> getContadoresHoje(int promotorId) async {
     final hoje = DateTime.now();
@@ -438,18 +493,25 @@ class AppDatabase extends _$AppDatabase {
       (delete(pendingPhotos)..where((p) => p.localPath.equals(localPath)))
           .go();
 
-  /// Conta fotos da visita+slot que AINDA NÃO terminaram o ciclo local
-  /// (watermark_pending, pending, uploading, error). Usado pelo sync
-  /// engine pra postergar operações que tocariam o servidor antes do
-  /// processamento local terminar — princípio: nada vai pro servidor
-  /// sobre uma visita até todas as fotos daquele slot estarem em
-  /// 'uploaded'.
-  Future<int> countFotosNaoUploaded(int visitaId, String slot) async {
+  /// Conta fotos da visita+slot que ainda estão EM PROGRESSO local
+  /// (watermark_pending, pending, uploading). Usado pelo sync engine
+  /// pra postergar operações que tocariam o servidor antes do
+  /// processamento local terminar.
+  ///
+  /// 'error' NÃO conta como em-progresso: é estado terminal e
+  /// irrecuperável (o arquivo local sumiu — ver _processPhotoUpload).
+  /// Antes 'error' era contado e travava o outbox da visita PRA SEMPRE
+  /// — a operação era postergada indefinidamente e a visita nunca
+  /// sincronizava. Agora a visita sincroniza com as fotos que subiram;
+  /// a que falhou (arquivo inexistente) fica de fora, sem bloquear.
+  Future<int> countFotosEmProgresso(int visitaId, String slot) async {
     final rows = await (select(pendingPhotos)
           ..where((p) =>
               p.visitaId.equals(visitaId) &
               p.slot.equals(slot) &
-              p.status.equals('uploaded').not()))
+              (p.status.equals('watermark_pending') |
+                  p.status.equals('pending') |
+                  p.status.equals('uploading'))))
         .get();
     return rows.length;
   }
@@ -481,6 +543,62 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> upsertSyncState(SyncStateCompanion state) =>
       into(syncState).insertOnConflictUpdate(state);
+
+  // ── Lock de sync CROSS-PROCESS ───────────────────────────────────────────
+  //
+  // O app em foreground e o isolate do WorkManager abrem o MESMO arquivo
+  // SQLite, mas são processos/isolates distintos — um lock em memória
+  // (campo bool) NÃO é compartilhado entre eles. Sem lock real, os dois
+  // rodavam push+pull ao mesmo tempo: o pull de um deletava local
+  // (deleteVisitasSincronizadasSemPendencias) enquanto o push do outro
+  // inseria, abrindo a janela de fotos/outbox órfãos que vinha causando
+  // as visitas com fotos sumidas mesmo após os fixes em memória.
+  //
+  // Implementação: UPDATE condicional numa linha dedicada da SyncState
+  // ('__sync_lock__'). O UPDATE é atômico no SQLite (serializado por
+  // busy_timeout), então só UM processo consegue adquirir. lastPullAt
+  // guarda o instante de expiração (millis, zero-pad pra comparação
+  // lexicográfica == numérica) e lastPushAt guarda o dono.
+  static const _lockRow = '__sync_lock__';
+
+  static String _ts(int millis) => millis.toString().padLeft(15, '0');
+
+  /// Tenta adquirir o lock. Retorna true se conseguiu. O lock expira
+  /// sozinho após [ttlMs] — protege contra um isolate que morra segurando
+  /// o lock (crash, kill do SO).
+  Future<bool> tryAcquireSyncLock(
+      {required String holder, required int ttlMs}) async {
+    final agora = DateTime.now().millisecondsSinceEpoch;
+    // Garante a existência da linha de lock sem sobrescrever um lock ativo.
+    await into(syncState).insert(
+      SyncStateCompanion(
+        entityType: const Value(_lockRow),
+        lastPullAt: Value(_ts(0)),
+      ),
+      mode: InsertMode.insertOrIgnore,
+    );
+    // Adquire só se o lock anterior já expirou (until < agora). UPDATE
+    // condicional atômico: o 2º processo concorrente vê o until já no
+    // futuro (escrito pelo 1º) e não casa o WHERE → 0 linhas.
+    final rows = await (update(syncState)
+          ..where((s) =>
+              s.entityType.equals(_lockRow) &
+              s.lastPullAt.isSmallerThanValue(_ts(agora))))
+        .write(SyncStateCompanion(
+      lastPullAt: Value(_ts(agora + ttlMs)),
+      lastPushAt: Value(holder),
+    ));
+    return rows > 0;
+  }
+
+  /// Libera o lock apenas se [holder] for o dono atual (evita um processo
+  /// liberar o lock que outro adquiriu depois da expiração).
+  Future<void> releaseSyncLock(String holder) async {
+    await (update(syncState)
+          ..where((s) =>
+              s.entityType.equals(_lockRow) & s.lastPushAt.equals(holder)))
+        .write(SyncStateCompanion(lastPullAt: Value(_ts(0))));
+  }
 }
 
 LazyDatabase _openConnection() {
