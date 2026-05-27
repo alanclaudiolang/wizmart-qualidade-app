@@ -533,6 +533,62 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> upsertSyncState(SyncStateCompanion state) =>
       into(syncState).insertOnConflictUpdate(state);
+
+  // ── Lock de sync CROSS-PROCESS ───────────────────────────────────────────
+  //
+  // O app em foreground e o isolate do WorkManager abrem o MESMO arquivo
+  // SQLite, mas são processos/isolates distintos — um lock em memória
+  // (campo bool) NÃO é compartilhado entre eles. Sem lock real, os dois
+  // rodavam push+pull ao mesmo tempo: o pull de um deletava local
+  // (deleteVisitasSincronizadasSemPendencias) enquanto o push do outro
+  // inseria, abrindo a janela de fotos/outbox órfãos que vinha causando
+  // as visitas com fotos sumidas mesmo após os fixes em memória.
+  //
+  // Implementação: UPDATE condicional numa linha dedicada da SyncState
+  // ('__sync_lock__'). O UPDATE é atômico no SQLite (serializado por
+  // busy_timeout), então só UM processo consegue adquirir. lastPullAt
+  // guarda o instante de expiração (millis, zero-pad pra comparação
+  // lexicográfica == numérica) e lastPushAt guarda o dono.
+  static const _lockRow = '__sync_lock__';
+
+  static String _ts(int millis) => millis.toString().padLeft(15, '0');
+
+  /// Tenta adquirir o lock. Retorna true se conseguiu. O lock expira
+  /// sozinho após [ttlMs] — protege contra um isolate que morra segurando
+  /// o lock (crash, kill do SO).
+  Future<bool> tryAcquireSyncLock(
+      {required String holder, required int ttlMs}) async {
+    final agora = DateTime.now().millisecondsSinceEpoch;
+    // Garante a existência da linha de lock sem sobrescrever um lock ativo.
+    await into(syncState).insert(
+      SyncStateCompanion(
+        entityType: const Value(_lockRow),
+        lastPullAt: Value(_ts(0)),
+      ),
+      mode: InsertMode.insertOrIgnore,
+    );
+    // Adquire só se o lock anterior já expirou (until < agora). UPDATE
+    // condicional atômico: o 2º processo concorrente vê o until já no
+    // futuro (escrito pelo 1º) e não casa o WHERE → 0 linhas.
+    final rows = await (update(syncState)
+          ..where((s) =>
+              s.entityType.equals(_lockRow) &
+              s.lastPullAt.isSmallerThanValue(_ts(agora))))
+        .write(SyncStateCompanion(
+      lastPullAt: Value(_ts(agora + ttlMs)),
+      lastPushAt: Value(holder),
+    ));
+    return rows > 0;
+  }
+
+  /// Libera o lock apenas se [holder] for o dono atual (evita um processo
+  /// liberar o lock que outro adquiriu depois da expiração).
+  Future<void> releaseSyncLock(String holder) async {
+    await (update(syncState)
+          ..where((s) =>
+              s.entityType.equals(_lockRow) & s.lastPushAt.equals(holder)))
+        .write(SyncStateCompanion(lastPullAt: Value(_ts(0))));
+  }
 }
 
 LazyDatabase _openConnection() {

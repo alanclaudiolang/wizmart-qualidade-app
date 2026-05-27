@@ -17,17 +17,23 @@ class SyncEngine {
   final AppDatabase _db;
   final SupabaseClient _supabase;
   final SyncLoggerNotifier _logger;
-  /// Lock ÚNICO compartilhado entre pullAll e processOutbox. Antes
-  /// eram dois trincos separados (_pulling e _running) e push/pull
-  /// rodavam em paralelo — abria janela onde:
-  ///   1) pull buscava `realizadasRows` do servidor (snapshot antigo)
-  ///   2) push concorrente inseria visita nova no servidor
-  ///   3) pull deletava local synced (sem ver a visita recém-criada)
-  ///   4) pull recriava como vaga agendada usando a Edge Function
-  /// O outbox item subsequente era descartado (visita local sumiu),
-  /// fotos no bucket ficavam órfãs e a row no servidor `visitas`
-  /// nunca era criada (Jessica/AKAD-SEGUROS+ENEL-SOCORRO 2026-05-26).
+
+  /// Lock de re-entrância DESTE isolate. Cobre o caso de dois gatilhos
+  /// do mesmo app dispararem sync ao mesmo tempo. NÃO basta sozinho: o
+  /// WorkManager roda noutro isolate, com outra instância de SyncEngine
+  /// e outro `_syncing`. Por isso o lock real é o cross-process do
+  /// SQLite (tryAcquireSyncLock) — sem ele, push de um processo e pull
+  /// do outro concorriam e deixavam fotos/outbox órfãos (a recorrência
+  /// que persistia mesmo após os fixes anteriores).
   bool _syncing = false;
+
+  /// Identidade desta instância pra dono do lock cross-process.
+  final String _instanceId = const Uuid().v4();
+
+  /// TTL do lock cross-process. Folgado vs. a duração real de um ciclo
+  /// (~10-30s) mas curto o bastante pra liberar se um isolate morrer
+  /// segurando o lock.
+  static const _lockTtlMs = 240000;
 
   /// Migrações idTemp→serverId feitas durante a rodada atual de
   /// processOutbox. O snapshot do outbox é lido de uma vez no início;
@@ -38,34 +44,56 @@ class SyncEngine {
 
   SyncEngine(this._db, this._supabase, this._logger);
 
-  Future<void> pullAll(int promotorId) async {
+  /// Executa [action] sob exclusão mútua: re-entrância no mesmo isolate
+  /// (_syncing) + lock cross-process no SQLite (app ↔ WorkManager).
+  /// Se já houver sync rodando em qualquer processo, pula o ciclo.
+  Future<void> _runExclusive(String label, Future<void> Function() action) async {
     if (_syncing) {
-      _logger.log('início',
-          'pullAll ignorado (sync em andamento) — promotor $promotorId');
+      _logger.log('sync', '$label ignorado (sync em andamento neste app)');
+      return;
+    }
+    final adquiriu = await _db.tryAcquireSyncLock(
+        holder: _instanceId, ttlMs: _lockTtlMs);
+    if (!adquiriu) {
+      _logger.log('sync', '$label ignorado (outro processo sincronizando)');
       return;
     }
     _syncing = true;
-    _logger.log(
-        'início', 'Iniciando sincronização para promotor $promotorId');
     try {
-      await _pullPdvs(promotorId);
-      await _pullGabaritos(promotorId);
-      await _pullVisitasDia(promotorId);
-      _logger.log('fim', 'Sincronização concluída');
+      await action();
     } finally {
       _syncing = false;
+      await _db.releaseSyncLock(_instanceId);
     }
+  }
+
+  Future<void> pullAll(int promotorId) =>
+      _runExclusive('pullAll', () => _pullAllImpl(promotorId));
+
+  Future<void> _pullAllImpl(int promotorId) async {
+    _logger.log(
+        'início', 'Iniciando sincronização para promotor $promotorId');
+    await _pullPdvs(promotorId);
+    await _pullGabaritos(promotorId);
+    await _pullVisitasDia(promotorId);
+    _logger.log('fim', 'Sincronização concluída');
   }
 
   /// Ciclo completo de sincronização usado por todos os gatilhos:
   ///   1) PUSH: envia tudo que está pendente local pro servidor
   ///   2) PULL: apaga local sincronizado e re-baixa do servidor
-  /// Garante que app e servidor fiquem idênticos após cada execução.
-  /// Push antes de pull pra não perder dados locais que ainda não
-  /// foram enviados.
+  /// Push e pull rodam sob o MESMO lock — são uma unidade atômica, sem
+  /// outro processo entrando entre o push e o pull. Push antes de pull
+  /// pra não perder dados locais que ainda não foram enviados.
   Future<void> fullSync(int promotorId) async {
-    await processOutbox();
-    await pullAll(promotorId);
+    if (await SyncPause.isPaused()) {
+      _logger.log('sync', 'fullSync pausado (captura ativa).');
+      return;
+    }
+    await _runExclusive('fullSync', () async {
+      await _processOutboxImpl();
+      await _pullAllImpl(promotorId);
+    });
   }
 
   Future<void> _pullVisitasDia(int promotorId) async {
@@ -410,38 +438,36 @@ class SyncEngine {
   }
 
   Future<void> processOutbox() async {
-    if (_syncing) return;
-    // Bloqueio único pra TODOS os gatilhos: durante captura (grid de fotos
-    // ou câmera aberta), nada sincroniza, independentemente da origem
-    // do trigger (foreground, WorkManager, listener, etc.).
+    // Bloqueio durante captura (grid de fotos ou câmera aberta): nada
+    // sincroniza, independentemente da origem do trigger (foreground,
+    // WorkManager, listener, etc.).
     if (await SyncPause.isPaused()) {
       _logger.log('sync', 'Pausado (captura ativa) — pulando ciclo.');
       return;
     }
-    _syncing = true;
+    await _runExclusive('processOutbox', _processOutboxImpl);
+  }
+
+  Future<void> _processOutboxImpl() async {
     _idsMigradosNaRodada.clear();
-    try {
-      // FOTOS PRIMEIRO: o upload em Storage gera URLs públicas e grava
-      // em pending_photos.storageUrl. Quando o INSERT/UPDATE da visita
-      // rodar a seguir, o _buildVisitaPayload lê essas URLs e envia
-      // tudo num único request — em vez de 1 INSERT + N UPDATEs.
-      // Upload e outbox NÃO marcam ProcessingTracker — engrenagem reflete
-      // só processamento interno (watermark + galeria), que é rápido
-      // e independe de internet. Sincronismo com servidor roda
-      // silenciosamente em background; bloquear a home por ele
-      // amarraria o promotor à conexão.
-      final photos = await _db.getPendingPhotos();
-      for (final photo in photos) {
-        await _processPhotoUpload(photo);
-      }
-      // Reler outbox: o upload das fotos pode ter enfileirado UPDATEs
-      // pra visitas com serverId já existente (fluxo de re-edição).
-      final items = await _db.getPendingOutboxItems();
-      for (final item in items) {
-        await _processOutboxItem(item);
-      }
-    } finally {
-      _syncing = false;
+    // FOTOS PRIMEIRO: o upload em Storage gera URLs públicas e grava
+    // em pending_photos.storageUrl. Quando o INSERT/UPDATE da visita
+    // rodar a seguir, o _buildVisitaPayload lê essas URLs e envia
+    // tudo num único request — em vez de 1 INSERT + N UPDATEs.
+    // Upload e outbox NÃO marcam ProcessingTracker — engrenagem reflete
+    // só processamento interno (watermark + galeria), que é rápido
+    // e independe de internet. Sincronismo com servidor roda
+    // silenciosamente em background; bloquear a home por ele
+    // amarraria o promotor à conexão.
+    final photos = await _db.getPendingPhotos();
+    for (final photo in photos) {
+      await _processPhotoUpload(photo);
+    }
+    // Reler outbox: o upload das fotos pode ter enfileirado UPDATEs
+    // pra visitas com serverId já existente (fluxo de re-edição).
+    final items = await _db.getPendingOutboxItems();
+    for (final item in items) {
+      await _processOutboxItem(item);
     }
   }
 
