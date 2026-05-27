@@ -79,8 +79,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (session == null) return;
     final syncEngine = ref.read(syncEngineProvider);
     try {
-      await syncEngine.pullAll(session.userId);
-      await syncEngine.processOutbox();
+      // PUSH antes de PULL: pull deleta visitas synced sem pendência
+      // local. Se rodar antes do push, visitas com outbox pendente que
+      // o app ainda não enfileirou (ex: open recém-criado num gap entre
+      // updateVisita e insertOutboxItem) podem ser apagadas.
+      await syncEngine.fullSync(session.userId);
     } catch (e) {
       debugPrint('Auto-sync falhou: $e');
     }
@@ -383,14 +386,13 @@ class _HomeContent extends ConsumerWidget {
     final pdvsAsync = ref.watch(pdvsProvider);
 
     // Quando a rede volta (offline → online) enquanto a home está aberta,
-    // dispara um sync completo (pullAll + processOutbox) e invalida os
+    // dispara um sync completo (push antes de pull) e invalida os
     // providers — sem isso, o promotor precisava pull-to-refresh.
     ref.listen<bool>(connectivityProvider, (prev, next) async {
       if (prev == false && next == true) {
         final engine = ref.read(syncEngineProvider);
         try {
-          await engine.pullAll(session.userId);
-          await engine.processOutbox();
+          await engine.fullSync(session.userId);
         } catch (_) {}
         // Widget pode ter sido descartado durante o sync (promotor saiu
         // pra outra tela, logout, etc) — sem este guard, ref.invalidate
@@ -575,8 +577,10 @@ class _HomeContent extends ConsumerWidget {
         onRefresh: () async {
           if (isOnline) {
             final syncEngine = ref.read(syncEngineProvider);
-            await syncEngine.pullAll(session.userId);
-            await syncEngine.processOutbox();
+            // PUSH antes de PULL — pull deleta visitas synced sem
+            // pendência; se rodar antes, perde trabalho ainda não
+            // enfileirado no outbox.
+            await syncEngine.fullSync(session.userId);
             // Guard contra o widget ter sido descartado durante o sync.
             if (!context.mounted) return;
             ref.invalidate(contadoresProvider(session.userId));
