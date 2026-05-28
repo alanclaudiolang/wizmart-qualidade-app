@@ -1,4 +1,5 @@
 # Codemagic CI — build iOS + publicação automática no TestFlight.
+# First trigger: 2026-05-28 (configs Apple + integration prontos).
 #
 # Espelha o pipeline Android de .github/workflows/build_apk.yml, mas
 # pra iOS: gera .ipa assinado e sobe pro App Store Connect → TestFlight.
