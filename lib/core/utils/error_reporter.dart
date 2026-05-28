@@ -16,6 +16,7 @@
 //     bateria, versão, últimas 500 linhas do log persistente.
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:battery_plus/battery_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -211,14 +212,27 @@ class ErrorReporter {
       };
     } catch (_) {}
     try {
-      final info = await DeviceInfoPlugin().androidInfo;
-      out['device'] = {
-        'marca': info.brand,
-        'fabricante': info.manufacturer,
-        'modelo': info.model,
-        'androidVersion': info.version.release,
-        'sdkInt': info.version.sdkInt,
-      };
+      final plugin = DeviceInfoPlugin();
+      if (Platform.isIOS) {
+        final info = await plugin.iosInfo;
+        out['device'] = {
+          'plataforma': 'iOS',
+          'nome': info.name,
+          'modelo': info.utsname.machine, // ex: iPhone14,2
+          'modeloComercial': info.model,
+          'iosVersion': info.systemVersion,
+        };
+      } else {
+        final info = await plugin.androidInfo;
+        out['device'] = {
+          'plataforma': 'Android',
+          'marca': info.brand,
+          'fabricante': info.manufacturer,
+          'modelo': info.model,
+          'androidVersion': info.version.release,
+          'sdkInt': info.version.sdkInt,
+        };
+      }
     } catch (_) {}
     try {
       out['ramTotalMb'] = await SystemInfoPlus.physicalMemory;

@@ -50,3 +50,6 @@ app.*.map.json
 
 # Vídeos temporários enviados pra debug — não comitar
 .tmp-videos/
+
+# Config local do Claude Code (pode conter credenciais)
+.claude/settings.local.json
