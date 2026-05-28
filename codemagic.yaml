@@ -62,8 +62,7 @@ workflows:
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --create \
-            --certificate-key-path=/tmp/cm_cert_key \
-            --save
+            --certificate-key=@file:/tmp/cm_cert_key
 
       - name: Aplicar profiles no Xcode project
         script: |
