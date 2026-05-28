@@ -1,4 +1,5 @@
 # Codemagic CI — build iOS + publicação automática no TestFlight.
+# First trigger: 2026-05-28 (configs Apple + integration prontos).
 #
 # Espelha o pipeline Android de .github/workflows/build_apk.yml, mas
 # pra iOS: gera .ipa assinado e sobe pro App Store Connect → TestFlight.
@@ -20,10 +21,10 @@ workflows:
     environment:
       groups:
         - wizmart-secrets
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.wizmart.promotor
-      flutter: 3.35.0
+      vars:
+        BUNDLE_ID: com.wizmart.promotor
+        APP_STORE_APPLE_ID: 6774250898
+      flutter: 3.41.9
       xcode: latest
       cocoapods: default
 
@@ -42,6 +43,30 @@ workflows:
           source: true
 
     scripts:
+      - name: Inicializar keychain
+        script: |
+          keychain initialize
+
+      - name: Buscar/criar signing files (auto-create na 1ª execução)
+        # `--create` cria o cert e o profile via App Store Connect API
+        # se ainda não existirem. Requer API key Admin.
+        #
+        # A private key vem de CERT_PRIVATE_KEY (env var persistente em
+        # wizmart-secrets) — gerar nova a cada build não funciona porque
+        # Apple limita certs DISTRIBUTION por time, e cada cert é casado
+        # com UMA private key específica. Persistir a key garante que
+        # builds subsequentes encontram o cert existente e reusam.
+        script: |
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create \
+            --certificate-key=@env:CERT_PRIVATE_KEY
+
+      - name: Aplicar profiles no Xcode project
+        script: |
+          keychain add-certificates
+          xcode-project use-profiles
+
       - name: Flutter packages
         script: |
           flutter packages pub get
@@ -53,13 +78,6 @@ workflows:
       - name: Instalar pods
         script: |
           find . -name "Podfile" -execdir pod install \;
-
-      - name: Configurar signing automático
-        # Baixa o cert + provisioning profile via integração App Store
-        # Connect e aplica no Xcode project. Auto-cria o profile na
-        # primeira execução se não existir pro bundle id.
-        script: |
-          xcode-project use-profiles
 
       - name: Computar metadados do build
         script: |

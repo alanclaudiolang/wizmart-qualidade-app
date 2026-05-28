@@ -618,10 +618,14 @@ class SyncEngine {
     // travava o outbox da visita pra sempre e ela nunca sincronizava.
     // Agora a visita vai pro servidor com as fotos que subiram.
     //
-    // Pra cada operação, identifica os slots que ela vai enviar:
-    //   - open / photos_antes  →  antes
-    //   - close                →  antes + depois (close re-envia tudo)
-    //   - photos_depois        →  depois
+    // Pra cada operação, identifica os slots que ela exige completos:
+    //   - open / photos_antes  →  antes (visita ainda em fase antes)
+    //   - close / photos_depois → antes + depois (payload inclui ambos
+    //     os arrays, então qualquer envio nessa fase precisa dos dois
+    //     completos pra não subir parcial — caso Alexsandra 2026-05-28
+    //     issue #23: rede ruim deixou 2 antes em pending, photos_depois
+    //     rodou só checando 'depois' e subiu a visita com 2 antes
+    //     faltando. DISCREPÂNCIA capturou no log).
     // Se algum slot ainda tem foto em progresso, sai sem mexer no
     // outbox item. O próximo ciclo de sync (disparado pela watermark
     // queue ao terminar) re-tenta — em geral em segundos.
@@ -632,10 +636,8 @@ class SyncEngine {
         slotsRequeridos.add('antes');
         break;
       case 'close':
-        slotsRequeridos.add('antes');
-        slotsRequeridos.add('depois');
-        break;
       case 'photos_depois':
+        slotsRequeridos.add('antes');
         slotsRequeridos.add('depois');
         break;
     }

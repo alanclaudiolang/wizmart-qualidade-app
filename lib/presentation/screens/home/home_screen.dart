@@ -283,79 +283,12 @@ class _HomeContent extends ConsumerWidget {
     if (context.mounted) context.go('/auth');
   }
 
-  /// Diálogo "Reportar problema" — promotor descreve o que aconteceu,
-  /// app cria issue no GitHub com a descrição + log do dia + contexto
-  /// do device. Usado quando ele percebe um bug que não gerou crash
-  /// (e portanto o reporter automático não pegou).
+  /// "Reportar problema" — envia o log do dia + contexto do device + BUILD
+  /// direto pro GitHub, sem pedir texto ao promotor. A descrição livre
+  /// raramente trazia informação útil ("não funciona", vazio); o que
+  /// importa pra diagnóstico está no log+sondas. Zero atrito = mais
+  /// relatos chegam = mais cobertura.
   Future<void> _reportarProblema(BuildContext context) async {
-    final ctrl = TextEditingController();
-    final descricao = await showDialog<String>(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: AppColors.card,
-        title: const Text(
-          'Reportar problema',
-          style: TextStyle(color: AppColors.textPrimary),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'Descreva brevemente o que aconteceu. O log do app vai ser '
-              'enviado junto pra ajudar a investigar.',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              maxLines: 5,
-              minLines: 3,
-              autofocus: true,
-              maxLength: 500,
-              style: const TextStyle(color: AppColors.textPrimary),
-              decoration: InputDecoration(
-                hintText: 'Ex: cliquei em concluir e a tela ficou em branco…',
-                hintStyle: const TextStyle(color: AppColors.textMuted),
-                filled: true,
-                fillColor: AppColors.inputBg,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: const Text(
-              'Cancelar',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              final texto = ctrl.text.trim();
-              if (texto.isEmpty) return;
-              Navigator.of(dialogCtx).pop(texto);
-            },
-            child: const Text(
-              'Enviar',
-              style: TextStyle(
-                color: AppColors.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-    ctrl.dispose();
-    if (descricao == null || descricao.isEmpty) return;
-    if (!context.mounted) return;
-
     // Loading não bloqueante — promotor pode fechar e seguir vivendo.
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -364,7 +297,9 @@ class _HomeContent extends ConsumerWidget {
       ),
     );
 
-    final numero = await ErrorReporter.reportarUsuario(descricao: descricao);
+    final numero = await ErrorReporter.reportarUsuario(
+      descricao: '(relato sem descrição — log+sondas no body)',
+    );
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
