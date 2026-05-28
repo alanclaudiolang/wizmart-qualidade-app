@@ -79,5 +79,11 @@
 		<string>fetch</string>
 		<string>processing</string>
 	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>wizmart_bg_sync</string>
+		<string>be.tramckrijte.workmanager.iOSBackgroundAppRefresh</string>
+		<string>be.tramckrijte.workmanager.iOSBackgroundProcessingTask</string>
+	</array>
 </dict>
 </plist>
