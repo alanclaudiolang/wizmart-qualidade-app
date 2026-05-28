@@ -52,10 +52,18 @@ workflows:
         # provisioning profile via App Store Connect API se ainda
         # não existirem pra esse bundle id. Requer API key com
         # role Admin.
+        #
+        # Na 1ª execução o time da Apple ainda não tem distribution
+        # cert, então precisamos gerar uma private key local pra a
+        # CLI criar a CSR e registrar o cert novo. O --save persiste
+        # cert+key no env do Codemagic pra reusar em builds futuros.
         script: |
+          ssh-keygen -t rsa -b 2048 -m PEM -f /tmp/cm_cert_key -q -N ""
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
-            --create
+            --create \
+            --certificate-key-path=/tmp/cm_cert_key \
+            --save
 
       - name: Aplicar profiles no Xcode project
         script: |
