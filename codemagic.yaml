@@ -24,7 +24,7 @@ workflows:
       vars:
         BUNDLE_ID: com.wizmart.promotor
         APP_STORE_APPLE_ID: 6774250898
-      flutter: 3.35.0
+      flutter: 3.41.9
       xcode: latest
       cocoapods: default
 
