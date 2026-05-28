@@ -48,21 +48,19 @@ workflows:
           keychain initialize
 
       - name: Buscar/criar signing files (auto-create na 1ª execução)
-        # `--create` faz o Codemagic criar o certificado e o
-        # provisioning profile via App Store Connect API se ainda
-        # não existirem pra esse bundle id. Requer API key com
-        # role Admin.
+        # `--create` cria o cert e o profile via App Store Connect API
+        # se ainda não existirem. Requer API key Admin.
         #
-        # Na 1ª execução o time da Apple ainda não tem distribution
-        # cert, então precisamos gerar uma private key local pra a
-        # CLI criar a CSR e registrar o cert novo. O --save persiste
-        # cert+key no env do Codemagic pra reusar em builds futuros.
+        # A private key vem de CERT_PRIVATE_KEY (env var persistente em
+        # wizmart-secrets) — gerar nova a cada build não funciona porque
+        # Apple limita certs DISTRIBUTION por time, e cada cert é casado
+        # com UMA private key específica. Persistir a key garante que
+        # builds subsequentes encontram o cert existente e reusam.
         script: |
-          ssh-keygen -t rsa -b 2048 -m PEM -f /tmp/cm_cert_key -q -N ""
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --create \
-            --certificate-key=@file:/tmp/cm_cert_key
+            --certificate-key=@env:CERT_PRIVATE_KEY
 
       - name: Aplicar profiles no Xcode project
         script: |
