@@ -3,6 +3,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'package:crypto/crypto.dart' show sha1;
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -12,6 +13,34 @@ import '../database/app_database.dart';
 import '../constants/app_constants.dart';
 import '../utils/sync_logger.dart';
 import 'sync_pause.dart';
+
+/// Hash determinístico ENTRE RUNS pra usar como idTemp local e como
+/// fragmento estável no nome do arquivo no Storage.
+///
+/// O `Object.hash(int, int, String)` que era usado antes mistura
+/// `String.hashCode`, que em Dart é RANDOMIZADO por inicialização de
+/// isolate (defesa contra hash flooding). Cada relançamento do app
+/// produzia idTemp diferente pra mesma chave natural (gabarito|pdv|turno),
+/// criando linhas duplicadas em `visitas` e órfãs em `pending_photos`/
+/// `outbox_items` — pendências se acumulavam até o promotor ficar com
+/// 150+ itens travados (caso Gabriel/335 em 2026-05-29, confirmado por
+/// 11 arquivos órfãos no bucket dele em path
+/// `abastecimentos/<uid>/visita-<hash>-<slot>-N.jpg` — exatamente o que
+/// `_processPhotoUpload` gera quando `getVisitaById(visitaId)` retorna
+/// null porque a row foi pivotada pra outro idTemp).
+///
+/// SHA-1 dos bytes UTF-8 da chave dá mesmo resultado em qualquer isolate
+/// / qualquer run / qualquer device.
+int _hashDeterministico(int gabaritoId, int pdvId, String turno) {
+  final bytes = utf8.encode('$gabaritoId|$pdvId|$turno');
+  final digest = sha1.convert(bytes).bytes;
+  // 4 primeiros bytes como int32 positivo (cabe em SQLite INTEGER).
+  return ((digest[0] << 24) |
+          (digest[1] << 16) |
+          (digest[2] << 8) |
+          digest[3]) &
+      0x7FFFFFFF;
+}
 
 class SyncEngine {
   final AppDatabase _db;
@@ -263,11 +292,12 @@ class SyncEngine {
             syncedAt: Value(DateTime.now().toIso8601String()),
           ));
         } else {
-          // Hash robusto da chave natural pra evitar colisão de idTemp.
-          // Fórmula antiga (gabarito*10000 + pdv + turno.hashCode%1000) colidia
-          // pra ids de PDV > 10000, fazendo pending_photos.visitaId apontar
-          // pra visita errada e fotos aparecerem misturadas no insert.
-          final idTemp = -(Object.hash(gabaritoId, pdvId, turno).abs() % 0x7FFFFFFF);
+          // idTemp DETERMINÍSTICO entre runs do app (SHA-1 da chave natural).
+          // Antes era Object.hash que mudava a cada relançamento do isolate
+          // (String.hashCode randomizado), causando duplicação de linhas
+          // locais e órfãos em pending_photos/outbox — ver comentário do
+          // _hashDeterministico.
+          final idTemp = -_hashDeterministico(gabaritoId, pdvId, turno);
           await _db.upsertVisita(VisitasCompanion(
             id: Value(idTemp),
             // serverId fica null — sync_engine vai criar no servidor depois
@@ -855,15 +885,15 @@ class SyncEngine {
       }
       final nomeBase = _limparNomeArquivo(visita?.titulo ?? 'visita');
       final ext = photo.localPath.split('.').last.toLowerCase();
-      // Hash da chave natural da visita — incluído no nome do arquivo pra
-      // garantir caminho único mesmo se títulos forem parecidos ou outra
-      // visita do mesmo PDV existir. Defesa contra a mistura de fotos
-      // observada em produção (Wendel, 2026-05).
-      final visitaHash = Object.hash(
-        visita?.idGabaritoAssociado,
-        visita?.idPdvAssociado,
-        visita?.previsaoTurnoRealizada,
-      ).abs();
+      // Hash DETERMINÍSTICO da chave natural — mesma foto física gera
+      // mesmo nome de arquivo entre runs. Antes, Object.hash com String
+      // gerava nomes diferentes a cada relançamento, poluindo o bucket
+      // com N cópias da mesma foto e dificultando recuperação de dados.
+      final visitaHash = _hashDeterministico(
+        visita?.idGabaritoAssociado ?? 0,
+        visita?.idPdvAssociado ?? 0,
+        visita?.previsaoTurnoRealizada ?? '',
+      );
       // Sanitiza cada segmento — Supabase Storage rejeita :, espaços e acentos
       final dataSeg = _sanitizePathSegment(dataAgendadoBr);
       final nomeSeg = _sanitizePathSegment(nomeBase);
