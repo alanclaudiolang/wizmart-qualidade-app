@@ -85,5 +85,10 @@
 		<string>be.tramckrijte.workmanager.iOSBackgroundAppRefresh</string>
 		<string>be.tramckrijte.workmanager.iOSBackgroundProcessingTask</string>
 	</array>
+	<!-- App usa apenas criptografia padrão isenta (HTTPS via Supabase
+	     e Keychain via flutter_secure_storage). Declarar false aqui
+	     evita o popup "Faltam dados de conformidade" em todo build. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
