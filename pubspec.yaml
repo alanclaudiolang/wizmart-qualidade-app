@@ -54,6 +54,7 @@ dependencies:
   intl: ^0.19.0
   collection: ^1.18.0
   shared_preferences: ^2.2.3
+  crypto: ^3.0.3
 
   # Device info (campo device_info da tabela users)
   device_info_plus: ^11.1.0
