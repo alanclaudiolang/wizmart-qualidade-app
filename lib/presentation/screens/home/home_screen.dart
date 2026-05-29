@@ -289,11 +289,30 @@ class _HomeContent extends ConsumerWidget {
   /// importa pra diagnóstico está no log+sondas. Zero atrito = mais
   /// relatos chegam = mais cobertura.
   Future<void> _reportarProblema(BuildContext context) async {
-    // Loading não bloqueante — promotor pode fechar e seguir vivendo.
-    ScaffoldMessenger.of(context).showSnackBar(
+    // Snackbar PERSISTENTE durante o envio (com spinner) — antes era
+    // duration de 2s e sumia enquanto o POST continuava em background,
+    // promotor pensava que travou e clicava de novo, criando duplicatas
+    // (caso Caline+Paula no build 176, issues #34/#35 e #37/#38).
+    // Aqui usamos duration longa e descartamos via hideCurrentSnackBar
+    // assim que o resultado chega.
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
       const SnackBar(
-        content: Text('Enviando relato…'),
-        duration: Duration(seconds: 2),
+        content: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            ),
+            SizedBox(width: 12),
+            Text('Enviando relato…'),
+          ],
+        ),
+        duration: Duration(seconds: 60),
       ),
     );
 
@@ -301,7 +320,8 @@ class _HomeContent extends ConsumerWidget {
       descricao: '(relato sem descrição — log+sondas no body)',
     );
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
       SnackBar(
         content: Text(
           numero != null
