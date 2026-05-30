@@ -456,6 +456,27 @@ class AppDatabase extends _$AppDatabase {
     return outboxCount + photosCount + visitasPending;
   }
 
+  /// Conta visitas DISTINTAS que têm qualquer pendência de sincronismo
+  /// (foto ainda não enviada OU outbox da visita ainda não processado OU
+  /// a row da visita marcada como pending). Bate com a noção do usuário:
+  /// "visita só deixa de ser pendente quando todas as fotos sobem". Stream
+  /// reativo para que o badge na home atualize quando a fila esvazia.
+  Stream<int> watchVisitasComPendencia() {
+    final q = customSelect(
+      "SELECT COUNT(DISTINCT v.id) AS c FROM visitas v "
+      "WHERE v.sync_status = 'pending' "
+      "OR EXISTS (SELECT 1 FROM pending_photos pp "
+      "           WHERE pp.visita_id = v.id "
+      "             AND pp.status IN ('watermark_pending','pending','uploading','error')) "
+      "OR EXISTS (SELECT 1 FROM outbox_items oi "
+      "           WHERE oi.entity_id = v.id "
+      "             AND oi.entity_type = 'visita' "
+      "             AND oi.status IN ('pending','processing'))",
+      readsFrom: {visitas, pendingPhotos, outboxItems},
+    );
+    return q.watchSingle().map((row) => row.read<int>('c'));
+  }
+
   // ── Pending Photos ─────────────────────────────────────────────────────────
 
   Future<List<PendingPhoto>> getPendingPhotos() {

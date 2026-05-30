@@ -37,6 +37,11 @@ final pdvsProvider = FutureProvider<Map<int, Pdv>>((ref) async {
   return {for (final p in lista) p.id: p};
 });
 
+final visitasComPendenciaProvider = StreamProvider<int>((ref) {
+  final db = ref.watch(appDatabaseProvider);
+  return db.watchVisitasComPendencia();
+});
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
   @override
@@ -430,11 +435,34 @@ class _HomeContent extends ConsumerWidget {
               ),
               // Badge "Desatualizado" — só aparece se o release v-latest
               // do GitHub tem build maior que o local. Toca pra baixar.
+              // Quando há visita com pendência de sync, troca o link
+              // "atualizar" por "N pendente(s)" (texto puro, sem ação),
+              // já que o app não deixa atualizar nesse estado (perderia
+              // dados locais). N = visitas distintas com fila — fotos
+              // contam por visita, não somadas.
               Consumer(builder: (_, ref, __) {
                 final v = ref.watch(appVersionProvider);
                 final info = v.asData?.value;
                 if (info == null || !info.outdated) {
                   return const SizedBox.shrink();
+                }
+                final pend = ref
+                        .watch(visitasComPendenciaProvider)
+                        .asData
+                        ?.value ??
+                    0;
+                if (pend > 0) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Text(
+                      '$pend pendente${pend == 1 ? '' : 's'}',
+                      style: TextStyle(
+                        color: AppColors.danger,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  );
                 }
                 return GestureDetector(
                   onTap: () => _abrirDownloadAPK(context, ref, info),
