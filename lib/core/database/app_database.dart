@@ -456,6 +456,28 @@ class AppDatabase extends _$AppDatabase {
     return outboxCount + photosCount + visitasPending;
   }
 
+  /// Stream das visitas que estão sendo sincronizadas AGORA — não as que
+  /// estão só na fila. "Agora" = tem foto com status='uploading' OU outbox
+  /// com status='processing' apontando pra ela. O sync engine seta esses
+  /// status só pelo tempo da operação, então o stream esvazia naturalmente
+  /// quando o item termina. Cards na home filtram por id pra desenhar o
+  /// ícone de setas circulares.
+  Stream<Set<int>> watchVisitasSincronizandoAtivamente() {
+    final q = customSelect(
+      "SELECT DISTINCT v.id FROM visitas v "
+      "WHERE EXISTS (SELECT 1 FROM pending_photos pp "
+      "              WHERE pp.visita_id = v.id "
+      "                AND pp.status = 'uploading') "
+      "   OR EXISTS (SELECT 1 FROM outbox_items oi "
+      "              WHERE oi.entity_id = v.id "
+      "                AND oi.entity_type = 'visita' "
+      "                AND oi.status = 'processing')",
+      readsFrom: {visitas, pendingPhotos, outboxItems},
+    );
+    return q.watch().map((rows) =>
+        rows.map((r) => r.read<int>('id')).toSet());
+  }
+
   /// Conta visitas DISTINTAS que têm qualquer pendência de sincronismo
   /// (foto ainda não enviada OU outbox da visita ainda não processado OU
   /// a row da visita marcada como pending). Bate com a noção do usuário:

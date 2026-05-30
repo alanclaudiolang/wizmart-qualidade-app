@@ -18,6 +18,7 @@ import '../../../core/utils/error_reporter.dart';
 import '../../../core/utils/processing_tracker.dart';
 import '../../widgets/apk_download_dialog.dart';
 import '../../widgets/processing_indicator.dart';
+import '../../widgets/syncing_indicator.dart';
 
 final sessionProvider = FutureProvider<SessionData?>((ref) async => SessionService.getSession());
 
@@ -40,6 +41,11 @@ final pdvsProvider = FutureProvider<Map<int, Pdv>>((ref) async {
 final visitasComPendenciaProvider = StreamProvider<int>((ref) {
   final db = ref.watch(appDatabaseProvider);
   return db.watchVisitasComPendencia();
+});
+
+final visitasSincronizandoProvider = StreamProvider<Set<int>>((ref) {
+  final db = ref.watch(appDatabaseProvider);
+  return db.watchVisitasSincronizandoAtivamente();
 });
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -950,6 +956,7 @@ class _VisitaCard extends StatelessWidget {
                               size: 14, color: AppColors.success),
                         const SizedBox(width: 6),
                         ProcessingIndicator(visitaId: visita.id),
+                        SyncingIndicator(visitaId: visita.id),
                       ]),
                       if (info != null || idReal != null) ...[
                         const SizedBox(height: 4),
