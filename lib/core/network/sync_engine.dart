@@ -298,8 +298,18 @@ class SyncEngine {
           // locais e órfãos em pending_photos/outbox — ver comentário do
           // _hashDeterministico.
           final idTemp = -_hashDeterministico(gabaritoId, pdvId, turno);
+          // Lookup por chave natural ANTES de inserir: cobre upgrade vindo
+          // de builds com idTemp não-determinístico (Object.hash, build
+          // <182). Se já existe row local pra (gabarito, pdv, turno, dia)
+          // com id diferente do idTemp atual, preserva o id antigo e só
+          // atualiza os campos do servidor — sem isso o upgrade duplicaria
+          // visitas que ainda têm foto/outbox pendente apontando pro id
+          // antigo.
+          final existente = await _db.getVisitaByGabaritoTurnoData(
+              gabaritoId, pdvId, turno, inicioDia, fimDia);
+          final idAlvo = existente?.id ?? idTemp;
           await _db.upsertVisita(VisitasCompanion(
-            id: Value(idTemp),
+            id: Value(idAlvo),
             // serverId fica null — sync_engine vai criar no servidor depois
             idPdvAssociado: Value(pdvId),
             idPromotorAssociado: Value(promotorId),
