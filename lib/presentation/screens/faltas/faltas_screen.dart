@@ -42,7 +42,7 @@ final faltasProvider = FutureProvider<List<FaltasItem>>((ref) async {
       .select(
           'id,titulo,previsao_turno_realizada,dia_hora_agendado,status_visita')
       .eq('id_promotor_associado', session.userId)
-      .eq('status_visita', 5)
+      .eq('status_visita', 3)
       .gte('dia_hora_agendado', inicio90d.toUtc().toIso8601String())
       .lt('dia_hora_agendado', inicioHoje.toUtc().toIso8601String())
       .order('dia_hora_agendado', ascending: false);
