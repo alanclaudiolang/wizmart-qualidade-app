@@ -84,7 +84,7 @@ class _PermissionsBlocker extends ConsumerWidget {
 
   String _labelBotao(PermissionState s) {
     if (s == PermissionState.permanentlyDenied) {
-      return 'Abrir configurações do app';
+      return 'Abrir Configurações';
     }
     return 'Conceder permissão';
   }
@@ -258,9 +258,12 @@ class _PermissionRow extends StatelessWidget {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(6)),
               ),
-              child: Text(labelBotao,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 13)),
+              child: Text(
+                labelBotao,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 13),
+              ),
             ),
           ),
           const SizedBox(height: 6),
