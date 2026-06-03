@@ -27,15 +27,13 @@ final appRouter = GoRouter(
     return null; // não redireciona, só observa
   },
   routes: [
-    // ShellRoute envolve TODAS as rotas com os guards de permissão
-    // e GPS. Tem que ser ShellRoute (não wrap no MaterialApp.router
-    // builder) pra os guards ficarem DENTRO do Navigator do router
-    // — sem isso, showDialog/showBottomSheet dos botões "?" do guard
-    // quebram com "Null check on null Navigator" (issues #14, #15).
+    // ShellRoute envolve as rotas com PermissionsGuard apenas.
+    // Apple guideline 5.1.5: app deve ser funcional mesmo com Location
+    // Services desligado. Por isso GpsGuard SÓ entra na tela de visita
+    // (única que precisa de GPS pra registrar localização da foto).
+    // Login, home, faltas, etc. funcionam sem GPS.
     ShellRoute(
-      builder: (context, state, child) => PermissionsGuard(
-        child: GpsGuard(child: child),
-      ),
+      builder: (context, state, child) => PermissionsGuard(child: child),
       routes: [
         GoRoute(
           path: '/splash',
@@ -53,7 +51,7 @@ final appRouter = GoRouter(
           path: '/visita/:id',
           builder: (_, state) {
             final id = int.parse(state.pathParameters['id']!);
-            return VisitaScreen(visitaId: id);
+            return GpsGuard(child: VisitaScreen(visitaId: id));
           },
         ),
         GoRoute(

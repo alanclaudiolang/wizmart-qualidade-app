@@ -86,9 +86,9 @@ class FaltasScreen extends ConsumerWidget {
         title: const Text('Sair do app?',
             style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
-          'Tudo do seu acesso (login, visitas locais, fotos pendentes, '
-          'logs e tarefas) será apagado deste dispositivo. Você precisará '
-          'entrar novamente. Continuar?',
+          'Você vai sair desta sessão. Suas visitas e fotos pendentes '
+          'continuam salvas neste dispositivo — quando entrar de novo com '
+          'o mesmo e-mail, tudo retoma de onde parou. Continuar?',
           style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
@@ -106,8 +106,7 @@ class FaltasScreen extends ConsumerWidget {
       ),
     );
     if (ok != true) return;
-    final db = ref.read(appDatabaseProvider);
-    await LogoutService.logoutCompletely(db);
+    await LogoutService.softLogout();
     if (context.mounted) context.go('/auth');
   }
 

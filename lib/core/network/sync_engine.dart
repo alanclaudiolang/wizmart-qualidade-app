@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../database/app_database.dart';
+import '../utils/auth_session_expired.dart';
 import '../constants/app_constants.dart';
 import '../utils/sync_logger.dart';
 import 'sync_pause.dart';
@@ -875,11 +876,39 @@ class SyncEngine {
       // currentUserUid = auth.users.id (UUID) — necessário pra passar policies
       // do bucket que comparam com auth.uid().
       final visita = await _db.getVisitaById(photo.visitaId);
-      final authUid = _supabase.auth.currentUser?.id ?? '';
+      // Sessão Supabase Auth pode expirar enquanto o app está aberto.
+      // Sem authUid, o path do storage fica `abastecimentos//…/` e o
+      // RLS rejeita com 403, travando o sync. Antes de tentar upload,
+      // se currentUser=null, tenta refreshSession (renova access via
+      // refresh token salvo). Se refresh falhar, marca sessão como
+      // expirada — o caller (processOutbox) propaga pra UI mostrar o
+      // login. Não logamos o promotor à força aqui pra não corromper
+      // o estado se houver visita em andamento na tela.
+      var authUid = _supabase.auth.currentUser?.id ?? '';
       if (authUid.isEmpty) {
         _logger.log('photo',
-            'Sem auth.uid — upload vai falhar (faça login Supabase Auth)',
-            erro: true);
+            'Sem auth.uid — tentando refreshSession antes do upload');
+        try {
+          final res = await _supabase.auth
+              .refreshSession()
+              .timeout(const Duration(seconds: 6));
+          authUid = res.user?.id ?? '';
+        } catch (_) {}
+        if (authUid.isEmpty) {
+          _logger.log(
+              'photo',
+              'Refresh falhou: sessão Supabase Auth expirou. Marcando '
+              'sessão expirada — UI será notificada pra forçar login.',
+              erro: true);
+          AuthSessionExpired.set();
+          // Deixa a foto como pending pra reenvio depois do relogin —
+          // não marca error, não consome a tentativa.
+          await _db.updatePendingPhoto(PendingPhotosCompanion(
+            id: Value(photo.id),
+            status: const Value('pending'),
+          ));
+          return;
+        }
       }
       // Converte dia_hora_agendado UTC -> Brasil e formata 'yyyy-MM-dd HH:mm:ss'
       String dataAgendadoBr;

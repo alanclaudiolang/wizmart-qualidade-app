@@ -5,10 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/network/sync_engine.dart' show appDatabaseProvider;
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/device_info_service.dart';
 import '../../../core/utils/apk_updater_service.dart';
 import '../../../core/utils/app_colors.dart';
+import '../../../core/utils/auth_session_expired.dart';
+import '../../../core/utils/logout_service.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/network/version_check_service.dart';
 import '../../widgets/apk_download_dialog.dart';
@@ -67,7 +71,19 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     final session = await SessionService.getSession();
     if (session != null && session.email.isNotEmpty) {
       _emailController.text = session.email;
+      return;
     }
+    // Sem sessão local (caso típico após soft logout por sessão Auth
+    // expirada): tenta prefillar com o último e-mail logado neste
+    // dispositivo pra facilitar o relogin — promotor digita só a
+    // senha e o sync engine retoma do ponto onde parou.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final ultimo = prefs.getString(LogoutService.lastLoggedEmailKey);
+      if (ultimo != null && ultimo.isNotEmpty) {
+        _emailController.text = ultimo;
+      }
+    } catch (_) {}
   }
 
   @override
@@ -86,6 +102,67 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       return;
     }
     setState(() { _loading = true; _error = null; });
+
+    // Pré-check de troca de conta: se o último e-mail logado neste
+    // dispositivo é DIFERENTE do que está sendo digitado E ainda há
+    // dados locais com pendência de sincronismo (visitas/fotos/outbox),
+    // pede confirmação antes — se confirmar, faz limpeza total ANTES
+    // do signIn. Isso evita que dados de um promotor migrem pra conta
+    // de outro acidentalmente.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final ultimoEmail =
+          prefs.getString(LogoutService.lastLoggedEmailKey)?.trim();
+      if (ultimoEmail != null &&
+          ultimoEmail.isNotEmpty &&
+          ultimoEmail != email) {
+        final db = ref.read(appDatabaseProvider);
+        final pend = await db.countPendentesParaSync();
+        if (pend > 0) {
+          if (!mounted) return;
+          final ok = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (dialogCtx) => AlertDialog(
+              backgroundColor: AppColors.card,
+              title: const Text('Conta diferente neste dispositivo',
+                  style: TextStyle(color: AppColors.textPrimary)),
+              content: Text(
+                'Este celular tem $pend pendência${pend == 1 ? '' : 's'} '
+                'de sincronismo da conta $ultimoEmail. '
+                'Se você entrar como $email, essas pendências '
+                '(visitas e fotos não enviadas) serão apagadas. '
+                'Tem certeza?',
+                style: const TextStyle(color: AppColors.textSecondary),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(false),
+                  child: const Text('Cancelar',
+                      style: TextStyle(color: AppColors.textSecondary)),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(true),
+                  child: const Text('Apagar e entrar',
+                      style: TextStyle(color: AppColors.danger)),
+                ),
+              ],
+            ),
+          );
+          if (ok != true) {
+            setState(() => _loading = false);
+            return;
+          }
+          // Confirmado: limpa TUDO do promotor anterior antes do login.
+          await LogoutService.logoutCompletely(db);
+        }
+      }
+    } catch (_) {
+      // Erro inesperado no pré-check (ex: prefs corrompido) — segue
+      // o login normal. Pior caso: dados de outra conta misturam.
+      // Raríssimo e recuperável com novo logout/login.
+    }
+
     try {
       final authResponse = await Supabase.instance.client.auth
           .signInWithPassword(email: email, password: senha)
@@ -121,6 +198,15 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         nome: userData['nome'] as String? ?? '',
         senhaHash: _lembrarMe ? senha : '',
       );
+      // Marca o e-mail desta sessão pra próximo logout/login decidir
+      // se preserva ou limpa os dados locais.
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(LogoutService.lastLoggedEmailKey, email);
+      } catch (_) {}
+      // Limpa flag de sessão expirada — login bem-sucedido encerra
+      // o ciclo de aviso.
+      AuthSessionExpired.reset();
       // Atualiza device_info em background (igual FF antigo: match por
       // email, update direto na tabela users). Falha silenciosa.
       // ignore: discarded_futures

@@ -10,6 +10,7 @@ import '../../../core/network/sync_engine.dart';
 import '../../../core/network/version_check_service.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/apk_updater_service.dart';
+import '../../../core/utils/auth_session_expired.dart';
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/logout_service.dart';
 import '../../../core/utils/app_colors.dart';
@@ -65,13 +66,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Observa sentinela de sessão Auth expirada. Quando algum fluxo
+    // (sync engine, upload) detecta currentUser==null e refreshSession
+    // falha, ele seta esse flag — aqui reagimos: soft logout pra
+    // manter visitas/fotos locais intactas e navegamos pra /auth.
+    AuthSessionExpired.listenable.addListener(_handleAuthExpired);
     _triggerSync();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    AuthSessionExpired.listenable.removeListener(_handleAuthExpired);
     super.dispose();
+  }
+
+  Future<void> _handleAuthExpired() async {
+    if (!AuthSessionExpired.isExpired) return;
+    if (!mounted) return;
+    // Limpa só a sessão Auth — visitas, fotos pendentes, outbox e
+    // arquivos físicos sobrevivem pra retomar no próximo login com
+    // o mesmo e-mail.
+    final session = await SessionService.getSession();
+    await LogoutService.softLogout(email: session?.email);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Sua sessão expirou. Faça login novamente — suas visitas e '
+          'fotos continuam salvas neste dispositivo.',
+        ),
+        duration: Duration(seconds: 6),
+      ),
+    );
+    context.go('/auth');
   }
 
   @override
@@ -267,9 +295,9 @@ class _HomeContent extends ConsumerWidget {
         title: const Text('Sair do app?',
             style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
-          'Tudo do seu acesso (login, visitas locais, fotos pendentes, '
-          'logs e tarefas) será apagado deste dispositivo. Você precisará '
-          'entrar novamente. Continuar?',
+          'Você vai sair desta sessão. Suas visitas e fotos pendentes '
+          'continuam salvas neste dispositivo — quando entrar de novo com '
+          'o mesmo e-mail, tudo retoma de onde parou. Continuar?',
           style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
@@ -288,9 +316,11 @@ class _HomeContent extends ConsumerWidget {
     );
     if (ok != true) return;
 
-    // Limpeza centralizada — apaga TODO vestígio do promotor anterior.
-    final db = ref.read(appDatabaseProvider);
-    await LogoutService.logoutCompletely(db);
+    // Soft logout: encerra sessão Auth e marca last_logged_email mas
+    // preserva visitas, fotos pendentes e tudo no SQLite local. Se o
+    // próximo login for com o mesmo e-mail, retoma sem perder nada;
+    // se for outro e-mail, o AuthScreen detecta e pede confirmação.
+    await LogoutService.softLogout();
     if (context.mounted) context.go('/auth');
   }
 

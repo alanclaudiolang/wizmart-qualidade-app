@@ -60,39 +60,42 @@ class PermissionsStatusService extends Notifier<PermissionsStatus> {
 
   Future<void> refresh() => _check();
 
-  /// Pede ao usuário a permissão de forma BLINDADA — funciona em
-  /// qualquer Android (ROMs Samsung/Xiaomi/etc) e em qualquer estado
-  /// (denied / permanentlyDenied):
+  /// Pede ao usuário a permissão. Comportamento difere por plataforma:
   ///
-  /// 1. Se já está permanently denied (Android decidiu não perguntar
-  ///    mais), vai DIRETO pras configurações.
-  /// 2. Senão, mostra o dialog nativo do Android.
-  /// 3. Depois do dialog, se o usuário não concedeu (negou, fechou,
-  ///    ou o dialog nem apareceu por bug da ROM), abre as
-  ///    configurações automaticamente — é a única coisa que funciona
-  ///    em 100% dos celulares.
+  /// **Android** (ROMs Samsung/Xiaomi/etc bugadas, defensivo):
+  ///   1. Se já está permanently denied, abre Configurações.
+  ///   2. Senão pede dialog nativo. Se ainda não foi concedida ao final
+  ///      (dialog nem apareceu por bug da ROM, ou usuário fechou),
+  ///      abre Configurações automaticamente.
   ///
-  /// Promotor nunca fica "preso" achando que o botão não funciona.
+  /// **iOS** (Apple rejeita "auto-redirect after Don't Allow" —
+  /// guideline 5.1.1(iv)):
+  ///   1. Se já está permanently denied (negou uma vez no iOS = não
+  ///      pergunta mais), abre Configurações — é a única recuperação.
+  ///   2. Senão pede dialog nativo e RESPEITA a escolha do usuário —
+  ///      não abre Configurações automaticamente após negação. Se ele
+  ///      quiser permitir depois, toca de novo no botão (que vai pegar
+  ///      o estado permanently denied e abrir Configurações).
   Future<void> pedir(PermissionItem item) async {
     final perms = _permissoesNativas(item);
-    // Checa o estado COMBINADO antes — se já está permanente negada em
-    // todas, vai direto pras configs.
     final antesStatus = await _checkCombinado(perms);
     if (antesStatus == PermissionState.permanentlyDenied) {
       await openAppSettings();
       await _check();
       return;
     }
-    // Pede TODAS as permissões nativas associadas ao item (em Android
-    // 12- precisa storage; em 13+ precisa photos). O sistema só mostra
-    // dialog pras que ele de fato suporta — as outras retornam denied
-    // mas sem afetar a UX (nada visível pro usuário).
     for (final perm in perms) {
       await perm.request();
     }
-    final depoisStatus = await _checkCombinado(perms);
-    if (depoisStatus != PermissionState.granted) {
-      await openAppSettings();
+    // iOS: respeita a escolha do usuário. Se ele negou, NÃO abre
+    // configs — Apple guideline 5.1.1(iv) considera disrespect.
+    // Android: mantém fallback pras ROMs bugadas onde o dialog nem
+    // apareceu OU o sistema reportou denied sem mostrar nada.
+    if (Platform.isAndroid) {
+      final depoisStatus = await _checkCombinado(perms);
+      if (depoisStatus != PermissionState.granted) {
+        await openAppSettings();
+      }
     }
     await _check();
   }
