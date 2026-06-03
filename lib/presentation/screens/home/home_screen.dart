@@ -497,6 +497,9 @@ class _HomeContent extends ConsumerWidget {
                 case 'home':
                   // Já está aqui; menu fecha sem navegar.
                   break;
+                case 'realizado':
+                  if (context.mounted) context.push('/realizado');
+                  break;
                 case 'faltas':
                   if (context.mounted) context.push('/faltas');
                   break;
@@ -517,6 +520,18 @@ class _HomeContent extends ConsumerWidget {
                         color: AppColors.textPrimary, size: 20),
                     SizedBox(width: 8),
                     Text('Home',
+                        style: TextStyle(color: AppColors.textPrimary)),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'realizado',
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle_outline,
+                        color: AppColors.success, size: 20),
+                    SizedBox(width: 8),
+                    Text('Realizado',
                         style: TextStyle(color: AppColors.textPrimary)),
                   ],
                 ),

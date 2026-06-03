@@ -1,9 +1,10 @@
-// lib/presentation/screens/faltas/faltas_screen.dart
+// lib/presentation/screens/realizado/realizado_screen.dart
 //
-// Histórico de faltas (status_visita=5 no servidor) dos últimos 90 dias
-// até D-1 (ontem). Lista somente leitura — promotor não interage com os
-// cards, é só consulta. Busca direto do Supabase pra ter histórico além
-// do dia atual (o DB local guarda só o dia).
+// Histórico de visitas realizadas (status_visita=1 Concluída e 5
+// Incompleta) dos últimos 90 dias até hoje. Mostra ✓ verde se aprovada
+// pelo supervisor, ✕ vermelho se reprovada, nada se ainda não avaliada
+// (visita_aprovada null). Quando houver comentário do supervisor, é
+// exibido na segunda linha ao lado da data.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,20 +17,27 @@ import '../../../core/utils/app_colors.dart';
 import '../../../core/utils/logout_service.dart';
 import '../../../core/utils/session_service.dart';
 
-class FaltasItem {
+class RealizadoItem {
   final int? id;
   final String? titulo;
   final String? turno;
   final DateTime dataAgendada;
-  FaltasItem({
+  final int statusVisita;
+  final bool? visitaAprovada;
+  final String? comentariosSupervisor;
+  RealizadoItem({
     required this.id,
     required this.titulo,
     required this.turno,
     required this.dataAgendada,
+    required this.statusVisita,
+    required this.visitaAprovada,
+    required this.comentariosSupervisor,
   });
 }
 
-final faltasProvider = FutureProvider<List<FaltasItem>>((ref) async {
+final realizadoProvider =
+    FutureProvider<List<RealizadoItem>>((ref) async {
   final session = await SessionService.getSession();
   if (session == null) return [];
 
@@ -40,29 +48,31 @@ final faltasProvider = FutureProvider<List<FaltasItem>>((ref) async {
   final rows = await Supabase.instance.client
       .from('visitas')
       .select(
-          'id,titulo,previsao_turno_realizada,dia_hora_agendado,status_visita')
+          'id,titulo,previsao_turno_realizada,dia_hora_agendado,status_visita,visita_aprovada,comentarios_supervisor')
       .eq('id_promotor_associado', session.userId)
-      .eq('status_visita', 3)
+      .or('status_visita.eq.1,status_visita.eq.5')
       .gte('dia_hora_agendado', inicio90d.toUtc().toIso8601String())
-      .lt('dia_hora_agendado', inicioHoje.toUtc().toIso8601String())
       .order('dia_hora_agendado', ascending: false);
 
-  return rows.map<FaltasItem>((r) {
+  return rows.map<RealizadoItem>((r) {
     final dataStr = r['dia_hora_agendado'] as String?;
     final data = dataStr != null
         ? (DateTime.tryParse(dataStr)?.toLocal() ?? DateTime.now())
         : DateTime.now();
-    return FaltasItem(
+    return RealizadoItem(
       id: r['id'] as int?,
       titulo: r['titulo'] as String?,
       turno: r['previsao_turno_realizada'] as String?,
       dataAgendada: data,
+      statusVisita: (r['status_visita'] as int?) ?? 0,
+      visitaAprovada: r['visita_aprovada'] as bool?,
+      comentariosSupervisor: r['comentarios_supervisor'] as String?,
     );
   }).toList();
 });
 
-class FaltasScreen extends ConsumerWidget {
-  const FaltasScreen({super.key});
+class RealizadoScreen extends ConsumerWidget {
+  const RealizadoScreen({super.key});
 
   String _labelTurno(String? t) {
     switch (t?.toLowerCase()) {
@@ -111,9 +121,21 @@ class FaltasScreen extends ConsumerWidget {
     if (context.mounted) context.go('/auth');
   }
 
+  /// Ícone do veredito do supervisor.
+  /// `true`=aprovada (✓ verde), `false`=reprovada (✕ vermelho),
+  /// `null`=não avaliada (nada exibido).
+  Widget _iconAprovacao(bool? aprovada) {
+    if (aprovada == null) return const SizedBox.shrink();
+    if (aprovada) {
+      return const Icon(Icons.check_circle,
+          color: AppColors.success, size: 18);
+    }
+    return const Icon(Icons.cancel, color: AppColors.danger, size: 18);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final faltasAsync = ref.watch(faltasProvider);
+    final realizadoAsync = ref.watch(realizadoProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -125,7 +147,7 @@ class FaltasScreen extends ConsumerWidget {
           onPressed: () => context.go('/home'),
         ),
         title: const Text(
-          'Faltas',
+          'Realizado',
           style: TextStyle(
             color: AppColors.textPrimary,
             fontSize: 18,
@@ -142,10 +164,10 @@ class FaltasScreen extends ConsumerWidget {
                   context.go('/home');
                   break;
                 case 'realizado':
-                  context.go('/realizado');
+                  // Já está aqui — fecha o menu, não navega.
                   break;
                 case 'faltas':
-                  // Já está aqui — fecha o menu, não navega.
+                  context.go('/faltas');
                   break;
                 case 'logout':
                   await _confirmarLogout(context, ref);
@@ -207,8 +229,8 @@ class FaltasScreen extends ConsumerWidget {
       body: RefreshIndicator(
         color: AppColors.primary,
         backgroundColor: AppColors.card,
-        onRefresh: () async => ref.invalidate(faltasProvider),
-        child: faltasAsync.when(
+        onRefresh: () async => ref.invalidate(realizadoProvider),
+        child: realizadoAsync.when(
           loading: () => const Center(
             child: CircularProgressIndicator(color: AppColors.primary),
           ),
@@ -219,7 +241,7 @@ class FaltasScreen extends ConsumerWidget {
               const SizedBox(height: 16),
               Center(
                 child: Text(
-                  'Não foi possível carregar as faltas.\nPuxe pra baixo pra tentar de novo.',
+                  'Não foi possível carregar o histórico.\nPuxe pra baixo pra tentar de novo.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       color: AppColors.textSecondary, fontSize: 14),
@@ -227,8 +249,8 @@ class FaltasScreen extends ConsumerWidget {
               ),
             ],
           ),
-          data: (faltas) {
-            if (faltas.isEmpty) {
+          data: (items) {
+            if (items.isEmpty) {
               return ListView(
                 children: [
                   const SizedBox(height: 80),
@@ -237,7 +259,7 @@ class FaltasScreen extends ConsumerWidget {
                   const SizedBox(height: 16),
                   Center(
                     child: Text(
-                      'Sem faltas nos últimos 90 dias',
+                      'Sem visitas realizadas nos últimos 90 dias',
                       style: TextStyle(
                           color: AppColors.textMuted, fontSize: 15),
                     ),
@@ -248,11 +270,20 @@ class FaltasScreen extends ConsumerWidget {
             return ListView.separated(
               padding: const EdgeInsets.symmetric(
                   horizontal: 12, vertical: 8),
-              itemCount: faltas.length,
+              itemCount: items.length,
               separatorBuilder: (_, __) => const SizedBox(height: 6),
               itemBuilder: (_, i) {
-                final f = faltas[i];
-                final dataFmt = DateFormat('dd/MM/yyyy').format(f.dataAgendada);
+                final v = items[i];
+                final dataFmt =
+                    DateFormat('dd/MM/yyyy').format(v.dataAgendada);
+                final comentario = v.comentariosSupervisor?.trim();
+                final temComentario =
+                    comentario != null && comentario.isNotEmpty;
+                // Cor da barrinha lateral reflete o status:
+                //   1=Concluída → verde, 5=Incompleta → amarelo
+                final corBarra = v.statusVisita == 1
+                    ? AppColors.success
+                    : AppColors.warning;
                 return Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 12, vertical: 10),
@@ -262,12 +293,13 @@ class FaltasScreen extends ConsumerWidget {
                     border: Border.all(color: AppColors.border, width: 1),
                   ),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
                         width: 4,
                         height: 36,
                         decoration: BoxDecoration(
-                          color: AppColors.danger,
+                          color: corBarra,
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -278,9 +310,9 @@ class FaltasScreen extends ConsumerWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              f.titulo?.isNotEmpty == true
-                                  ? f.titulo!
-                                  : 'PDV ${f.id ?? ''}',
+                              v.titulo?.isNotEmpty == true
+                                  ? v.titulo!
+                                  : 'PDV ${v.id ?? ''}',
                               style: const TextStyle(
                                 color: AppColors.textPrimary,
                                 fontSize: 13,
@@ -291,24 +323,32 @@ class FaltasScreen extends ConsumerWidget {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '$dataFmt · ${_labelTurno(f.turno)}',
+                              temComentario
+                                  ? '$dataFmt · ${_labelTurno(v.turno)} · $comentario'
+                                  : '$dataFmt · ${_labelTurno(v.turno)}',
                               style: TextStyle(
                                 color: AppColors.textSecondary,
                                 fontSize: 11,
                               ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ],
                         ),
                       ),
-                      if (f.id != null)
+                      const SizedBox(width: 8),
+                      _iconAprovacao(v.visitaAprovada),
+                      if (v.id != null) ...[
+                        const SizedBox(width: 6),
                         Text(
-                          '#${f.id}',
+                          '#${v.id}',
                           style: TextStyle(
-                            color:
-                                AppColors.textMuted.withValues(alpha: 0.55),
+                            color: AppColors.textMuted
+                                .withValues(alpha: 0.55),
                             fontSize: 10,
                           ),
                         ),
+                      ],
                     ],
                   ),
                 );

@@ -6,6 +6,7 @@ import '../../presentation/screens/auth/auth_screen.dart';
 import '../../presentation/screens/auth/onboarding_permissoes_screen.dart';
 import '../../presentation/screens/faltas/faltas_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
+import '../../presentation/screens/realizado/realizado_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../presentation/screens/visita/visita_screen.dart';
 import '../../presentation/widgets/gps_guard.dart';
@@ -54,6 +55,10 @@ final appRouter = GoRouter(
             final id = int.parse(state.pathParameters['id']!);
             return VisitaScreen(visitaId: id);
           },
+        ),
+        GoRoute(
+          path: '/realizado',
+          builder: (_, __) => const RealizadoScreen(),
         ),
         GoRoute(
           path: '/faltas',
