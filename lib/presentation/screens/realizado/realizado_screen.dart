@@ -12,7 +12,6 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../../core/network/sync_engine.dart';
 import '../../../core/utils/app_colors.dart';
 import '../../../core/utils/logout_service.dart';
 import '../../../core/utils/session_service.dart';
@@ -96,9 +95,9 @@ class RealizadoScreen extends ConsumerWidget {
         title: const Text('Sair do app?',
             style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
-          'Tudo do seu acesso (login, visitas locais, fotos pendentes, '
-          'logs e tarefas) será apagado deste dispositivo. Você precisará '
-          'entrar novamente. Continuar?',
+          'Você vai sair desta sessão. Suas visitas e fotos pendentes '
+          'continuam salvas neste dispositivo — quando entrar de novo com '
+          'o mesmo e-mail, tudo retoma de onde parou. Continuar?',
           style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
@@ -116,8 +115,7 @@ class RealizadoScreen extends ConsumerWidget {
       ),
     );
     if (ok != true) return;
-    final db = ref.read(appDatabaseProvider);
-    await LogoutService.logoutCompletely(db);
+    await LogoutService.softLogout();
     if (context.mounted) context.go('/auth');
   }
 
