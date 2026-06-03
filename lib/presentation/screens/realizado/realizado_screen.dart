@@ -121,16 +121,31 @@ class RealizadoScreen extends ConsumerWidget {
     if (context.mounted) context.go('/auth');
   }
 
-  /// Ícone do veredito do supervisor.
-  /// `true`=aprovada (✓ verde), `false`=reprovada (✕ vermelho),
-  /// `null`=não avaliada (nada exibido).
-  Widget _iconAprovacao(bool? aprovada) {
-    if (aprovada == null) return const SizedBox.shrink();
-    if (aprovada) {
-      return const Icon(Icons.check_circle,
-          color: AppColors.success, size: 18);
-    }
-    return const Icon(Icons.cancel, color: AppColors.danger, size: 18);
+  /// Veredito do supervisor (ícone + label).
+  /// Só faz sentido pra status=1 (Concluída). Incompleta não recebe
+  /// veredito no fluxo do supervisor — fica vazio nesse caso.
+  /// `true`=aprovado (✓ verde + "aprovado"), `false`=reprovado
+  /// (✕ vermelho + "reprovado"), `null`=não avaliado (nada exibido).
+  Widget _vereditoSupervisor(int status, bool? aprovada) {
+    if (status != 1 || aprovada == null) return const SizedBox.shrink();
+    final cor = aprovada ? AppColors.success : AppColors.danger;
+    final icone = aprovada ? Icons.check_circle : Icons.cancel;
+    final label = aprovada ? 'aprovado' : 'reprovado';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icone, color: cor, size: 14),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: TextStyle(
+            color: cor,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -337,18 +352,23 @@ class RealizadoScreen extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      _iconAprovacao(v.visitaAprovada),
-                      if (v.id != null) ...[
-                        const SizedBox(width: 6),
-                        Text(
-                          '#${v.id}',
-                          style: TextStyle(
-                            color: AppColors.textMuted
-                                .withValues(alpha: 0.55),
-                            fontSize: 10,
-                          ),
-                        ),
-                      ],
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (v.id != null)
+                            Text(
+                              '#${v.id}',
+                              style: TextStyle(
+                                color: AppColors.textMuted
+                                    .withValues(alpha: 0.55),
+                                fontSize: 10,
+                              ),
+                            ),
+                          _vereditoSupervisor(
+                              v.statusVisita, v.visitaAprovada),
+                        ],
+                      ),
                     ],
                   ),
                 );
