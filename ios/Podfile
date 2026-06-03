@@ -38,5 +38,18 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    # permission_handler_apple usa estes #define em compile-time pra
+    # habilitar cada grupo de permissão. Sem eles, Permission.X.request()
+    # retorna 'denied' imediatamente no iOS sem mostrar o dialog nativo.
+    # Cada permissão usada no app precisa de uma linha aqui.
+    target.build_configurations.each do |config|
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
+        '$(inherited)',
+        'PERMISSION_CAMERA=1',
+        'PERMISSION_PHOTOS=1',
+        'PERMISSION_LOCATION=1',
+      ]
+    end
   end
 end

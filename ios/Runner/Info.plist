@@ -67,6 +67,13 @@
 	<string>O app salva as fotos das visitas no carretel do iPhone.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>O app precisa da localização pra registrar onde a visita aconteceu.</string>
+	<!-- Apple exige as duas chaves abaixo mesmo que a gente só use
+	     "when in use" — geolocator e outras SDKs referenciam APIs de
+	     "always" e a validação ITMS-90683 reclama se faltar. -->
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>O app precisa da localização pra registrar onde a visita aconteceu, inclusive em background quando estiver sincronizando.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>O app precisa da localização pra registrar onde a visita aconteceu, inclusive em background quando estiver sincronizando.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
