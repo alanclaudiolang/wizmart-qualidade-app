@@ -86,7 +86,9 @@ class _PermissionsBlocker extends ConsumerWidget {
     if (s == PermissionState.permanentlyDenied) {
       return 'Abrir Configurações';
     }
-    return 'Conceder permissão';
+    // Apple guideline 5.1.1(iv): não usar verbos que vianciam o usuário
+    // a conceder ("Conceder permissão"). Texto neutro tipo "Continuar".
+    return 'Continuar';
   }
 
   List<String> _passosManuais(PermissionItem item) {
