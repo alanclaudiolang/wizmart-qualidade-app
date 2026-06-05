@@ -230,13 +230,12 @@ class _HomeContent extends ConsumerWidget {
       return;
     }
 
-    // Pré-condição 1: zero pendências de sync E zero visitas em
-    // processamento ativo (watermark, upload em curso). Se há,
-    // o promotor termina primeiro — bloquear agora arriscaria
-    // perder dados em trânsito.
-    final db = ref.read(appDatabaseProvider);
-    final pendentes = await db.countPendentesParaSync();
-    if (pendentes > 0 || ProcessingTracker.total > 0) {
+    // Pré-condição 1: zero processamento ativo (watermark gerando ou
+    // upload em curso AGORA). Pendente acumulado em pending_photos NÃO
+    // bloqueia — sobrevive ao restart e retoma no build novo. Bloquear
+    // por pendente trava promotores com órfãs eternas ("Posterga
+    // infinito") em builds velhos sem nunca receber o force-update.
+    if (ProcessingTracker.total > 0) {
       _bloqueioObrigatorioTratado = false;
       return;
     }
