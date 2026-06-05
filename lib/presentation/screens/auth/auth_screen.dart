@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/network/sync_engine.dart' show appDatabaseProvider;
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/device_info_service.dart';
+import '../../../core/utils/promotor_estado_reporter.dart';
 import '../../../core/utils/apk_updater_service.dart';
 import '../../../core/utils/app_colors.dart';
 import '../../../core/utils/auth_session_expired.dart';
@@ -211,6 +212,15 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       // email, update direto na tabela users). Falha silenciosa.
       // ignore: discarded_futures
       DeviceInfoService.updateForEmail(email);
+      // Registra/atualiza issue de estado do promotor no GitHub
+      // (build atual + último login). Fire-and-forget — falha em rede
+      // ou API não afeta o login. Captura instalação/reinstalação/login
+      // num ponto só, já que todos passam por aqui.
+      // ignore: discarded_futures
+      PromotorEstadoReporter.registrar(
+        email: email,
+        nome: userData['nome'] as String? ?? '',
+      );
       // Se ainda não passou pelo onboarding de permissões (primeira
       // instalação), abre essa tela antes da home. Senão, vai direto.
       final onboardingFeito =

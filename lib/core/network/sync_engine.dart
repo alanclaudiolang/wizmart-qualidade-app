@@ -57,6 +57,11 @@ class SyncEngine {
   /// que persistia mesmo após os fixes anteriores).
   bool _syncing = false;
 
+  /// `true` quando há um ciclo de sincronização em andamento neste
+  /// isolate. Usado por consumidores que precisam evitar ações
+  /// destrutivas durante o sync (ex: gatilho de force-update).
+  bool get isSyncing => _syncing;
+
   /// Identidade desta instância pra dono do lock cross-process.
   final String _instanceId = const Uuid().v4();
 

@@ -164,27 +164,25 @@ class _HomeContent extends ConsumerWidget {
     final url = info.apkDownloadUrl;
     if (url == null) return;
 
-    // Bloqueia o download se houver dados não sincronizados.
-    // Instalar uma APK nova por cima pode causar perda de dados que
-    // ainda não chegaram ao servidor.
-    final db = ref.read(appDatabaseProvider);
-    final pendentes = await db.countPendentesParaSync();
-    if (pendentes > 0) {
+    // Só bloqueia se há processamento ATIVO neste momento (upload em
+    // curso, watermark gerando) ou sync em andamento. Pendente
+    // acumulado em pending_photos sobrevive ao restart do app — não
+    // precisa bloquear update por causa dele.
+    final syncEngine = ref.read(syncEngineProvider);
+    if (ProcessingTracker.total > 0 || syncEngine.isSyncing) {
       if (!context.mounted) return;
       await showDialog<void>(
         context: context,
         builder: (dialogCtx) => AlertDialog(
           backgroundColor: AppColors.card,
           title: const Text(
-            'Não dá pra atualizar agora',
+            'Aguarde o envio em andamento',
             style: TextStyle(color: AppColors.textPrimary),
           ),
-          content: Text(
-            'Você tem $pendentes item${pendentes == 1 ? '' : 's'} '
-            'pendente${pendentes == 1 ? '' : 's'} de sincronização. '
-            'Verifique sua conexão, aguarde o app sincronizar tudo, '
-            'e então tente atualizar de novo.',
-            style: const TextStyle(color: AppColors.textSecondary),
+          content: const Text(
+            'Tem foto sendo enviada agora. Aguarde terminar e tente '
+            'atualizar de novo.',
+            style: TextStyle(color: AppColors.textSecondary),
           ),
           actions: [
             TextButton(
@@ -231,11 +229,13 @@ class _HomeContent extends ConsumerWidget {
     }
 
     // Pré-condição 1: zero processamento ativo (watermark gerando ou
-    // upload em curso AGORA). Pendente acumulado em pending_photos NÃO
-    // bloqueia — sobrevive ao restart e retoma no build novo. Bloquear
-    // por pendente trava promotores com órfãs eternas ("Posterga
-    // infinito") em builds velhos sem nunca receber o force-update.
-    if (ProcessingTracker.total > 0) {
+    // upload em curso AGORA) E sync engine parado. Pendente acumulado
+    // em pending_photos NÃO bloqueia — sobrevive ao restart e retoma
+    // no build novo. Bloquear por pendente trava promotores com órfãs
+    // eternas ("Posterga infinito") em builds velhos sem nunca receber
+    // o force-update.
+    final syncEngine = ref.read(syncEngineProvider);
+    if (ProcessingTracker.total > 0 || syncEngine.isSyncing) {
       _bloqueioObrigatorioTratado = false;
       return;
     }
