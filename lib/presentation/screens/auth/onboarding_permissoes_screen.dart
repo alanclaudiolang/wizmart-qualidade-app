@@ -409,7 +409,9 @@ class _Item extends StatelessWidget {
                       borderRadius: BorderRadius.circular(8)),
                 ),
                 child: const Text(
-                  'Conceder permissão',
+                  // Apple guideline 5.1.1(iv): evitar verbos enviesados —
+                  // texto neutro "Continuar" (não "Conceder permissão").
+                  'Continuar',
                   style: TextStyle(
                       fontWeight: FontWeight.bold, fontSize: 13),
                 ),

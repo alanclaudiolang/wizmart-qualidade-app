@@ -84,9 +84,11 @@ class _PermissionsBlocker extends ConsumerWidget {
 
   String _labelBotao(PermissionState s) {
     if (s == PermissionState.permanentlyDenied) {
-      return 'Abrir configurações do app';
+      return 'Abrir Configurações';
     }
-    return 'Conceder permissão';
+    // Apple guideline 5.1.1(iv): não usar verbos que vianciam o usuário
+    // a conceder ("Conceder permissão"). Texto neutro tipo "Continuar".
+    return 'Continuar';
   }
 
   List<String> _passosManuais(PermissionItem item) {
@@ -258,9 +260,12 @@ class _PermissionRow extends StatelessWidget {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(6)),
               ),
-              child: Text(labelBotao,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 13)),
+              child: Text(
+                labelBotao,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 13),
+              ),
             ),
           ),
           const SizedBox(height: 6),

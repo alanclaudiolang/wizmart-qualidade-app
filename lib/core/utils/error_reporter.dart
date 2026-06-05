@@ -46,7 +46,12 @@ class ErrorReporter {
 
   /// Reporta um erro. `screen` é opcional — se não passado, lê o
   /// `CurrentScreen.nome` atual.
-  static Future<void> reportar({
+  /// Reporta erro automaticamente como issue no GitHub.
+  /// Retorna o número do issue criado, ou null se falhou (sem rede,
+  /// cooldown ativo, token vazio, etc). O caller pode usar esse retorno
+  /// pra decidir UI — ex: tela de "Erro inesperado" só mostra o pedido
+  /// de print quando o issue NÃO foi enviado.
+  static Future<int?> reportar({
     required String contexto,
     required Object erro,
     StackTrace? stack,
@@ -66,12 +71,12 @@ class ErrorReporter {
     final ultimo = _ultimoReportePorScreen[tela];
     if (ultimo != null &&
         DateTime.now().difference(ultimo) < _cooldown) {
-      return;
+      return null;
     }
     _ultimoReportePorScreen[tela] = DateTime.now();
 
     final token = AppConstants.githubBugReportToken;
-    if (token.isEmpty) return;
+    if (token.isEmpty) return null;
 
     try {
       final ctx = await _coletarContexto();
@@ -92,7 +97,7 @@ class ErrorReporter {
         log: logLines,
       );
 
-      await _postarIssueParticionado(
+      return await _postarIssueParticionado(
         token: token,
         title: title,
         body: body,
@@ -108,6 +113,7 @@ class ErrorReporter {
       await PersistentLogger.append(
           'erro:$tela', 'Falha ao postar issue: $e',
           erro: true);
+      return null;
     }
   }
 
