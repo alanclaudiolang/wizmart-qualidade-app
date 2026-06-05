@@ -11,6 +11,8 @@ import '../../../core/network/version_check_service.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/apk_updater_service.dart';
 import '../../../core/utils/auth_session_expired.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/logout_service.dart';
 import '../../../core/utils/app_colors.dart';
@@ -373,6 +375,29 @@ class _HomeContent extends ConsumerWidget {
         duration: const Duration(seconds: 4),
       ),
     );
+
+    // Abre WhatsApp do desenvolvedor com mensagem pré-preenchida —
+    // promotor já tem o canal direto sem precisar digitar nada. Falha
+    // silenciosa: se o WhatsApp não estiver instalado ou der erro,
+    // o relato já foi enviado (issue acima).
+    await _abrirWhatsAppSuporte();
+  }
+
+  Future<void> _abrirWhatsAppSuporte() async {
+    try {
+      final session = await SessionService.getSession();
+      final nome = session?.nome.trim();
+      final identificacao = (nome != null && nome.isNotEmpty)
+          ? 'o promotor $nome'
+          : 'um promotor';
+      final mensagem =
+          'Olá, aqui é $identificacao, tive um problema com o app de '
+          'qualidade. Consegue me ajudar?';
+      final uri = Uri.parse(
+        'https://wa.me/5521971555899?text=${Uri.encodeComponent(mensagem)}',
+      );
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
   }
 
   @override
