@@ -177,7 +177,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -192,6 +192,20 @@ class AppDatabase extends _$AppDatabase {
         // Visitas com id positivo já vêm sincronizadas do servidor
         await customStatement(
           'UPDATE visitas SET server_id = id WHERE id > 0',
+        );
+      }
+      if (from < 4) {
+        // Limpa fotos pendentes e itens do outbox que apontam pra visitas
+        // que não existem mais no SQLite (órfãs do bug pré-build 202 com
+        // hash não-determinístico). Sem isso, o outbox fica em "Posterga
+        // infinito" tentando processar visitas inexistentes.
+        await customStatement(
+          'DELETE FROM pending_photos WHERE visita_id NOT IN '
+          '(SELECT id FROM visitas)',
+        );
+        await customStatement(
+          "DELETE FROM outbox_items WHERE entity_type = 'visita' "
+          'AND entity_id NOT IN (SELECT id FROM visitas)',
         );
       }
     },
