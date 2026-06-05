@@ -132,13 +132,25 @@ void main() async {
     }
 
     runApp(ProviderScope(child: WizMartApp(initError: _initError)));
-  }, (error, stack) {
-    // Erros assíncronos não capturados — reinicia app mostrando erro
+  }, (error, stack) async {
+    // Erros assíncronos não capturados que escaparam do FlutterError.onError
+    // e do PlatformDispatcher.onError. Antes de mostrar a tela vermelha
+    // pedindo print, tenta reportar o issue automaticamente. Se conseguir
+    // (online), o promotor vê só uma mensagem amigável de "feche e abra
+    // novamente". Se não conseguir (offline, refresh_token sem rede), aí
+    // sim mostra o erro completo com pedido de print.
+    final issueNum = await ErrorReporter.reportar(
+      contexto: 'runZonedGuarded — erro fatal no boot',
+      erro: error,
+      stack: stack,
+      screen: 'boot',
+    );
     runApp(MaterialApp(
       home: _ErrorScreen(
         title: 'Erro inesperado',
         error: '$error',
         stack: '$stack',
+        issueReportado: issueNum,
       ),
     ));
   });
@@ -243,74 +255,131 @@ class _WizMartAppState extends ConsumerState<WizMartApp>
   }
 }
 
-// Tela de erro que exibe o problema exato
+// Tela de erro que exibe o problema exato.
+// Quando o issue foi reportado automaticamente (online), mostra uma
+// versão amigável — só uma instrução de tentar de novo. Quando o
+// report falhou (offline), mostra o erro completo com pedido de print
+// pra o desenvolvedor olhar manualmente.
 class _ErrorScreen extends StatelessWidget {
   final String title;
   final String error;
   final String? stack;
+  final int? issueReportado;
 
   const _ErrorScreen({
     required this.title,
     required this.error,
     this.stack,
+    this.issueReportado,
   });
 
   @override
   Widget build(BuildContext context) {
+    final reportadoOk = issueReportado != null;
     return Scaffold(
       backgroundColor: const Color(0xFFFFF5F5),
       appBar: AppBar(
         backgroundColor: Colors.red,
-        title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 16)),
+        title: Text(
+          reportadoOk ? 'Não foi possível iniciar' : title,
+          style: const TextStyle(color: Colors.white, fontSize: 16),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '⚠️ O app encontrou um erro ao iniciar.\n'
-              'Tire um print desta tela e envie ao desenvolvedor.',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.red.shade200),
-              ),
-              child: SelectableText(
-                error,
-                style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 12,
-                  color: Color(0xFFC53030),
-                ),
-              ),
-            ),
-            if (stack != null) ...[
-              const SizedBox(height: 16),
-              const Text('Stack trace:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: SelectableText(
-                  stack!.length > 2000 ? '${stack!.substring(0, 2000)}...' : stack!,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-                ),
-              ),
-            ],
-          ],
-        ),
+        child: reportadoOk
+            ? const _AvisoReportadoBody()
+            : _ErroCompletoBody(error: error, stack: stack),
       ),
+    );
+  }
+}
+
+/// Variante amigável: o erro já foi enviado como issue automaticamente
+/// e o desenvolvedor vai olhar — promotor não precisa fazer nada além
+/// de tentar abrir o app novamente.
+class _AvisoReportadoBody extends StatelessWidget {
+  const _AvisoReportadoBody();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '⚠️ Tivemos um problema ao iniciar o app.',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        SizedBox(height: 12),
+        Text(
+          'O desenvolvedor já foi avisado automaticamente. '
+          'Feche o app e abra novamente em alguns instantes — '
+          'normalmente resolve sozinho.',
+          style: TextStyle(fontSize: 14),
+        ),
+      ],
+    );
+  }
+}
+
+/// Variante "pede print": o erro não conseguiu ser reportado (offline,
+/// etc), então mostramos tudo pra o promotor mandar print pelo WhatsApp.
+class _ErroCompletoBody extends StatelessWidget {
+  final String error;
+  final String? stack;
+  const _ErroCompletoBody({required this.error, this.stack});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '⚠️ O app encontrou um erro ao iniciar.\n'
+          'Tire um print desta tela e envie ao desenvolvedor.',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.red.shade200),
+          ),
+          child: SelectableText(
+            error,
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 12,
+              color: Color(0xFFC53030),
+            ),
+          ),
+        ),
+        if (stack != null) ...[
+          const SizedBox(height: 16),
+          const Text('Stack trace:',
+              style:
+                  TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: SelectableText(
+              stack!.length > 2000
+                  ? '${stack!.substring(0, 2000)}...'
+                  : stack!,
+              style:
+                  const TextStyle(fontFamily: 'monospace', fontSize: 11),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
