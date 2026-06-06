@@ -10,7 +10,10 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../database/app_database.dart';
+import '../utils/anomalia_queue_processor.dart';
+import '../utils/anomalia_reporter.dart';
 import '../utils/auth_session_expired.dart';
+import '../utils/error_classifier.dart';
 import '../constants/app_constants.dart';
 import '../utils/sync_logger.dart';
 import 'sync_pause.dart';
@@ -551,6 +554,39 @@ class SyncEngine {
     for (final item in items) {
       await _processOutboxItem(item);
     }
+
+    // D5: visita marcada como realizada localmente (statusVisita=3)
+    // mas syncStatus continua 'pending' há mais de 1h. Pode ser que
+    // o servidor não chegou a receber e ela vai virar FALTA. Enfileira
+    // anomalia pra eu olhar. Não muda o estado.
+    try {
+      final agoraIso = DateTime.now()
+          .subtract(const Duration(hours: 1))
+          .toIso8601String();
+      final travadas = await _db.customSelect(
+        "SELECT id FROM visitas WHERE sync_status = 'pending' "
+        "AND status_visita = ${AppConstants.statusRealizada} "
+        "AND (synced_at IS NULL OR synced_at < ?)",
+        variables: [Variable<String>(agoraIso)],
+      ).get();
+      for (final row in travadas) {
+        final vid = row.read<int>('id');
+        // ignore: discarded_futures
+        AnomaliaReporter.enfileirar(
+          db: _db,
+          tipo: 'D5-visita-realizada-pending',
+          entidadeId: vid.toString(),
+          resumo: 'Visita marcada como realizada localmente mas '
+              'syncStatus=pending há mais de 1h.',
+        );
+      }
+    } catch (_) {/* não crítico */}
+
+    // Drena fila de anomalias (issues + bug photos) — só faz HTTP
+    // se houver rede; tudo backoffeado e silencioso.
+    try {
+      await AnomaliaQueueProcessor(_db, _supabase).drenar();
+    } catch (_) {/* silencioso */}
   }
 
   /// Converte status interno do app novo para o status_visita do Supabase
@@ -680,6 +716,24 @@ class SyncEngine {
           'op=$operation: capturadas=$capturadas uploaded=$uploaded '
           '(faltam ${capturadas - uploaded}) titulo=${v.titulo}',
           erro: true);
+      // D4: enfileira anomalia (não muda fluxo — visita já vai subir).
+      // ignore: discarded_futures
+      AnomaliaReporter.enfileirar(
+        db: _db,
+        tipo: 'D4-discrepancia-fotos',
+        entidadeId: v.id.toString(),
+        resumo:
+            'Visita vai subir com fotos faltando: $slot capturadas=$capturadas uploaded=$uploaded',
+        contextoExtra: {
+          'visitaId': v.id,
+          'serverId': v.serverId,
+          'operation': operation,
+          'slot': slot,
+          'capturadas': capturadas,
+          'uploaded': uploaded,
+          'faltam': capturadas - uploaded,
+        },
+      );
     }
   }
 
@@ -824,12 +878,43 @@ class SyncEngine {
         ));
       }
       await _db.deleteOutboxItem(item.id);
-    } catch (e) {
+    } catch (e, st) {
       _logger.log('outbox', 'Falha entityId=$entityId: $e', erro: true);
       final attempts = item.attempts + 1;
       final delaySeconds = min(pow(2, attempts).toInt() * 30, 1800);
       final nextRetry =
           DateTime.now().add(Duration(seconds: delaySeconds)).toIso8601String();
+      // D3: outbox item travado há > 2h E erro classificado como real
+      // (4xx, payload bad, constraint violado etc) → enfileira anomalia.
+      // Mantém o item em pending (não vira error — outbox semântica é
+      // diferente da photo), e o backoff continua tentando.
+      try {
+        final criado = DateTime.tryParse(item.createdAt);
+        final classe = ErrorClassifier.classificar(e,
+            statusCode: _extrairHttpStatus(e));
+        if (criado != null &&
+            DateTime.now().difference(criado) > const Duration(hours: 2) &&
+            (classe == ClassificacaoErro.erroReal || attempts > 5)) {
+          // ignore: discarded_futures
+          AnomaliaReporter.enfileirar(
+            db: _db,
+            tipo: 'D3-outbox-stuck',
+            entidadeId: entityId.toString(),
+            resumo: 'Outbox travado: $attempts tentativas, '
+                'classe=${classe.name}',
+            contextoExtra: {
+              'visitaId': entityId,
+              'outboxId': item.id,
+              'operation': item.operation,
+              'attempts': attempts,
+              'classe': classe.name,
+              'criadoEm': item.createdAt,
+            },
+            erro: e,
+            stack: st,
+          );
+        }
+      } catch (_) {/* não crítico */}
       await _db.updateOutboxItem(OutboxItemsCompanion(
         id: Value(item.id),
         status: const Value('pending'),
@@ -1032,6 +1117,51 @@ class SyncEngine {
     } catch (e, st) {
       _logger.log('photo',
           'Falha upload photo id=${photo.id}: $e\n$st', erro: true);
+      // Classifica: rede transitória → pending com backoff (atual);
+      // erro real (4xx, file apagado, formato inválido) → vira 'error' +
+      // anomalia enfileirada + upload pro bug-reports bucket.
+      final statusCode = _extrairHttpStatus(e);
+      final classe =
+          ErrorClassifier.classificar(e, statusCode: statusCode);
+      if (classe == ClassificacaoErro.erroReal) {
+        // Marca como error pra destravar o outbox dessa visita.
+        await _db.updatePendingPhoto(PendingPhotosCompanion(
+          id: Value(photo.id),
+          status: const Value('error'),
+          attempts: Value(photo.attempts + 1),
+          lastError: Value(e.toString()),
+        ));
+        // D1: enfileira anomalia + upload pro bucket de bug-report.
+        final visita = await _db.getVisitaById(photo.visitaId);
+        final promotorId = visita?.idPromotorAssociado ?? 0;
+        // ignore: discarded_futures
+        AnomaliaReporter.enfileirarBugPhoto(
+          db: _db,
+          fotoId: photo.id,
+          localPath: photo.localPath,
+          promotorId: promotorId,
+          visitaId: photo.visitaId,
+        );
+        // ignore: discarded_futures
+        AnomaliaReporter.enfileirar(
+          db: _db,
+          tipo: 'D1-upload-erro-real',
+          entidadeId: photo.visitaId.toString(),
+          resumo: 'Upload de foto falhou com erro real (${classe.name}): $e',
+          contextoExtra: {
+            'fotoId': photo.id,
+            'slot': photo.slot,
+            'numero': photo.numero,
+            'visitaId': photo.visitaId,
+            'httpStatus': statusCode,
+            'attempts': photo.attempts + 1,
+          },
+          erro: e,
+          stack: st,
+        );
+        return;
+      }
+      // Rede transitória / desconhecido → comportamento atual (backoff).
       final attempts = photo.attempts + 1;
       final delaySeconds = min(pow(2, attempts).toInt() * 30, 1800);
       final nextRetry =
@@ -1041,8 +1171,21 @@ class SyncEngine {
         status: const Value('pending'),
         attempts: Value(attempts),
         nextRetryAt: Value(nextRetry),
+        lastError: Value(e.toString()),
       ));
     }
+  }
+
+  /// Tenta extrair HTTP status code da exceção. Retorna null se não
+  /// for um erro de HTTP/Supabase com código.
+  int? _extrairHttpStatus(Object e) {
+    if (e is StorageException) {
+      return int.tryParse(e.statusCode ?? '');
+    }
+    if (e is PostgrestException) {
+      return int.tryParse(e.code ?? '');
+    }
+    return null;
   }
 
   String _contentTypeFromExt(String ext) {

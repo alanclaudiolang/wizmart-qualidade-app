@@ -3894,6 +3894,12 @@ class $PendingPhotosTable extends PendingPhotos
   late final GeneratedColumn<String> createdAt = GeneratedColumn<String>(
       'created_at', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _lastErrorMeta =
+      const VerificationMeta('lastError');
+  @override
+  late final GeneratedColumn<String> lastError = GeneratedColumn<String>(
+      'last_error', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -3905,7 +3911,8 @@ class $PendingPhotosTable extends PendingPhotos
         storageUrl,
         attempts,
         nextRetryAt,
-        createdAt
+        createdAt,
+        lastError
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3974,6 +3981,10 @@ class $PendingPhotosTable extends PendingPhotos
     } else if (isInserting) {
       context.missing(_createdAtMeta);
     }
+    if (data.containsKey('last_error')) {
+      context.handle(_lastErrorMeta,
+          lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta));
+    }
     return context;
   }
 
@@ -4003,6 +4014,8 @@ class $PendingPhotosTable extends PendingPhotos
           .read(DriftSqlType.string, data['${effectivePrefix}next_retry_at'])!,
       createdAt: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}created_at'])!,
+      lastError: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}last_error']),
     );
   }
 
@@ -4023,6 +4036,10 @@ class PendingPhoto extends DataClass implements Insertable<PendingPhoto> {
   final int attempts;
   final String nextRetryAt;
   final String createdAt;
+
+  /// Última mensagem de erro do upload — populada quando status='error'.
+  /// Adicionado no schema 5 pra ajudar diagnóstico via auto-issue.
+  final String? lastError;
   const PendingPhoto(
       {required this.id,
       required this.visitaId,
@@ -4033,7 +4050,8 @@ class PendingPhoto extends DataClass implements Insertable<PendingPhoto> {
       this.storageUrl,
       required this.attempts,
       required this.nextRetryAt,
-      required this.createdAt});
+      required this.createdAt,
+      this.lastError});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -4049,6 +4067,9 @@ class PendingPhoto extends DataClass implements Insertable<PendingPhoto> {
     map['attempts'] = Variable<int>(attempts);
     map['next_retry_at'] = Variable<String>(nextRetryAt);
     map['created_at'] = Variable<String>(createdAt);
+    if (!nullToAbsent || lastError != null) {
+      map['last_error'] = Variable<String>(lastError);
+    }
     return map;
   }
 
@@ -4066,6 +4087,9 @@ class PendingPhoto extends DataClass implements Insertable<PendingPhoto> {
       attempts: Value(attempts),
       nextRetryAt: Value(nextRetryAt),
       createdAt: Value(createdAt),
+      lastError: lastError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastError),
     );
   }
 
@@ -4083,6 +4107,7 @@ class PendingPhoto extends DataClass implements Insertable<PendingPhoto> {
       attempts: serializer.fromJson<int>(json['attempts']),
       nextRetryAt: serializer.fromJson<String>(json['nextRetryAt']),
       createdAt: serializer.fromJson<String>(json['createdAt']),
+      lastError: serializer.fromJson<String?>(json['lastError']),
     );
   }
   @override
@@ -4099,6 +4124,7 @@ class PendingPhoto extends DataClass implements Insertable<PendingPhoto> {
       'attempts': serializer.toJson<int>(attempts),
       'nextRetryAt': serializer.toJson<String>(nextRetryAt),
       'createdAt': serializer.toJson<String>(createdAt),
+      'lastError': serializer.toJson<String?>(lastError),
     };
   }
 
@@ -4112,7 +4138,8 @@ class PendingPhoto extends DataClass implements Insertable<PendingPhoto> {
           Value<String?> storageUrl = const Value.absent(),
           int? attempts,
           String? nextRetryAt,
-          String? createdAt}) =>
+          String? createdAt,
+          Value<String?> lastError = const Value.absent()}) =>
       PendingPhoto(
         id: id ?? this.id,
         visitaId: visitaId ?? this.visitaId,
@@ -4124,6 +4151,7 @@ class PendingPhoto extends DataClass implements Insertable<PendingPhoto> {
         attempts: attempts ?? this.attempts,
         nextRetryAt: nextRetryAt ?? this.nextRetryAt,
         createdAt: createdAt ?? this.createdAt,
+        lastError: lastError.present ? lastError.value : this.lastError,
       );
   PendingPhoto copyWithCompanion(PendingPhotosCompanion data) {
     return PendingPhoto(
@@ -4139,6 +4167,7 @@ class PendingPhoto extends DataClass implements Insertable<PendingPhoto> {
       nextRetryAt:
           data.nextRetryAt.present ? data.nextRetryAt.value : this.nextRetryAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      lastError: data.lastError.present ? data.lastError.value : this.lastError,
     );
   }
 
@@ -4154,14 +4183,15 @@ class PendingPhoto extends DataClass implements Insertable<PendingPhoto> {
           ..write('storageUrl: $storageUrl, ')
           ..write('attempts: $attempts, ')
           ..write('nextRetryAt: $nextRetryAt, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('lastError: $lastError')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode => Object.hash(id, visitaId, slot, numero, localPath, status,
-      storageUrl, attempts, nextRetryAt, createdAt);
+      storageUrl, attempts, nextRetryAt, createdAt, lastError);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -4175,7 +4205,8 @@ class PendingPhoto extends DataClass implements Insertable<PendingPhoto> {
           other.storageUrl == this.storageUrl &&
           other.attempts == this.attempts &&
           other.nextRetryAt == this.nextRetryAt &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.lastError == this.lastError);
 }
 
 class PendingPhotosCompanion extends UpdateCompanion<PendingPhoto> {
@@ -4189,6 +4220,7 @@ class PendingPhotosCompanion extends UpdateCompanion<PendingPhoto> {
   final Value<int> attempts;
   final Value<String> nextRetryAt;
   final Value<String> createdAt;
+  final Value<String?> lastError;
   final Value<int> rowid;
   const PendingPhotosCompanion({
     this.id = const Value.absent(),
@@ -4201,6 +4233,7 @@ class PendingPhotosCompanion extends UpdateCompanion<PendingPhoto> {
     this.attempts = const Value.absent(),
     this.nextRetryAt = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.lastError = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PendingPhotosCompanion.insert({
@@ -4214,6 +4247,7 @@ class PendingPhotosCompanion extends UpdateCompanion<PendingPhoto> {
     this.attempts = const Value.absent(),
     required String nextRetryAt,
     required String createdAt,
+    this.lastError = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : id = Value(id),
         visitaId = Value(visitaId),
@@ -4233,6 +4267,7 @@ class PendingPhotosCompanion extends UpdateCompanion<PendingPhoto> {
     Expression<int>? attempts,
     Expression<String>? nextRetryAt,
     Expression<String>? createdAt,
+    Expression<String>? lastError,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -4246,6 +4281,7 @@ class PendingPhotosCompanion extends UpdateCompanion<PendingPhoto> {
       if (attempts != null) 'attempts': attempts,
       if (nextRetryAt != null) 'next_retry_at': nextRetryAt,
       if (createdAt != null) 'created_at': createdAt,
+      if (lastError != null) 'last_error': lastError,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -4261,6 +4297,7 @@ class PendingPhotosCompanion extends UpdateCompanion<PendingPhoto> {
       Value<int>? attempts,
       Value<String>? nextRetryAt,
       Value<String>? createdAt,
+      Value<String?>? lastError,
       Value<int>? rowid}) {
     return PendingPhotosCompanion(
       id: id ?? this.id,
@@ -4273,6 +4310,7 @@ class PendingPhotosCompanion extends UpdateCompanion<PendingPhoto> {
       attempts: attempts ?? this.attempts,
       nextRetryAt: nextRetryAt ?? this.nextRetryAt,
       createdAt: createdAt ?? this.createdAt,
+      lastError: lastError ?? this.lastError,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -4310,6 +4348,9 @@ class PendingPhotosCompanion extends UpdateCompanion<PendingPhoto> {
     if (createdAt.present) {
       map['created_at'] = Variable<String>(createdAt.value);
     }
+    if (lastError.present) {
+      map['last_error'] = Variable<String>(lastError.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -4329,6 +4370,7 @@ class PendingPhotosCompanion extends UpdateCompanion<PendingPhoto> {
           ..write('attempts: $attempts, ')
           ..write('nextRetryAt: $nextRetryAt, ')
           ..write('createdAt: $createdAt, ')
+          ..write('lastError: $lastError, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4580,6 +4622,1144 @@ class SyncStateCompanion extends UpdateCompanion<SyncStateData> {
   }
 }
 
+class $PendingIssuesTable extends PendingIssues
+    with TableInfo<$PendingIssuesTable, PendingIssue> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PendingIssuesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _tipoMeta = const VerificationMeta('tipo');
+  @override
+  late final GeneratedColumn<String> tipo = GeneratedColumn<String>(
+      'tipo', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _entidadeIdMeta =
+      const VerificationMeta('entidadeId');
+  @override
+  late final GeneratedColumn<String> entidadeId = GeneratedColumn<String>(
+      'entidade_id', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _tituloMeta = const VerificationMeta('titulo');
+  @override
+  late final GeneratedColumn<String> titulo = GeneratedColumn<String>(
+      'titulo', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _bodyMdMeta = const VerificationMeta('bodyMd');
+  @override
+  late final GeneratedColumn<String> bodyMd = GeneratedColumn<String>(
+      'body_md', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _labelsJsonMeta =
+      const VerificationMeta('labelsJson');
+  @override
+  late final GeneratedColumn<String> labelsJson = GeneratedColumn<String>(
+      'labels_json', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+      'status', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('pending'));
+  static const VerificationMeta _attemptsMeta =
+      const VerificationMeta('attempts');
+  @override
+  late final GeneratedColumn<int> attempts = GeneratedColumn<int>(
+      'attempts', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _nextRetryAtMeta =
+      const VerificationMeta('nextRetryAt');
+  @override
+  late final GeneratedColumn<String> nextRetryAt = GeneratedColumn<String>(
+      'next_retry_at', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _lastErrorMeta =
+      const VerificationMeta('lastError');
+  @override
+  late final GeneratedColumn<String> lastError = GeneratedColumn<String>(
+      'last_error', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<String> createdAt = GeneratedColumn<String>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _githubIssueNumberMeta =
+      const VerificationMeta('githubIssueNumber');
+  @override
+  late final GeneratedColumn<int> githubIssueNumber = GeneratedColumn<int>(
+      'github_issue_number', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        tipo,
+        entidadeId,
+        titulo,
+        bodyMd,
+        labelsJson,
+        status,
+        attempts,
+        nextRetryAt,
+        lastError,
+        createdAt,
+        githubIssueNumber
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'pending_issues';
+  @override
+  VerificationContext validateIntegrity(Insertable<PendingIssue> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('tipo')) {
+      context.handle(
+          _tipoMeta, tipo.isAcceptableOrUnknown(data['tipo']!, _tipoMeta));
+    } else if (isInserting) {
+      context.missing(_tipoMeta);
+    }
+    if (data.containsKey('entidade_id')) {
+      context.handle(
+          _entidadeIdMeta,
+          entidadeId.isAcceptableOrUnknown(
+              data['entidade_id']!, _entidadeIdMeta));
+    }
+    if (data.containsKey('titulo')) {
+      context.handle(_tituloMeta,
+          titulo.isAcceptableOrUnknown(data['titulo']!, _tituloMeta));
+    } else if (isInserting) {
+      context.missing(_tituloMeta);
+    }
+    if (data.containsKey('body_md')) {
+      context.handle(_bodyMdMeta,
+          bodyMd.isAcceptableOrUnknown(data['body_md']!, _bodyMdMeta));
+    } else if (isInserting) {
+      context.missing(_bodyMdMeta);
+    }
+    if (data.containsKey('labels_json')) {
+      context.handle(
+          _labelsJsonMeta,
+          labelsJson.isAcceptableOrUnknown(
+              data['labels_json']!, _labelsJsonMeta));
+    } else if (isInserting) {
+      context.missing(_labelsJsonMeta);
+    }
+    if (data.containsKey('status')) {
+      context.handle(_statusMeta,
+          status.isAcceptableOrUnknown(data['status']!, _statusMeta));
+    }
+    if (data.containsKey('attempts')) {
+      context.handle(_attemptsMeta,
+          attempts.isAcceptableOrUnknown(data['attempts']!, _attemptsMeta));
+    }
+    if (data.containsKey('next_retry_at')) {
+      context.handle(
+          _nextRetryAtMeta,
+          nextRetryAt.isAcceptableOrUnknown(
+              data['next_retry_at']!, _nextRetryAtMeta));
+    } else if (isInserting) {
+      context.missing(_nextRetryAtMeta);
+    }
+    if (data.containsKey('last_error')) {
+      context.handle(_lastErrorMeta,
+          lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('github_issue_number')) {
+      context.handle(
+          _githubIssueNumberMeta,
+          githubIssueNumber.isAcceptableOrUnknown(
+              data['github_issue_number']!, _githubIssueNumberMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  PendingIssue map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PendingIssue(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      tipo: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}tipo'])!,
+      entidadeId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}entidade_id']),
+      titulo: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}titulo'])!,
+      bodyMd: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}body_md'])!,
+      labelsJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}labels_json'])!,
+      status: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}status'])!,
+      attempts: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}attempts'])!,
+      nextRetryAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}next_retry_at'])!,
+      lastError: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}last_error']),
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}created_at'])!,
+      githubIssueNumber: attachedDatabase.typeMapping.read(
+          DriftSqlType.int, data['${effectivePrefix}github_issue_number']),
+    );
+  }
+
+  @override
+  $PendingIssuesTable createAlias(String alias) {
+    return $PendingIssuesTable(attachedDatabase, alias);
+  }
+}
+
+class PendingIssue extends DataClass implements Insertable<PendingIssue> {
+  final String id;
+
+  /// Tipo da anomalia (D1, D2, ..., manual). Usado pra cooldown +
+  /// label no issue.
+  final String tipo;
+
+  /// id da entidade alvo (visitaId, fotoId, outboxId). Combinado com
+  /// `tipo` forma a chave de cooldown.
+  final String? entidadeId;
+  final String titulo;
+
+  /// Body completo já montado no momento da detecção (dump SQLite,
+  /// log, sondas). Texto markdown pronto pra postar.
+  final String bodyMd;
+
+  /// JSON array de labels (ex: ["auto","screen:home","build:215"]).
+  final String labelsJson;
+  final String status;
+  final int attempts;
+  final String nextRetryAt;
+  final String? lastError;
+  final String createdAt;
+
+  /// Número do issue criado no GitHub depois de envio OK. Null enquanto
+  /// pendente.
+  final int? githubIssueNumber;
+  const PendingIssue(
+      {required this.id,
+      required this.tipo,
+      this.entidadeId,
+      required this.titulo,
+      required this.bodyMd,
+      required this.labelsJson,
+      required this.status,
+      required this.attempts,
+      required this.nextRetryAt,
+      this.lastError,
+      required this.createdAt,
+      this.githubIssueNumber});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['tipo'] = Variable<String>(tipo);
+    if (!nullToAbsent || entidadeId != null) {
+      map['entidade_id'] = Variable<String>(entidadeId);
+    }
+    map['titulo'] = Variable<String>(titulo);
+    map['body_md'] = Variable<String>(bodyMd);
+    map['labels_json'] = Variable<String>(labelsJson);
+    map['status'] = Variable<String>(status);
+    map['attempts'] = Variable<int>(attempts);
+    map['next_retry_at'] = Variable<String>(nextRetryAt);
+    if (!nullToAbsent || lastError != null) {
+      map['last_error'] = Variable<String>(lastError);
+    }
+    map['created_at'] = Variable<String>(createdAt);
+    if (!nullToAbsent || githubIssueNumber != null) {
+      map['github_issue_number'] = Variable<int>(githubIssueNumber);
+    }
+    return map;
+  }
+
+  PendingIssuesCompanion toCompanion(bool nullToAbsent) {
+    return PendingIssuesCompanion(
+      id: Value(id),
+      tipo: Value(tipo),
+      entidadeId: entidadeId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(entidadeId),
+      titulo: Value(titulo),
+      bodyMd: Value(bodyMd),
+      labelsJson: Value(labelsJson),
+      status: Value(status),
+      attempts: Value(attempts),
+      nextRetryAt: Value(nextRetryAt),
+      lastError: lastError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastError),
+      createdAt: Value(createdAt),
+      githubIssueNumber: githubIssueNumber == null && nullToAbsent
+          ? const Value.absent()
+          : Value(githubIssueNumber),
+    );
+  }
+
+  factory PendingIssue.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PendingIssue(
+      id: serializer.fromJson<String>(json['id']),
+      tipo: serializer.fromJson<String>(json['tipo']),
+      entidadeId: serializer.fromJson<String?>(json['entidadeId']),
+      titulo: serializer.fromJson<String>(json['titulo']),
+      bodyMd: serializer.fromJson<String>(json['bodyMd']),
+      labelsJson: serializer.fromJson<String>(json['labelsJson']),
+      status: serializer.fromJson<String>(json['status']),
+      attempts: serializer.fromJson<int>(json['attempts']),
+      nextRetryAt: serializer.fromJson<String>(json['nextRetryAt']),
+      lastError: serializer.fromJson<String?>(json['lastError']),
+      createdAt: serializer.fromJson<String>(json['createdAt']),
+      githubIssueNumber: serializer.fromJson<int?>(json['githubIssueNumber']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'tipo': serializer.toJson<String>(tipo),
+      'entidadeId': serializer.toJson<String?>(entidadeId),
+      'titulo': serializer.toJson<String>(titulo),
+      'bodyMd': serializer.toJson<String>(bodyMd),
+      'labelsJson': serializer.toJson<String>(labelsJson),
+      'status': serializer.toJson<String>(status),
+      'attempts': serializer.toJson<int>(attempts),
+      'nextRetryAt': serializer.toJson<String>(nextRetryAt),
+      'lastError': serializer.toJson<String?>(lastError),
+      'createdAt': serializer.toJson<String>(createdAt),
+      'githubIssueNumber': serializer.toJson<int?>(githubIssueNumber),
+    };
+  }
+
+  PendingIssue copyWith(
+          {String? id,
+          String? tipo,
+          Value<String?> entidadeId = const Value.absent(),
+          String? titulo,
+          String? bodyMd,
+          String? labelsJson,
+          String? status,
+          int? attempts,
+          String? nextRetryAt,
+          Value<String?> lastError = const Value.absent(),
+          String? createdAt,
+          Value<int?> githubIssueNumber = const Value.absent()}) =>
+      PendingIssue(
+        id: id ?? this.id,
+        tipo: tipo ?? this.tipo,
+        entidadeId: entidadeId.present ? entidadeId.value : this.entidadeId,
+        titulo: titulo ?? this.titulo,
+        bodyMd: bodyMd ?? this.bodyMd,
+        labelsJson: labelsJson ?? this.labelsJson,
+        status: status ?? this.status,
+        attempts: attempts ?? this.attempts,
+        nextRetryAt: nextRetryAt ?? this.nextRetryAt,
+        lastError: lastError.present ? lastError.value : this.lastError,
+        createdAt: createdAt ?? this.createdAt,
+        githubIssueNumber: githubIssueNumber.present
+            ? githubIssueNumber.value
+            : this.githubIssueNumber,
+      );
+  PendingIssue copyWithCompanion(PendingIssuesCompanion data) {
+    return PendingIssue(
+      id: data.id.present ? data.id.value : this.id,
+      tipo: data.tipo.present ? data.tipo.value : this.tipo,
+      entidadeId:
+          data.entidadeId.present ? data.entidadeId.value : this.entidadeId,
+      titulo: data.titulo.present ? data.titulo.value : this.titulo,
+      bodyMd: data.bodyMd.present ? data.bodyMd.value : this.bodyMd,
+      labelsJson:
+          data.labelsJson.present ? data.labelsJson.value : this.labelsJson,
+      status: data.status.present ? data.status.value : this.status,
+      attempts: data.attempts.present ? data.attempts.value : this.attempts,
+      nextRetryAt:
+          data.nextRetryAt.present ? data.nextRetryAt.value : this.nextRetryAt,
+      lastError: data.lastError.present ? data.lastError.value : this.lastError,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      githubIssueNumber: data.githubIssueNumber.present
+          ? data.githubIssueNumber.value
+          : this.githubIssueNumber,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PendingIssue(')
+          ..write('id: $id, ')
+          ..write('tipo: $tipo, ')
+          ..write('entidadeId: $entidadeId, ')
+          ..write('titulo: $titulo, ')
+          ..write('bodyMd: $bodyMd, ')
+          ..write('labelsJson: $labelsJson, ')
+          ..write('status: $status, ')
+          ..write('attempts: $attempts, ')
+          ..write('nextRetryAt: $nextRetryAt, ')
+          ..write('lastError: $lastError, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('githubIssueNumber: $githubIssueNumber')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      tipo,
+      entidadeId,
+      titulo,
+      bodyMd,
+      labelsJson,
+      status,
+      attempts,
+      nextRetryAt,
+      lastError,
+      createdAt,
+      githubIssueNumber);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PendingIssue &&
+          other.id == this.id &&
+          other.tipo == this.tipo &&
+          other.entidadeId == this.entidadeId &&
+          other.titulo == this.titulo &&
+          other.bodyMd == this.bodyMd &&
+          other.labelsJson == this.labelsJson &&
+          other.status == this.status &&
+          other.attempts == this.attempts &&
+          other.nextRetryAt == this.nextRetryAt &&
+          other.lastError == this.lastError &&
+          other.createdAt == this.createdAt &&
+          other.githubIssueNumber == this.githubIssueNumber);
+}
+
+class PendingIssuesCompanion extends UpdateCompanion<PendingIssue> {
+  final Value<String> id;
+  final Value<String> tipo;
+  final Value<String?> entidadeId;
+  final Value<String> titulo;
+  final Value<String> bodyMd;
+  final Value<String> labelsJson;
+  final Value<String> status;
+  final Value<int> attempts;
+  final Value<String> nextRetryAt;
+  final Value<String?> lastError;
+  final Value<String> createdAt;
+  final Value<int?> githubIssueNumber;
+  final Value<int> rowid;
+  const PendingIssuesCompanion({
+    this.id = const Value.absent(),
+    this.tipo = const Value.absent(),
+    this.entidadeId = const Value.absent(),
+    this.titulo = const Value.absent(),
+    this.bodyMd = const Value.absent(),
+    this.labelsJson = const Value.absent(),
+    this.status = const Value.absent(),
+    this.attempts = const Value.absent(),
+    this.nextRetryAt = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.githubIssueNumber = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PendingIssuesCompanion.insert({
+    required String id,
+    required String tipo,
+    this.entidadeId = const Value.absent(),
+    required String titulo,
+    required String bodyMd,
+    required String labelsJson,
+    this.status = const Value.absent(),
+    this.attempts = const Value.absent(),
+    required String nextRetryAt,
+    this.lastError = const Value.absent(),
+    required String createdAt,
+    this.githubIssueNumber = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        tipo = Value(tipo),
+        titulo = Value(titulo),
+        bodyMd = Value(bodyMd),
+        labelsJson = Value(labelsJson),
+        nextRetryAt = Value(nextRetryAt),
+        createdAt = Value(createdAt);
+  static Insertable<PendingIssue> custom({
+    Expression<String>? id,
+    Expression<String>? tipo,
+    Expression<String>? entidadeId,
+    Expression<String>? titulo,
+    Expression<String>? bodyMd,
+    Expression<String>? labelsJson,
+    Expression<String>? status,
+    Expression<int>? attempts,
+    Expression<String>? nextRetryAt,
+    Expression<String>? lastError,
+    Expression<String>? createdAt,
+    Expression<int>? githubIssueNumber,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (tipo != null) 'tipo': tipo,
+      if (entidadeId != null) 'entidade_id': entidadeId,
+      if (titulo != null) 'titulo': titulo,
+      if (bodyMd != null) 'body_md': bodyMd,
+      if (labelsJson != null) 'labels_json': labelsJson,
+      if (status != null) 'status': status,
+      if (attempts != null) 'attempts': attempts,
+      if (nextRetryAt != null) 'next_retry_at': nextRetryAt,
+      if (lastError != null) 'last_error': lastError,
+      if (createdAt != null) 'created_at': createdAt,
+      if (githubIssueNumber != null) 'github_issue_number': githubIssueNumber,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PendingIssuesCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? tipo,
+      Value<String?>? entidadeId,
+      Value<String>? titulo,
+      Value<String>? bodyMd,
+      Value<String>? labelsJson,
+      Value<String>? status,
+      Value<int>? attempts,
+      Value<String>? nextRetryAt,
+      Value<String?>? lastError,
+      Value<String>? createdAt,
+      Value<int?>? githubIssueNumber,
+      Value<int>? rowid}) {
+    return PendingIssuesCompanion(
+      id: id ?? this.id,
+      tipo: tipo ?? this.tipo,
+      entidadeId: entidadeId ?? this.entidadeId,
+      titulo: titulo ?? this.titulo,
+      bodyMd: bodyMd ?? this.bodyMd,
+      labelsJson: labelsJson ?? this.labelsJson,
+      status: status ?? this.status,
+      attempts: attempts ?? this.attempts,
+      nextRetryAt: nextRetryAt ?? this.nextRetryAt,
+      lastError: lastError ?? this.lastError,
+      createdAt: createdAt ?? this.createdAt,
+      githubIssueNumber: githubIssueNumber ?? this.githubIssueNumber,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (tipo.present) {
+      map['tipo'] = Variable<String>(tipo.value);
+    }
+    if (entidadeId.present) {
+      map['entidade_id'] = Variable<String>(entidadeId.value);
+    }
+    if (titulo.present) {
+      map['titulo'] = Variable<String>(titulo.value);
+    }
+    if (bodyMd.present) {
+      map['body_md'] = Variable<String>(bodyMd.value);
+    }
+    if (labelsJson.present) {
+      map['labels_json'] = Variable<String>(labelsJson.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (attempts.present) {
+      map['attempts'] = Variable<int>(attempts.value);
+    }
+    if (nextRetryAt.present) {
+      map['next_retry_at'] = Variable<String>(nextRetryAt.value);
+    }
+    if (lastError.present) {
+      map['last_error'] = Variable<String>(lastError.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<String>(createdAt.value);
+    }
+    if (githubIssueNumber.present) {
+      map['github_issue_number'] = Variable<int>(githubIssueNumber.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PendingIssuesCompanion(')
+          ..write('id: $id, ')
+          ..write('tipo: $tipo, ')
+          ..write('entidadeId: $entidadeId, ')
+          ..write('titulo: $titulo, ')
+          ..write('bodyMd: $bodyMd, ')
+          ..write('labelsJson: $labelsJson, ')
+          ..write('status: $status, ')
+          ..write('attempts: $attempts, ')
+          ..write('nextRetryAt: $nextRetryAt, ')
+          ..write('lastError: $lastError, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('githubIssueNumber: $githubIssueNumber, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $PendingBugPhotosTable extends PendingBugPhotos
+    with TableInfo<$PendingBugPhotosTable, PendingBugPhoto> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PendingBugPhotosTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _fotoIdMeta = const VerificationMeta('fotoId');
+  @override
+  late final GeneratedColumn<String> fotoId = GeneratedColumn<String>(
+      'foto_id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _localPathMeta =
+      const VerificationMeta('localPath');
+  @override
+  late final GeneratedColumn<String> localPath = GeneratedColumn<String>(
+      'local_path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _destStoragePathMeta =
+      const VerificationMeta('destStoragePath');
+  @override
+  late final GeneratedColumn<String> destStoragePath = GeneratedColumn<String>(
+      'dest_storage_path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+      'status', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('pending'));
+  static const VerificationMeta _attemptsMeta =
+      const VerificationMeta('attempts');
+  @override
+  late final GeneratedColumn<int> attempts = GeneratedColumn<int>(
+      'attempts', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _nextRetryAtMeta =
+      const VerificationMeta('nextRetryAt');
+  @override
+  late final GeneratedColumn<String> nextRetryAt = GeneratedColumn<String>(
+      'next_retry_at', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _lastErrorMeta =
+      const VerificationMeta('lastError');
+  @override
+  late final GeneratedColumn<String> lastError = GeneratedColumn<String>(
+      'last_error', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<String> createdAt = GeneratedColumn<String>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _publicUrlMeta =
+      const VerificationMeta('publicUrl');
+  @override
+  late final GeneratedColumn<String> publicUrl = GeneratedColumn<String>(
+      'public_url', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        fotoId,
+        localPath,
+        destStoragePath,
+        status,
+        attempts,
+        nextRetryAt,
+        lastError,
+        createdAt,
+        publicUrl
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'pending_bug_photos';
+  @override
+  VerificationContext validateIntegrity(Insertable<PendingBugPhoto> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('foto_id')) {
+      context.handle(_fotoIdMeta,
+          fotoId.isAcceptableOrUnknown(data['foto_id']!, _fotoIdMeta));
+    } else if (isInserting) {
+      context.missing(_fotoIdMeta);
+    }
+    if (data.containsKey('local_path')) {
+      context.handle(_localPathMeta,
+          localPath.isAcceptableOrUnknown(data['local_path']!, _localPathMeta));
+    } else if (isInserting) {
+      context.missing(_localPathMeta);
+    }
+    if (data.containsKey('dest_storage_path')) {
+      context.handle(
+          _destStoragePathMeta,
+          destStoragePath.isAcceptableOrUnknown(
+              data['dest_storage_path']!, _destStoragePathMeta));
+    } else if (isInserting) {
+      context.missing(_destStoragePathMeta);
+    }
+    if (data.containsKey('status')) {
+      context.handle(_statusMeta,
+          status.isAcceptableOrUnknown(data['status']!, _statusMeta));
+    }
+    if (data.containsKey('attempts')) {
+      context.handle(_attemptsMeta,
+          attempts.isAcceptableOrUnknown(data['attempts']!, _attemptsMeta));
+    }
+    if (data.containsKey('next_retry_at')) {
+      context.handle(
+          _nextRetryAtMeta,
+          nextRetryAt.isAcceptableOrUnknown(
+              data['next_retry_at']!, _nextRetryAtMeta));
+    } else if (isInserting) {
+      context.missing(_nextRetryAtMeta);
+    }
+    if (data.containsKey('last_error')) {
+      context.handle(_lastErrorMeta,
+          lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('public_url')) {
+      context.handle(_publicUrlMeta,
+          publicUrl.isAcceptableOrUnknown(data['public_url']!, _publicUrlMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  PendingBugPhoto map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PendingBugPhoto(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      fotoId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}foto_id'])!,
+      localPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}local_path'])!,
+      destStoragePath: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}dest_storage_path'])!,
+      status: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}status'])!,
+      attempts: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}attempts'])!,
+      nextRetryAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}next_retry_at'])!,
+      lastError: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}last_error']),
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}created_at'])!,
+      publicUrl: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}public_url']),
+    );
+  }
+
+  @override
+  $PendingBugPhotosTable createAlias(String alias) {
+    return $PendingBugPhotosTable(attachedDatabase, alias);
+  }
+}
+
+class PendingBugPhoto extends DataClass implements Insertable<PendingBugPhoto> {
+  final String id;
+
+  /// id da `pending_photos` original (ref).
+  final String fotoId;
+
+  /// Path local do arquivo (mesmo do pending_photos.localPath no
+  /// momento da gravação).
+  final String localPath;
+
+  /// Path destino no bucket bug-reports
+  /// (ex: bug-reports/<promotor-id>/<visita-id>/<foto-id>.jpg).
+  final String destStoragePath;
+  final String status;
+  final int attempts;
+  final String nextRetryAt;
+  final String? lastError;
+  final String createdAt;
+
+  /// URL pública final depois do upload OK.
+  final String? publicUrl;
+  const PendingBugPhoto(
+      {required this.id,
+      required this.fotoId,
+      required this.localPath,
+      required this.destStoragePath,
+      required this.status,
+      required this.attempts,
+      required this.nextRetryAt,
+      this.lastError,
+      required this.createdAt,
+      this.publicUrl});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['foto_id'] = Variable<String>(fotoId);
+    map['local_path'] = Variable<String>(localPath);
+    map['dest_storage_path'] = Variable<String>(destStoragePath);
+    map['status'] = Variable<String>(status);
+    map['attempts'] = Variable<int>(attempts);
+    map['next_retry_at'] = Variable<String>(nextRetryAt);
+    if (!nullToAbsent || lastError != null) {
+      map['last_error'] = Variable<String>(lastError);
+    }
+    map['created_at'] = Variable<String>(createdAt);
+    if (!nullToAbsent || publicUrl != null) {
+      map['public_url'] = Variable<String>(publicUrl);
+    }
+    return map;
+  }
+
+  PendingBugPhotosCompanion toCompanion(bool nullToAbsent) {
+    return PendingBugPhotosCompanion(
+      id: Value(id),
+      fotoId: Value(fotoId),
+      localPath: Value(localPath),
+      destStoragePath: Value(destStoragePath),
+      status: Value(status),
+      attempts: Value(attempts),
+      nextRetryAt: Value(nextRetryAt),
+      lastError: lastError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastError),
+      createdAt: Value(createdAt),
+      publicUrl: publicUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(publicUrl),
+    );
+  }
+
+  factory PendingBugPhoto.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PendingBugPhoto(
+      id: serializer.fromJson<String>(json['id']),
+      fotoId: serializer.fromJson<String>(json['fotoId']),
+      localPath: serializer.fromJson<String>(json['localPath']),
+      destStoragePath: serializer.fromJson<String>(json['destStoragePath']),
+      status: serializer.fromJson<String>(json['status']),
+      attempts: serializer.fromJson<int>(json['attempts']),
+      nextRetryAt: serializer.fromJson<String>(json['nextRetryAt']),
+      lastError: serializer.fromJson<String?>(json['lastError']),
+      createdAt: serializer.fromJson<String>(json['createdAt']),
+      publicUrl: serializer.fromJson<String?>(json['publicUrl']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'fotoId': serializer.toJson<String>(fotoId),
+      'localPath': serializer.toJson<String>(localPath),
+      'destStoragePath': serializer.toJson<String>(destStoragePath),
+      'status': serializer.toJson<String>(status),
+      'attempts': serializer.toJson<int>(attempts),
+      'nextRetryAt': serializer.toJson<String>(nextRetryAt),
+      'lastError': serializer.toJson<String?>(lastError),
+      'createdAt': serializer.toJson<String>(createdAt),
+      'publicUrl': serializer.toJson<String?>(publicUrl),
+    };
+  }
+
+  PendingBugPhoto copyWith(
+          {String? id,
+          String? fotoId,
+          String? localPath,
+          String? destStoragePath,
+          String? status,
+          int? attempts,
+          String? nextRetryAt,
+          Value<String?> lastError = const Value.absent(),
+          String? createdAt,
+          Value<String?> publicUrl = const Value.absent()}) =>
+      PendingBugPhoto(
+        id: id ?? this.id,
+        fotoId: fotoId ?? this.fotoId,
+        localPath: localPath ?? this.localPath,
+        destStoragePath: destStoragePath ?? this.destStoragePath,
+        status: status ?? this.status,
+        attempts: attempts ?? this.attempts,
+        nextRetryAt: nextRetryAt ?? this.nextRetryAt,
+        lastError: lastError.present ? lastError.value : this.lastError,
+        createdAt: createdAt ?? this.createdAt,
+        publicUrl: publicUrl.present ? publicUrl.value : this.publicUrl,
+      );
+  PendingBugPhoto copyWithCompanion(PendingBugPhotosCompanion data) {
+    return PendingBugPhoto(
+      id: data.id.present ? data.id.value : this.id,
+      fotoId: data.fotoId.present ? data.fotoId.value : this.fotoId,
+      localPath: data.localPath.present ? data.localPath.value : this.localPath,
+      destStoragePath: data.destStoragePath.present
+          ? data.destStoragePath.value
+          : this.destStoragePath,
+      status: data.status.present ? data.status.value : this.status,
+      attempts: data.attempts.present ? data.attempts.value : this.attempts,
+      nextRetryAt:
+          data.nextRetryAt.present ? data.nextRetryAt.value : this.nextRetryAt,
+      lastError: data.lastError.present ? data.lastError.value : this.lastError,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      publicUrl: data.publicUrl.present ? data.publicUrl.value : this.publicUrl,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PendingBugPhoto(')
+          ..write('id: $id, ')
+          ..write('fotoId: $fotoId, ')
+          ..write('localPath: $localPath, ')
+          ..write('destStoragePath: $destStoragePath, ')
+          ..write('status: $status, ')
+          ..write('attempts: $attempts, ')
+          ..write('nextRetryAt: $nextRetryAt, ')
+          ..write('lastError: $lastError, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('publicUrl: $publicUrl')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, fotoId, localPath, destStoragePath,
+      status, attempts, nextRetryAt, lastError, createdAt, publicUrl);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PendingBugPhoto &&
+          other.id == this.id &&
+          other.fotoId == this.fotoId &&
+          other.localPath == this.localPath &&
+          other.destStoragePath == this.destStoragePath &&
+          other.status == this.status &&
+          other.attempts == this.attempts &&
+          other.nextRetryAt == this.nextRetryAt &&
+          other.lastError == this.lastError &&
+          other.createdAt == this.createdAt &&
+          other.publicUrl == this.publicUrl);
+}
+
+class PendingBugPhotosCompanion extends UpdateCompanion<PendingBugPhoto> {
+  final Value<String> id;
+  final Value<String> fotoId;
+  final Value<String> localPath;
+  final Value<String> destStoragePath;
+  final Value<String> status;
+  final Value<int> attempts;
+  final Value<String> nextRetryAt;
+  final Value<String?> lastError;
+  final Value<String> createdAt;
+  final Value<String?> publicUrl;
+  final Value<int> rowid;
+  const PendingBugPhotosCompanion({
+    this.id = const Value.absent(),
+    this.fotoId = const Value.absent(),
+    this.localPath = const Value.absent(),
+    this.destStoragePath = const Value.absent(),
+    this.status = const Value.absent(),
+    this.attempts = const Value.absent(),
+    this.nextRetryAt = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.publicUrl = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PendingBugPhotosCompanion.insert({
+    required String id,
+    required String fotoId,
+    required String localPath,
+    required String destStoragePath,
+    this.status = const Value.absent(),
+    this.attempts = const Value.absent(),
+    required String nextRetryAt,
+    this.lastError = const Value.absent(),
+    required String createdAt,
+    this.publicUrl = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        fotoId = Value(fotoId),
+        localPath = Value(localPath),
+        destStoragePath = Value(destStoragePath),
+        nextRetryAt = Value(nextRetryAt),
+        createdAt = Value(createdAt);
+  static Insertable<PendingBugPhoto> custom({
+    Expression<String>? id,
+    Expression<String>? fotoId,
+    Expression<String>? localPath,
+    Expression<String>? destStoragePath,
+    Expression<String>? status,
+    Expression<int>? attempts,
+    Expression<String>? nextRetryAt,
+    Expression<String>? lastError,
+    Expression<String>? createdAt,
+    Expression<String>? publicUrl,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (fotoId != null) 'foto_id': fotoId,
+      if (localPath != null) 'local_path': localPath,
+      if (destStoragePath != null) 'dest_storage_path': destStoragePath,
+      if (status != null) 'status': status,
+      if (attempts != null) 'attempts': attempts,
+      if (nextRetryAt != null) 'next_retry_at': nextRetryAt,
+      if (lastError != null) 'last_error': lastError,
+      if (createdAt != null) 'created_at': createdAt,
+      if (publicUrl != null) 'public_url': publicUrl,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PendingBugPhotosCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? fotoId,
+      Value<String>? localPath,
+      Value<String>? destStoragePath,
+      Value<String>? status,
+      Value<int>? attempts,
+      Value<String>? nextRetryAt,
+      Value<String?>? lastError,
+      Value<String>? createdAt,
+      Value<String?>? publicUrl,
+      Value<int>? rowid}) {
+    return PendingBugPhotosCompanion(
+      id: id ?? this.id,
+      fotoId: fotoId ?? this.fotoId,
+      localPath: localPath ?? this.localPath,
+      destStoragePath: destStoragePath ?? this.destStoragePath,
+      status: status ?? this.status,
+      attempts: attempts ?? this.attempts,
+      nextRetryAt: nextRetryAt ?? this.nextRetryAt,
+      lastError: lastError ?? this.lastError,
+      createdAt: createdAt ?? this.createdAt,
+      publicUrl: publicUrl ?? this.publicUrl,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (fotoId.present) {
+      map['foto_id'] = Variable<String>(fotoId.value);
+    }
+    if (localPath.present) {
+      map['local_path'] = Variable<String>(localPath.value);
+    }
+    if (destStoragePath.present) {
+      map['dest_storage_path'] = Variable<String>(destStoragePath.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (attempts.present) {
+      map['attempts'] = Variable<int>(attempts.value);
+    }
+    if (nextRetryAt.present) {
+      map['next_retry_at'] = Variable<String>(nextRetryAt.value);
+    }
+    if (lastError.present) {
+      map['last_error'] = Variable<String>(lastError.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<String>(createdAt.value);
+    }
+    if (publicUrl.present) {
+      map['public_url'] = Variable<String>(publicUrl.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PendingBugPhotosCompanion(')
+          ..write('id: $id, ')
+          ..write('fotoId: $fotoId, ')
+          ..write('localPath: $localPath, ')
+          ..write('destStoragePath: $destStoragePath, ')
+          ..write('status: $status, ')
+          ..write('attempts: $attempts, ')
+          ..write('nextRetryAt: $nextRetryAt, ')
+          ..write('lastError: $lastError, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('publicUrl: $publicUrl, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -4590,12 +5770,24 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $OutboxItemsTable outboxItems = $OutboxItemsTable(this);
   late final $PendingPhotosTable pendingPhotos = $PendingPhotosTable(this);
   late final $SyncStateTable syncState = $SyncStateTable(this);
+  late final $PendingIssuesTable pendingIssues = $PendingIssuesTable(this);
+  late final $PendingBugPhotosTable pendingBugPhotos =
+      $PendingBugPhotosTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
-  List<DatabaseSchemaEntity> get allSchemaEntities =>
-      [users, pdvs, gabaritos, visitas, outboxItems, pendingPhotos, syncState];
+  List<DatabaseSchemaEntity> get allSchemaEntities => [
+        users,
+        pdvs,
+        gabaritos,
+        visitas,
+        outboxItems,
+        pendingPhotos,
+        syncState,
+        pendingIssues,
+        pendingBugPhotos
+      ];
 }
 
 typedef $$UsersTableCreateCompanionBuilder = UsersCompanion Function({
@@ -6241,6 +7433,7 @@ typedef $$PendingPhotosTableCreateCompanionBuilder = PendingPhotosCompanion
   Value<int> attempts,
   required String nextRetryAt,
   required String createdAt,
+  Value<String?> lastError,
   Value<int> rowid,
 });
 typedef $$PendingPhotosTableUpdateCompanionBuilder = PendingPhotosCompanion
@@ -6255,6 +7448,7 @@ typedef $$PendingPhotosTableUpdateCompanionBuilder = PendingPhotosCompanion
   Value<int> attempts,
   Value<String> nextRetryAt,
   Value<String> createdAt,
+  Value<String?> lastError,
   Value<int> rowid,
 });
 
@@ -6296,6 +7490,9 @@ class $$PendingPhotosTableFilterComposer
 
   ColumnFilters<String> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lastError => $composableBuilder(
+      column: $table.lastError, builder: (column) => ColumnFilters(column));
 }
 
 class $$PendingPhotosTableOrderingComposer
@@ -6336,6 +7533,9 @@ class $$PendingPhotosTableOrderingComposer
 
   ColumnOrderings<String> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lastError => $composableBuilder(
+      column: $table.lastError, builder: (column) => ColumnOrderings(column));
 }
 
 class $$PendingPhotosTableAnnotationComposer
@@ -6376,6 +7576,9 @@ class $$PendingPhotosTableAnnotationComposer
 
   GeneratedColumn<String> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get lastError =>
+      $composableBuilder(column: $table.lastError, builder: (column) => column);
 }
 
 class $$PendingPhotosTableTableManager extends RootTableManager<
@@ -6414,6 +7617,7 @@ class $$PendingPhotosTableTableManager extends RootTableManager<
             Value<int> attempts = const Value.absent(),
             Value<String> nextRetryAt = const Value.absent(),
             Value<String> createdAt = const Value.absent(),
+            Value<String?> lastError = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               PendingPhotosCompanion(
@@ -6427,6 +7631,7 @@ class $$PendingPhotosTableTableManager extends RootTableManager<
             attempts: attempts,
             nextRetryAt: nextRetryAt,
             createdAt: createdAt,
+            lastError: lastError,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -6440,6 +7645,7 @@ class $$PendingPhotosTableTableManager extends RootTableManager<
             Value<int> attempts = const Value.absent(),
             required String nextRetryAt,
             required String createdAt,
+            Value<String?> lastError = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               PendingPhotosCompanion.insert(
@@ -6453,6 +7659,7 @@ class $$PendingPhotosTableTableManager extends RootTableManager<
             attempts: attempts,
             nextRetryAt: nextRetryAt,
             createdAt: createdAt,
+            lastError: lastError,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
@@ -6618,6 +7825,537 @@ typedef $$SyncStateTableProcessedTableManager = ProcessedTableManager<
     ),
     SyncStateData,
     PrefetchHooks Function()>;
+typedef $$PendingIssuesTableCreateCompanionBuilder = PendingIssuesCompanion
+    Function({
+  required String id,
+  required String tipo,
+  Value<String?> entidadeId,
+  required String titulo,
+  required String bodyMd,
+  required String labelsJson,
+  Value<String> status,
+  Value<int> attempts,
+  required String nextRetryAt,
+  Value<String?> lastError,
+  required String createdAt,
+  Value<int?> githubIssueNumber,
+  Value<int> rowid,
+});
+typedef $$PendingIssuesTableUpdateCompanionBuilder = PendingIssuesCompanion
+    Function({
+  Value<String> id,
+  Value<String> tipo,
+  Value<String?> entidadeId,
+  Value<String> titulo,
+  Value<String> bodyMd,
+  Value<String> labelsJson,
+  Value<String> status,
+  Value<int> attempts,
+  Value<String> nextRetryAt,
+  Value<String?> lastError,
+  Value<String> createdAt,
+  Value<int?> githubIssueNumber,
+  Value<int> rowid,
+});
+
+class $$PendingIssuesTableFilterComposer
+    extends Composer<_$AppDatabase, $PendingIssuesTable> {
+  $$PendingIssuesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get tipo => $composableBuilder(
+      column: $table.tipo, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get entidadeId => $composableBuilder(
+      column: $table.entidadeId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get titulo => $composableBuilder(
+      column: $table.titulo, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get bodyMd => $composableBuilder(
+      column: $table.bodyMd, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get labelsJson => $composableBuilder(
+      column: $table.labelsJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get attempts => $composableBuilder(
+      column: $table.attempts, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get nextRetryAt => $composableBuilder(
+      column: $table.nextRetryAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lastError => $composableBuilder(
+      column: $table.lastError, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get githubIssueNumber => $composableBuilder(
+      column: $table.githubIssueNumber,
+      builder: (column) => ColumnFilters(column));
+}
+
+class $$PendingIssuesTableOrderingComposer
+    extends Composer<_$AppDatabase, $PendingIssuesTable> {
+  $$PendingIssuesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get tipo => $composableBuilder(
+      column: $table.tipo, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get entidadeId => $composableBuilder(
+      column: $table.entidadeId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get titulo => $composableBuilder(
+      column: $table.titulo, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get bodyMd => $composableBuilder(
+      column: $table.bodyMd, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get labelsJson => $composableBuilder(
+      column: $table.labelsJson, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get attempts => $composableBuilder(
+      column: $table.attempts, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get nextRetryAt => $composableBuilder(
+      column: $table.nextRetryAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lastError => $composableBuilder(
+      column: $table.lastError, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get githubIssueNumber => $composableBuilder(
+      column: $table.githubIssueNumber,
+      builder: (column) => ColumnOrderings(column));
+}
+
+class $$PendingIssuesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PendingIssuesTable> {
+  $$PendingIssuesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get tipo =>
+      $composableBuilder(column: $table.tipo, builder: (column) => column);
+
+  GeneratedColumn<String> get entidadeId => $composableBuilder(
+      column: $table.entidadeId, builder: (column) => column);
+
+  GeneratedColumn<String> get titulo =>
+      $composableBuilder(column: $table.titulo, builder: (column) => column);
+
+  GeneratedColumn<String> get bodyMd =>
+      $composableBuilder(column: $table.bodyMd, builder: (column) => column);
+
+  GeneratedColumn<String> get labelsJson => $composableBuilder(
+      column: $table.labelsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<int> get attempts =>
+      $composableBuilder(column: $table.attempts, builder: (column) => column);
+
+  GeneratedColumn<String> get nextRetryAt => $composableBuilder(
+      column: $table.nextRetryAt, builder: (column) => column);
+
+  GeneratedColumn<String> get lastError =>
+      $composableBuilder(column: $table.lastError, builder: (column) => column);
+
+  GeneratedColumn<String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get githubIssueNumber => $composableBuilder(
+      column: $table.githubIssueNumber, builder: (column) => column);
+}
+
+class $$PendingIssuesTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $PendingIssuesTable,
+    PendingIssue,
+    $$PendingIssuesTableFilterComposer,
+    $$PendingIssuesTableOrderingComposer,
+    $$PendingIssuesTableAnnotationComposer,
+    $$PendingIssuesTableCreateCompanionBuilder,
+    $$PendingIssuesTableUpdateCompanionBuilder,
+    (
+      PendingIssue,
+      BaseReferences<_$AppDatabase, $PendingIssuesTable, PendingIssue>
+    ),
+    PendingIssue,
+    PrefetchHooks Function()> {
+  $$PendingIssuesTableTableManager(_$AppDatabase db, $PendingIssuesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PendingIssuesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PendingIssuesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PendingIssuesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> tipo = const Value.absent(),
+            Value<String?> entidadeId = const Value.absent(),
+            Value<String> titulo = const Value.absent(),
+            Value<String> bodyMd = const Value.absent(),
+            Value<String> labelsJson = const Value.absent(),
+            Value<String> status = const Value.absent(),
+            Value<int> attempts = const Value.absent(),
+            Value<String> nextRetryAt = const Value.absent(),
+            Value<String?> lastError = const Value.absent(),
+            Value<String> createdAt = const Value.absent(),
+            Value<int?> githubIssueNumber = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              PendingIssuesCompanion(
+            id: id,
+            tipo: tipo,
+            entidadeId: entidadeId,
+            titulo: titulo,
+            bodyMd: bodyMd,
+            labelsJson: labelsJson,
+            status: status,
+            attempts: attempts,
+            nextRetryAt: nextRetryAt,
+            lastError: lastError,
+            createdAt: createdAt,
+            githubIssueNumber: githubIssueNumber,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String tipo,
+            Value<String?> entidadeId = const Value.absent(),
+            required String titulo,
+            required String bodyMd,
+            required String labelsJson,
+            Value<String> status = const Value.absent(),
+            Value<int> attempts = const Value.absent(),
+            required String nextRetryAt,
+            Value<String?> lastError = const Value.absent(),
+            required String createdAt,
+            Value<int?> githubIssueNumber = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              PendingIssuesCompanion.insert(
+            id: id,
+            tipo: tipo,
+            entidadeId: entidadeId,
+            titulo: titulo,
+            bodyMd: bodyMd,
+            labelsJson: labelsJson,
+            status: status,
+            attempts: attempts,
+            nextRetryAt: nextRetryAt,
+            lastError: lastError,
+            createdAt: createdAt,
+            githubIssueNumber: githubIssueNumber,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$PendingIssuesTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $PendingIssuesTable,
+    PendingIssue,
+    $$PendingIssuesTableFilterComposer,
+    $$PendingIssuesTableOrderingComposer,
+    $$PendingIssuesTableAnnotationComposer,
+    $$PendingIssuesTableCreateCompanionBuilder,
+    $$PendingIssuesTableUpdateCompanionBuilder,
+    (
+      PendingIssue,
+      BaseReferences<_$AppDatabase, $PendingIssuesTable, PendingIssue>
+    ),
+    PendingIssue,
+    PrefetchHooks Function()>;
+typedef $$PendingBugPhotosTableCreateCompanionBuilder
+    = PendingBugPhotosCompanion Function({
+  required String id,
+  required String fotoId,
+  required String localPath,
+  required String destStoragePath,
+  Value<String> status,
+  Value<int> attempts,
+  required String nextRetryAt,
+  Value<String?> lastError,
+  required String createdAt,
+  Value<String?> publicUrl,
+  Value<int> rowid,
+});
+typedef $$PendingBugPhotosTableUpdateCompanionBuilder
+    = PendingBugPhotosCompanion Function({
+  Value<String> id,
+  Value<String> fotoId,
+  Value<String> localPath,
+  Value<String> destStoragePath,
+  Value<String> status,
+  Value<int> attempts,
+  Value<String> nextRetryAt,
+  Value<String?> lastError,
+  Value<String> createdAt,
+  Value<String?> publicUrl,
+  Value<int> rowid,
+});
+
+class $$PendingBugPhotosTableFilterComposer
+    extends Composer<_$AppDatabase, $PendingBugPhotosTable> {
+  $$PendingBugPhotosTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get fotoId => $composableBuilder(
+      column: $table.fotoId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get localPath => $composableBuilder(
+      column: $table.localPath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get destStoragePath => $composableBuilder(
+      column: $table.destStoragePath,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get attempts => $composableBuilder(
+      column: $table.attempts, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get nextRetryAt => $composableBuilder(
+      column: $table.nextRetryAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lastError => $composableBuilder(
+      column: $table.lastError, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get publicUrl => $composableBuilder(
+      column: $table.publicUrl, builder: (column) => ColumnFilters(column));
+}
+
+class $$PendingBugPhotosTableOrderingComposer
+    extends Composer<_$AppDatabase, $PendingBugPhotosTable> {
+  $$PendingBugPhotosTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get fotoId => $composableBuilder(
+      column: $table.fotoId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get localPath => $composableBuilder(
+      column: $table.localPath, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get destStoragePath => $composableBuilder(
+      column: $table.destStoragePath,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get attempts => $composableBuilder(
+      column: $table.attempts, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get nextRetryAt => $composableBuilder(
+      column: $table.nextRetryAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lastError => $composableBuilder(
+      column: $table.lastError, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get publicUrl => $composableBuilder(
+      column: $table.publicUrl, builder: (column) => ColumnOrderings(column));
+}
+
+class $$PendingBugPhotosTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PendingBugPhotosTable> {
+  $$PendingBugPhotosTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get fotoId =>
+      $composableBuilder(column: $table.fotoId, builder: (column) => column);
+
+  GeneratedColumn<String> get localPath =>
+      $composableBuilder(column: $table.localPath, builder: (column) => column);
+
+  GeneratedColumn<String> get destStoragePath => $composableBuilder(
+      column: $table.destStoragePath, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<int> get attempts =>
+      $composableBuilder(column: $table.attempts, builder: (column) => column);
+
+  GeneratedColumn<String> get nextRetryAt => $composableBuilder(
+      column: $table.nextRetryAt, builder: (column) => column);
+
+  GeneratedColumn<String> get lastError =>
+      $composableBuilder(column: $table.lastError, builder: (column) => column);
+
+  GeneratedColumn<String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get publicUrl =>
+      $composableBuilder(column: $table.publicUrl, builder: (column) => column);
+}
+
+class $$PendingBugPhotosTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $PendingBugPhotosTable,
+    PendingBugPhoto,
+    $$PendingBugPhotosTableFilterComposer,
+    $$PendingBugPhotosTableOrderingComposer,
+    $$PendingBugPhotosTableAnnotationComposer,
+    $$PendingBugPhotosTableCreateCompanionBuilder,
+    $$PendingBugPhotosTableUpdateCompanionBuilder,
+    (
+      PendingBugPhoto,
+      BaseReferences<_$AppDatabase, $PendingBugPhotosTable, PendingBugPhoto>
+    ),
+    PendingBugPhoto,
+    PrefetchHooks Function()> {
+  $$PendingBugPhotosTableTableManager(
+      _$AppDatabase db, $PendingBugPhotosTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PendingBugPhotosTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PendingBugPhotosTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PendingBugPhotosTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> fotoId = const Value.absent(),
+            Value<String> localPath = const Value.absent(),
+            Value<String> destStoragePath = const Value.absent(),
+            Value<String> status = const Value.absent(),
+            Value<int> attempts = const Value.absent(),
+            Value<String> nextRetryAt = const Value.absent(),
+            Value<String?> lastError = const Value.absent(),
+            Value<String> createdAt = const Value.absent(),
+            Value<String?> publicUrl = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              PendingBugPhotosCompanion(
+            id: id,
+            fotoId: fotoId,
+            localPath: localPath,
+            destStoragePath: destStoragePath,
+            status: status,
+            attempts: attempts,
+            nextRetryAt: nextRetryAt,
+            lastError: lastError,
+            createdAt: createdAt,
+            publicUrl: publicUrl,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String fotoId,
+            required String localPath,
+            required String destStoragePath,
+            Value<String> status = const Value.absent(),
+            Value<int> attempts = const Value.absent(),
+            required String nextRetryAt,
+            Value<String?> lastError = const Value.absent(),
+            required String createdAt,
+            Value<String?> publicUrl = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              PendingBugPhotosCompanion.insert(
+            id: id,
+            fotoId: fotoId,
+            localPath: localPath,
+            destStoragePath: destStoragePath,
+            status: status,
+            attempts: attempts,
+            nextRetryAt: nextRetryAt,
+            lastError: lastError,
+            createdAt: createdAt,
+            publicUrl: publicUrl,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$PendingBugPhotosTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $PendingBugPhotosTable,
+    PendingBugPhoto,
+    $$PendingBugPhotosTableFilterComposer,
+    $$PendingBugPhotosTableOrderingComposer,
+    $$PendingBugPhotosTableAnnotationComposer,
+    $$PendingBugPhotosTableCreateCompanionBuilder,
+    $$PendingBugPhotosTableUpdateCompanionBuilder,
+    (
+      PendingBugPhoto,
+      BaseReferences<_$AppDatabase, $PendingBugPhotosTable, PendingBugPhoto>
+    ),
+    PendingBugPhoto,
+    PrefetchHooks Function()>;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -6635,4 +8373,8 @@ class $AppDatabaseManager {
       $$PendingPhotosTableTableManager(_db, _db.pendingPhotos);
   $$SyncStateTableTableManager get syncState =>
       $$SyncStateTableTableManager(_db, _db.syncState);
+  $$PendingIssuesTableTableManager get pendingIssues =>
+      $$PendingIssuesTableTableManager(_db, _db.pendingIssues);
+  $$PendingBugPhotosTableTableManager get pendingBugPhotos =>
+      $$PendingBugPhotosTableTableManager(_db, _db.pendingBugPhotos);
 }

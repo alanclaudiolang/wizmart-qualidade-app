@@ -31,6 +31,7 @@ import 'package:gal/gal.dart';
 
 import '../database/app_database.dart';
 import '../network/sync_engine.dart';
+import 'anomalia_reporter.dart';
 import 'error_reporter.dart';
 import 'performance_profile.dart';
 import 'persistent_logger.dart';
@@ -123,6 +124,35 @@ class WatermarkQueueService {
         'fotos=${pendentes.length}');
     if (pendentes.isEmpty) return;
 
+    // D2: foto em watermark_pending há > 30 min é sinal de queue travada
+    // (app fechou no meio, isolate morreu, bug no Canvas). Não rede.
+    // Enfileira anomalia pra eu olhar — não muda o fluxo (continua
+    // tentando aplicar watermark).
+    final agora = DateTime.now();
+    for (final p in pendentes) {
+      if (p.status != 'watermark_pending') continue;
+      final criado = DateTime.tryParse(p.createdAt);
+      if (criado == null) continue;
+      if (agora.difference(criado) > const Duration(minutes: 30)) {
+        // ignore: discarded_futures
+        AnomaliaReporter.enfileirar(
+          db: db,
+          tipo: 'D2-watermark-travado',
+          entidadeId: item.visitaId.toString(),
+          resumo: 'Foto em watermark_pending há '
+              '${agora.difference(criado).inMinutes} min',
+          contextoExtra: {
+            'visitaId': item.visitaId,
+            'fotoId': p.id,
+            'slot': item.slot,
+            'numero': p.numero,
+            'criadoEm': p.createdAt,
+            'tentativas': p.attempts,
+          },
+        );
+      }
+    }
+
     final novosCaminhos = <String>[];
 
     for (final p in pendentes) {
@@ -189,10 +219,28 @@ class WatermarkQueueService {
           );
         }
 
-        // Galeria — falha silenciosa (não crítico).
+        // Galeria — falha silenciosa pro fluxo, mas D6 enfileira
+        // anomalia (em geral permissão negada) pra eu saber qual
+        // promotor está sem backup automático.
         try {
           await Gal.putImage(wmPath).timeout(const Duration(seconds: 5));
-        } catch (_) {}
+        } catch (gErr) {
+          final db = _ref.read(appDatabaseProvider);
+          // ignore: discarded_futures
+          AnomaliaReporter.enfileirar(
+            db: db,
+            tipo: 'D6-gal-falhou',
+            entidadeId: item.visitaId.toString(),
+            resumo: 'Gal.putImage falhou (promotor possivelmente sem '
+                'permissão de galeria): $gErr',
+            contextoExtra: {
+              'visitaId': item.visitaId,
+              'fotoId': p.id,
+              'wmPath': wmPath,
+            },
+            erro: gErr,
+          );
+        }
 
         // Apaga o arquivo cru original — JSON já não aponta mais pra ele.
         if (wmPath != p.localPath) {

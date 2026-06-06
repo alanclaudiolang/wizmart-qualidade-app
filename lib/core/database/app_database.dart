@@ -148,6 +148,9 @@ class PendingPhotos extends Table {
   IntColumn get attempts => integer().withDefault(const Constant(0))();
   TextColumn get nextRetryAt => text()();
   TextColumn get createdAt => text()();
+  /// Última mensagem de erro do upload — populada quando status='error'.
+  /// Adicionado no schema 5 pra ajudar diagnóstico via auto-issue.
+  TextColumn get lastError => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -162,6 +165,61 @@ class SyncState extends Table {
   Set<Column> get primaryKey => {entityType};
 }
 
+/// Fila local de issues a enviar pro GitHub. Detectada anomalia (erro
+/// real, NÃO rede transitória) grava aqui — envio acontece quando há
+/// rede, com mesmo backoff exponencial do outbox.
+class PendingIssues extends Table {
+  TextColumn get id => text()();
+  /// Tipo da anomalia (D1, D2, ..., manual). Usado pra cooldown +
+  /// label no issue.
+  TextColumn get tipo => text()();
+  /// id da entidade alvo (visitaId, fotoId, outboxId). Combinado com
+  /// `tipo` forma a chave de cooldown.
+  TextColumn get entidadeId => text().nullable()();
+  TextColumn get titulo => text()();
+  /// Body completo já montado no momento da detecção (dump SQLite,
+  /// log, sondas). Texto markdown pronto pra postar.
+  TextColumn get bodyMd => text()();
+  /// JSON array de labels (ex: ["auto","screen:home","build:215"]).
+  TextColumn get labelsJson => text()();
+  TextColumn get status => text().withDefault(const Constant('pending'))();
+  IntColumn get attempts => integer().withDefault(const Constant(0))();
+  TextColumn get nextRetryAt => text()();
+  TextColumn get lastError => text().nullable()();
+  TextColumn get createdAt => text()();
+  /// Número do issue criado no GitHub depois de envio OK. Null enquanto
+  /// pendente.
+  IntColumn get githubIssueNumber => integer().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Fila local de fotos físicas a subir pro bucket `bug-reports` quando
+/// uma anomalia precisa anexar a foto pro recovery manual posterior.
+/// Independente do upload normal — usa path separado.
+class PendingBugPhotos extends Table {
+  TextColumn get id => text()();
+  /// id da `pending_photos` original (ref).
+  TextColumn get fotoId => text()();
+  /// Path local do arquivo (mesmo do pending_photos.localPath no
+  /// momento da gravação).
+  TextColumn get localPath => text()();
+  /// Path destino no bucket bug-reports
+  /// (ex: bug-reports/<promotor-id>/<visita-id>/<foto-id>.jpg).
+  TextColumn get destStoragePath => text()();
+  TextColumn get status => text().withDefault(const Constant('pending'))();
+  IntColumn get attempts => integer().withDefault(const Constant(0))();
+  TextColumn get nextRetryAt => text()();
+  TextColumn get lastError => text().nullable()();
+  TextColumn get createdAt => text()();
+  /// URL pública final depois do upload OK.
+  TextColumn get publicUrl => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 // ─── DATABASE ────────────────────────────────────────────────────────────────
 
 @DriftDatabase(tables: [
@@ -172,12 +230,14 @@ class SyncState extends Table {
   OutboxItems,
   PendingPhotos,
   SyncState,
+  PendingIssues,
+  PendingBugPhotos,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -207,6 +267,16 @@ class AppDatabase extends _$AppDatabase {
           "DELETE FROM outbox_items WHERE entity_type = 'visita' "
           'AND entity_id NOT IN (SELECT id FROM visitas)',
         );
+      }
+      if (from < 5) {
+        // Cria as duas filas locais de anomalia: pending_issues e
+        // pending_bug_photos. Drift cria automaticamente as tabelas
+        // declaradas no @DriftDatabase quando ainda não existem.
+        await migrator.createTable(pendingIssues);
+        await migrator.createTable(pendingBugPhotos);
+        // Adiciona coluna `last_error` em pending_photos pra rastrear
+        // motivo da falha no auto-issue.
+        await migrator.addColumn(pendingPhotos, pendingPhotos.lastError);
       }
     },
   );
