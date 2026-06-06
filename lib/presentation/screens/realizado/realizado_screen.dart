@@ -176,6 +176,9 @@ class RealizadoScreen extends ConsumerWidget {
                 case 'home':
                   context.go('/home');
                   break;
+                case 'programado':
+                  context.go('/programado');
+                  break;
                 case 'realizado':
                   // Já está aqui — fecha o menu, não navega.
                   break;
@@ -196,6 +199,18 @@ class RealizadoScreen extends ConsumerWidget {
                         color: AppColors.textPrimary, size: 20),
                     SizedBox(width: 8),
                     Text('Home',
+                        style: TextStyle(color: AppColors.textPrimary)),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'programado',
+                child: Row(
+                  children: [
+                    Icon(Icons.event_note,
+                        color: AppColors.primary, size: 20),
+                    SizedBox(width: 8),
+                    Text('Programado',
                         style: TextStyle(color: AppColors.textPrimary)),
                   ],
                 ),

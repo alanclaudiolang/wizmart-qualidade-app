@@ -1,68 +1,105 @@
-// lib/presentation/screens/faltas/faltas_screen.dart
+// lib/presentation/screens/programado/programado_screen.dart
 //
-// Histórico de faltas (status_visita=5 no servidor) dos últimos 90 dias
-// até D-1 (ontem). Lista somente leitura — promotor não interage com os
-// cards, é só consulta. Busca direto do Supabase pra ter histórico além
-// do dia atual (o DB local guarda só o dia).
+// Visitas programadas pros próximos 10 dias (D+1 a D+10). Busca direto
+// da Edge Function `gerar_datas_gabaritos_att` com a rota do promotor.
+// Sem persistência local — refetch a cada abertura/pull-to-refresh.
+// Lista agrupada por data com cabeçalho.
+
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../../core/network/sync_engine.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/app_colors.dart';
 import '../../../core/utils/logout_service.dart';
 import '../../../core/utils/session_service.dart';
 
-class FaltasItem {
-  final int? id;
-  final String? titulo;
+class ProgramadoItem {
+  final String titulo;
   final String? turno;
   final DateTime dataAgendada;
-  FaltasItem({
-    required this.id,
+  final int? pdvId;
+  ProgramadoItem({
     required this.titulo,
     required this.turno,
     required this.dataAgendada,
+    required this.pdvId,
   });
 }
 
-final faltasProvider = FutureProvider<List<FaltasItem>>((ref) async {
+final programadoProvider =
+    FutureProvider<List<ProgramadoItem>>((ref) async {
   final session = await SessionService.getSession();
   if (session == null) return [];
 
+  // 1. Rota + gabaritos do promotor
+  final rotaRows = await Supabase.instance.client
+      .from('rotas')
+      .select('gabaritos_associados')
+      .eq('promotor_associado', session.userId);
+  if (rotaRows.isEmpty) return [];
+  final gabaritos = (rotaRows.first['gabaritos_associados'] as List?)
+          ?.whereType<int>()
+          .toList() ??
+      <int>[];
+  if (gabaritos.isEmpty) return [];
+
+  // 2. Range D+1 a D+10
   final hoje = DateTime.now();
-  final inicioHoje = DateTime(hoje.year, hoje.month, hoje.day);
-  final inicio90d = inicioHoje.subtract(const Duration(days: 90));
+  final amanha = DateTime(hoje.year, hoje.month, hoje.day)
+      .add(const Duration(days: 1));
+  final fim = amanha.add(const Duration(days: 9));
+  String fmt(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-  final rows = await Supabase.instance.client
-      .from('visitas')
-      .select(
-          'id,titulo,previsao_turno_realizada,dia_hora_agendado,status_visita')
-      .eq('id_promotor_associado', session.userId)
-      .eq('status_visita', 3)
-      .gte('dia_hora_agendado', inicio90d.toUtc().toIso8601String())
-      .lt('dia_hora_agendado', inicioHoje.toUtc().toIso8601String())
-      .order('dia_hora_agendado', ascending: false);
+  // 3. Edge Function
+  final res = await http
+      .post(
+        Uri.parse(
+            '${AppConstants.supabaseUrl}/functions/v1/gerar_datas_gabaritos_att'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${AppConstants.supabaseAnonKey}',
+        },
+        body: jsonEncode({
+          'gabarito_ids': gabaritos,
+          'data_base': fmt(amanha),
+          'data_final': fmt(fim),
+          'chunk_size': 20,
+          'concurrency': 3,
+        }),
+      )
+      .timeout(const Duration(seconds: 15));
+  if (res.statusCode != 200) return [];
+  final list = (jsonDecode(res.body) as List?) ?? const [];
 
-  return rows.map<FaltasItem>((r) {
-    final dataStr = r['dia_hora_agendado'] as String?;
-    final data = dataStr != null
-        ? (DateTime.tryParse(dataStr)?.toLocal() ?? DateTime.now())
-        : DateTime.now();
-    return FaltasItem(
-      id: r['id'] as int?,
-      titulo: r['titulo'] as String?,
-      turno: r['previsao_turno_realizada'] as String?,
-      dataAgendada: data,
+  final items = list.map<ProgramadoItem>((raw) {
+    final r = raw as Map<String, dynamic>;
+    final dataStr = r['dataAgendada'] as String?;
+    DateTime data;
+    try {
+      data = DateTime.parse(dataStr ?? '');
+    } catch (_) {
+      data = DateTime.now();
+    }
+    return ProgramadoItem(
+      titulo: (r['titulo'] as String?) ?? '',
+      turno: r['turno'] as String?,
+      dataAgendada: DateTime(data.year, data.month, data.day),
+      pdvId: r['pdv_associado'] as int?,
     );
   }).toList();
+  items.sort((a, b) => a.dataAgendada.compareTo(b.dataAgendada));
+  return items;
 });
 
-class FaltasScreen extends ConsumerWidget {
-  const FaltasScreen({super.key});
+class ProgramadoScreen extends ConsumerWidget {
+  const ProgramadoScreen({super.key});
 
   String _labelTurno(String? t) {
     switch (t?.toLowerCase()) {
@@ -76,6 +113,17 @@ class FaltasScreen extends ConsumerWidget {
       default:
         return t ?? '-';
     }
+  }
+
+  String _labelData(DateTime d) {
+    // Array fixo evita dependência de initializeDateFormatting('pt_BR').
+    const nomes = [
+      'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo',
+    ];
+    // DateTime.weekday: 1=Mon..7=Sun
+    final dia = nomes[d.weekday - 1];
+    final fmt = DateFormat('dd/MM/yyyy').format(d);
+    return '$dia · $fmt';
   }
 
   Future<void> _confirmarLogout(BuildContext context, WidgetRef ref) async {
@@ -112,7 +160,7 @@ class FaltasScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final faltasAsync = ref.watch(faltasProvider);
+    final programadoAsync = ref.watch(programadoProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -124,7 +172,7 @@ class FaltasScreen extends ConsumerWidget {
           onPressed: () => context.go('/home'),
         ),
         title: const Text(
-          'Faltas',
+          'Programado',
           style: TextStyle(
             color: AppColors.textPrimary,
             fontSize: 18,
@@ -141,13 +189,12 @@ class FaltasScreen extends ConsumerWidget {
                   context.go('/home');
                   break;
                 case 'programado':
-                  context.go('/programado');
                   break;
                 case 'realizado':
                   context.go('/realizado');
                   break;
                 case 'faltas':
-                  // Já está aqui — fecha o menu, não navega.
+                  context.go('/faltas');
                   break;
                 case 'logout':
                   await _confirmarLogout(context, ref);
@@ -221,8 +268,8 @@ class FaltasScreen extends ConsumerWidget {
       body: RefreshIndicator(
         color: AppColors.primary,
         backgroundColor: AppColors.card,
-        onRefresh: () async => ref.invalidate(faltasProvider),
-        child: faltasAsync.when(
+        onRefresh: () async => ref.invalidate(programadoProvider),
+        child: programadoAsync.when(
           loading: () => const Center(
             child: CircularProgressIndicator(color: AppColors.primary),
           ),
@@ -233,7 +280,7 @@ class FaltasScreen extends ConsumerWidget {
               const SizedBox(height: 16),
               Center(
                 child: Text(
-                  'Não foi possível carregar as faltas.\nPuxe pra baixo pra tentar de novo.',
+                  'Não foi possível carregar o programado.\nPuxe pra baixo pra tentar de novo.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       color: AppColors.textSecondary, fontSize: 14),
@@ -241,8 +288,8 @@ class FaltasScreen extends ConsumerWidget {
               ),
             ],
           ),
-          data: (faltas) {
-            if (faltas.isEmpty) {
+          data: (items) {
+            if (items.isEmpty) {
               return ListView(
                 children: [
                   const SizedBox(height: 80),
@@ -251,7 +298,7 @@ class FaltasScreen extends ConsumerWidget {
                   const SizedBox(height: 16),
                   Center(
                     child: Text(
-                      'Sem faltas nos últimos 90 dias',
+                      'Sem visitas programadas pros próximos 10 dias',
                       style: TextStyle(
                           color: AppColors.textMuted, fontSize: 15),
                     ),
@@ -259,71 +306,91 @@ class FaltasScreen extends ConsumerWidget {
                 ],
               );
             }
-            return ListView.separated(
+
+            // Achata em lista de (header) e (card) preservando ordem.
+            final rows = <_Row>[];
+            DateTime? lastDate;
+            for (final it in items) {
+              if (lastDate == null || it.dataAgendada != lastDate) {
+                rows.add(_HeaderRow(it.dataAgendada));
+                lastDate = it.dataAgendada;
+              }
+              rows.add(_CardRow(it));
+            }
+
+            return ListView.builder(
               padding: const EdgeInsets.symmetric(
                   horizontal: 12, vertical: 8),
-              itemCount: faltas.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 6),
+              itemCount: rows.length,
               itemBuilder: (_, i) {
-                final f = faltas[i];
-                final dataFmt = DateFormat('dd/MM/yyyy').format(f.dataAgendada);
-                return Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: AppColors.card,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.border, width: 1),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 4,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: AppColors.danger,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
+                final r = rows[i];
+                if (r is _HeaderRow) {
+                  return Padding(
+                    padding: EdgeInsets.only(
+                        top: i == 0 ? 4 : 16, bottom: 6, left: 4),
+                    child: Text(
+                      _labelData(r.data),
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              f.titulo?.isNotEmpty == true
-                                  ? f.titulo!
-                                  : 'PDV ${f.id ?? ''}',
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '$dataFmt · ${_labelTurno(f.turno)}',
-                              style: TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (f.id != null)
-                        Text(
-                          '#${f.id}',
-                          style: TextStyle(
-                            color:
-                                AppColors.textMuted.withValues(alpha: 0.55),
-                            fontSize: 10,
+                    ),
+                  );
+                }
+                final v = (r as _CardRow).item;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(8),
+                      border:
+                          Border.all(color: AppColors.border, width: 1),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 4,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(2),
                           ),
                         ),
-                    ],
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                v.titulo.isNotEmpty
+                                    ? v.titulo
+                                    : 'PDV ${v.pdvId ?? ''}',
+                                style: const TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _labelTurno(v.turno),
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },
@@ -333,4 +400,16 @@ class FaltasScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+abstract class _Row {}
+
+class _HeaderRow extends _Row {
+  final DateTime data;
+  _HeaderRow(this.data);
+}
+
+class _CardRow extends _Row {
+  final ProgramadoItem item;
+  _CardRow(this.item);
 }
