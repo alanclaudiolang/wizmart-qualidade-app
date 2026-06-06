@@ -314,6 +314,16 @@ class SyncEngine {
           final existente = await _db.getVisitaByGabaritoTurnoData(
               gabaritoId, pdvId, turno, inicioDia, fimDia);
           final idAlvo = existente?.id ?? idTemp;
+          // Reseta campos de execução da rodada anterior. Sem isso, em
+          // PDVs recorrentes (mesmo gabarito|pdv|turno em semanas
+          // diferentes) o `idTemp` determinístico colide com a visita
+          // antiga e `localState='finalizada'` vaza pra visita nova —
+          // promotor clica no card "Agendada" e cai direto na tela
+          // "Visita finalizada!". Esse bloco só roda quando a visita
+          // está synced (passou o filtro de pending acima) E o servidor
+          // não tem ela como realizada/em-andamento hoje, então é
+          // seguro zerar — qualquer trabalho legítimo já chegou no
+          // servidor.
           await _db.upsertVisita(VisitasCompanion(
             id: Value(idAlvo),
             // serverId fica null — sync_engine vai criar no servidor depois
@@ -328,6 +338,32 @@ class SyncEngine {
             visitaAvulsa: const Value(false),
             syncStatus: const Value('synced'),
             syncedAt: Value(DateTime.now().toIso8601String()),
+            localState: const Value('idle'),
+            fotosAntesJson: const Value(null),
+            fotosDepoisJson: const Value(null),
+            diaHoraAbertura: const Value(null),
+            diaHoraRealizado: const Value(null),
+            diaHoraFotosAntes: const Value(null),
+            diaHoraFotosDepois: const Value(null),
+            localizacaoAbertura: const Value(null),
+            localizacaoEncerramento: const Value(null),
+            localizacaoFotosAntes: const Value(null),
+            localizacaoFotosDepois: const Value(null),
+            comentariosVisita: const Value(null),
+            checkPergunta1: const Value(null),
+            checkPergunta2: const Value(null),
+            checkPergunta3: const Value(null),
+            checkPergunta4: const Value(null),
+            checkPergunta5: const Value(null),
+            checkPergunta6: const Value(null),
+            checkPergunta7: const Value(null),
+            obsPergunta1: const Value(null),
+            obsPergunta2: const Value(null),
+            obsPergunta3: const Value(null),
+            obsPergunta4: const Value(null),
+            obsPergunta5: const Value(null),
+            obsPergunta6: const Value(null),
+            obsPergunta7: const Value(null),
           ));
         }
         salvas++;
