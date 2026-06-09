@@ -653,6 +653,16 @@ class AppDatabase extends _$AppDatabase {
       (delete(pendingPhotos)..where((p) => p.localPath.equals(localPath)))
           .go();
 
+  /// Apaga todas as pending_photos de uma visita. Usado pelo guard
+  /// "descarte de visita-fantasma" do sync engine.
+  Future<int> deletePendingPhotosByVisita(int visitaId) =>
+      (delete(pendingPhotos)..where((p) => p.visitaId.equals(visitaId)))
+          .go();
+
+  /// Apaga a row da visita pelo id. Usado pelo guard de descarte.
+  Future<int> deleteVisitaById(int id) =>
+      (delete(visitas)..where((v) => v.id.equals(id))).go();
+
   /// Conta fotos da visita+slot que ainda estão EM PROGRESSO local
   /// (watermark_pending, pending, uploading). Usado pelo sync engine
   /// pra postergar operações que tocariam o servidor antes do

@@ -816,6 +816,39 @@ class SyncEngine {
         return;
       }
 
+      // ── Guard contra "INSERT-fantasma" ──────────────────────────────────
+      // Row LOCAL não-avulsa, sem serverId, com dia_hora_agendado anterior
+      // a HOJE, e sem nenhuma marca de execução (abertura/realizado) é
+      // LIXO de vaga semanal anterior que ficou preso por algum bug de
+      // sync passado. INSERT dela criaria duplicata-fantasma no servidor
+      // (caso Felipe build 222 09/06: visitas CAPRI/SANTORINI aparecendo
+      // "Em andamento" sem clique, com fotos do dia 04/06).
+      //
+      // Avulsa NUNCA descarta: foi o promotor que criou, dados são reais.
+      // Visita com abertura OU realizado preenchidos NUNCA descarta:
+      // execução offline legítima atrasada.
+      final isAvulsa = visita.visitaAvulsa ?? false;
+      if (!isAvulsa &&
+          visita.serverId == null &&
+          visita.diaHoraAbertura == null &&
+          visita.diaHoraRealizado == null) {
+        final agendado = DateTime.tryParse(visita.diaHoraAgendado ?? '');
+        final hoje = DateTime.now();
+        final hoje0 = DateTime(hoje.year, hoje.month, hoje.day);
+        if (agendado != null && agendado.toLocal().isBefore(hoje0)) {
+          _logger.log(
+              'outbox',
+              'DESCARTANDO fantasma: visita id=$entityId '
+              'agendado=${visita.diaHoraAgendado} sem serverId/abertura/realizado '
+              '(lixo de vaga anterior, evita duplicata no servidor)',
+              erro: true);
+          await _db.deletePendingPhotosByVisita(entityId);
+          await _db.deleteVisitaById(entityId);
+          await _db.deleteOutboxItem(item.id);
+          return;
+        }
+      }
+
       final payload =
           await _buildVisitaPayload(visita, operation: item.operation);
 
