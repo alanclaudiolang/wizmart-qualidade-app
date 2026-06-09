@@ -78,6 +78,58 @@ class WatermarkQueueService {
     _processNext();
   }
 
+  /// Re-enfileira pares (visitaId, slot) únicos de pending_photos que
+  /// ficaram em `watermark_pending` de uma execução anterior do app
+  /// (foto tirada, app fechou antes do watermark terminar). Idempotente:
+  /// o processador interno já detecta foto que já tem watermark aplicado
+  /// e só atualiza status sem re-renderizar.
+  ///
+  /// Chamar UMA VEZ no boot do app, após sessão carregada e DB pronto.
+  /// Falha silenciosa — não pode quebrar o boot.
+  Future<int> recoverPendingOnBoot() async {
+    try {
+      final db = _ref.read(appDatabaseProvider);
+      final session = await SessionService.getSession();
+      final promotorNome = session?.nome ?? '';
+      final stale = await db.getStaleWatermarkPending();
+      if (stale.isEmpty) return 0;
+      // Agrupa por (visitaId, slot) único
+      final pares = <String, _QueueItem>{};
+      for (final p in stale) {
+        final key = '${p.visitaId}|${p.slot}';
+        if (pares.containsKey(key)) continue;
+        final v = await db.getVisitaById(p.visitaId);
+        if (v == null) continue;
+        // PDV nome = título da visita (fonte autorizada do watermark,
+        // mesmo critério do _pdvNomeParaWatermark da tela de visita).
+        final pdvNome = v.titulo?.trim().isNotEmpty == true
+            ? v.titulo!
+            : 'PDV ${v.idPdvAssociado ?? "?"}';
+        pares[key] = _QueueItem(
+          visitaId: p.visitaId,
+          slot: p.slot,
+          pdvNome: pdvNome,
+          promotorNome: promotorNome,
+        );
+      }
+      _pending.addAll(pares.values);
+      await PersistentLogger.append('watermark',
+          'recoverPendingOnBoot: ${pares.length} pares (visita,slot) re-enfileirados '
+          'de ${stale.length} fotos travadas');
+      // Dispara assíncrono.
+      // ignore: discarded_futures
+      _processNext();
+      return pares.length;
+    } catch (e) {
+      try {
+        await PersistentLogger.append(
+            'watermark', 'recoverPendingOnBoot falhou: $e',
+            erro: true);
+      } catch (_) {}
+      return 0;
+    }
+  }
+
   Future<void> _processNext() async {
     if (_running) return;
     _running = true;

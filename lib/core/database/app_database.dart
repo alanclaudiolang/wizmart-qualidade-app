@@ -517,6 +517,39 @@ class AppDatabase extends _$AppDatabase {
   Future<void> deleteOutboxItem(String id) =>
       (delete(outboxItems)..where((o) => o.id.equals(id))).go();
 
+  // ── Recovery de estados intermediários no boot ──────────────────────────
+  //
+  // Estados `uploading` e `watermark_pending` só existem durante execução
+  // ativa do app. Se o app foi morto (OOM, swipe-out, crash, bateria),
+  // as fotos ficam congeladas nesses estados e travam o outbox da visita
+  // pra sempre (countFotosEmProgresso retorna > 0).
+  //
+  // Estes dois métodos são chamados UMA VEZ no boot do app antes do
+  // SyncEngine subir.
+
+  /// Reseta fotos em `uploading` pra `pending`. O upload Storage é
+  /// idempotente (x-upsert: true) — se foto já subiu mas o status ficou
+  /// preso, retry sobrescreve mesmo arquivo. Loga quantas foram resetadas.
+  Future<int> resetUploadingNoBoot() async {
+    final agora = DateTime.now().toIso8601String();
+    final n = await (update(pendingPhotos)
+          ..where((p) => p.status.equals('uploading')))
+        .write(PendingPhotosCompanion(
+      status: const Value('pending'),
+      nextRetryAt: Value(agora),
+    ));
+    return n;
+  }
+
+  /// Retorna pending_photos que estão em `watermark_pending` — caller
+  /// usa pra re-enfileirar no WatermarkQueueService. Agrupado por
+  /// (visitaId, slot) é responsabilidade do caller.
+  Future<List<PendingPhoto>> getStaleWatermarkPending() {
+    return (select(pendingPhotos)
+          ..where((p) => p.status.equals('watermark_pending')))
+        .get();
+  }
+
   /// Conta itens não-sincronizados (qualquer status que não seja terminal).
   /// Usado para bloquear ações destrutivas (download de APK nova,
   /// logoff opcionalmente, etc.) enquanto há dados pendentes.

@@ -15,6 +15,8 @@ import '../../presentation/widgets/permissions_guard.dart';
 import '../network/sync_engine.dart';
 import 'current_screen.dart';
 import 'device_info_service.dart';
+import 'persistent_logger.dart';
+import 'watermark_queue.dart';
 import 'last_visita_service.dart';
 import 'session_service.dart';
 
@@ -94,6 +96,28 @@ class _SplashRedirectState extends ConsumerState<_SplashRedirect> {
   Future<void> _redirect() async {
     await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
+
+    // Recovery de estados intermediários que ficaram congelados de
+    // execução anterior (app morto pelo Android, swipe-out, OOM, crash):
+    //   - pending_photos.status='uploading' → 'pending' (POST não está
+    //     mais em andamento; storage usa x-upsert, retry é idempotente).
+    //   - pending_photos.status='watermark_pending' → re-enfileira no
+    //     WatermarkQueueService (processador interno detecta foto que
+    //     já tem watermark aplicado).
+    // Sem isso, fotos travadas faziam countFotosEmProgresso retornar
+    // sempre > 0 e o outbox da visita postergava eternamente — visita
+    // nunca consolidava no servidor (caso Glaucia/Camila/Thiago em
+    // build 220).
+    try {
+      final db = ref.read(appDatabaseProvider);
+      final n = await db.resetUploadingNoBoot();
+      if (n > 0) {
+        await PersistentLogger.append('boot',
+            'recovery: $n foto(s) com status=uploading resetadas pra pending');
+      }
+      final wmQueue = ref.read(watermarkQueueProvider);
+      await wmQueue.recoverPendingOnBoot();
+    } catch (_) {/* não bloquear boot */}
 
     final hasSession = await SessionService.hasSession();
     if (!hasSession) {
