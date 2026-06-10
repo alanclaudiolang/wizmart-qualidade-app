@@ -455,10 +455,42 @@ class AppDatabase extends _$AppDatabase {
       return;
     }
     await transaction(() async {
-      // Remove duplicata órfã com PK=serverId que um pull anterior possa
-      // ter criado (pivot histórico). A row idLocal abaixo é a fonte real
-      // — ela tem as fotos/outbox vinculados.
-      await (delete(visitas)..where((v) => v.id.equals(serverId))).go();
+      // CAUSA HISTÓRICA do bug "realizadas viram em andamento": a
+      // implementação antiga deletava a row com PK=serverId (vinda do
+      // pull, com dados frescos do servidor) e PRESERVAVA todos os
+      // campos da row idLocal (idTemp negativo, dados velhos da semana
+      // passada). Casos Jessica/Felipe/Thamara 09-10/06 onde uma vaga
+      // do dia ganhava "Em andamento" ou perdia dia_hora_realizado.
+      //
+      // Agora: se já existe row local com PK=serverId, PRESERVAMOS os
+      // campos dela (frescos do servidor) e migramos APENAS o trabalho
+      // novo da row idLocal — pending_photos e outbox vinculados. Os
+      // campos de execução (abertura/realizado/fotos/checks/obs) que
+      // o promotor preencheu localmente já foram enviados pelo INSERT
+      // que originou o serverId — o servidor é a fonte de verdade.
+      final existenteServer = await (select(visitas)
+            ..where((v) => v.id.equals(serverId)))
+          .getSingleOrNull();
+      if (existenteServer != null) {
+        // Preserva campos da row do servidor — só atualiza sync state.
+        await (update(visitas)..where((v) => v.id.equals(serverId))).write(
+          VisitasCompanion(
+            serverId: Value(serverId),
+            syncStatus: const Value('synced'),
+            syncedAt: Value(agora),
+          ),
+        );
+        // Migra pending_photos e outbox da row idLocal pro serverId,
+        // depois apaga a row idLocal.
+        await (update(pendingPhotos)..where((p) => p.visitaId.equals(idLocal)))
+            .write(PendingPhotosCompanion(visitaId: Value(serverId)));
+        await (update(outboxItems)..where((o) => o.entityId.equals(idLocal)))
+            .write(OutboxItemsCompanion(entityId: Value(serverId)));
+        await (delete(visitas)..where((v) => v.id.equals(idLocal))).go();
+        return;
+      }
+      // Não há row pré-existente com PK=serverId — migra a idLocal pra
+      // ela (caso comum de visita avulsa nascida offline).
       await (update(visitas)..where((v) => v.id.equals(idLocal))).write(
         VisitasCompanion(
           id: Value(serverId),

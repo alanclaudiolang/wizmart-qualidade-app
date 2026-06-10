@@ -594,17 +594,83 @@ class SyncEngine {
   ///
   /// App novo: 1=agendada, 2=andamento, 3=realizada, 5=falta
   /// Servidor: 1=realizada, 2=andamento, 5=falta (não há 'agendada' no servidor)
+  ///
+  /// IMPORTANTE: o default anterior retornava 2 (em andamento) pra
+  /// status local 1 (Agendada). Era fábrica de fantasma — qualquer
+  /// caminho que enviasse INSERT/UPDATE de visita Agendada marcava
+  /// o servidor como "Em andamento sem clique" (casos Felipe/Mauro/
+  /// Thamara/Thiago 09-10/06). Agora lança StateError: visita
+  /// Agendada NÃO deve chegar ao servidor — o guard de fantasma
+  /// upstream em _processOutboxItem já descarta antes do payload.
+  /// Se cair aqui é bug — queremos ver o erro em vez de silenciar.
   int _toServerStatus(int? appStatus) {
     if (appStatus == AppConstants.statusRealizada) return 1; // 3 -> 1
     if (appStatus == AppConstants.statusEmAndamento) return 2; // 2 -> 2
     if (appStatus == AppConstants.statusFalta) return 5; // 5 -> 5
-    // Local=agendada (1) ou null: NÃO existe equivalente "agendada" no
-    // servidor. Default seguro: 2 (em andamento). Antes caía no fallback
-    // `appStatus ?? statusEmAndamento` que retornava 1 — e 1 no servidor
-    // significa REALIZADA. Resultado: qualquer UPDATE com local=1 marcava
-    // a visita como realizada no servidor sem dia_hora_realizado nem
-    // fotos_depois (caso Jessica/visita-113248 2026-05-26).
-    return 2;
+    throw StateError(
+        'Visita com status local Agendada (1) ou null NÃO deve virar '
+        'payload pro servidor. Indica falha do guard upstream em '
+        '_processOutboxItem. appStatus=$appStatus');
+  }
+
+  /// Filtra `payload` mantendo APENAS os campos que representam trabalho
+  /// novo do promotor — fotos uploadadas, abertura/realizado, checks e
+  /// observações. NÃO inclui `status_visita` (a menos que seja real:
+  /// Realizada=1 ou Falta=5), NÃO inclui `dia_hora_agendado`, NÃO inclui
+  /// identidade (promotor/gabarito/pdv/turno/título).
+  ///
+  /// Usado por DOIS caminhos de UPDATE no outbox:
+  ///   1. UPSERT-merge (INSERT bate em conflict → busca por chave natural
+  ///      → UPDATE). Antes mandava payload completo, sobrescrevendo o
+  ///      status do servidor (caso Thamara 10/06).
+  ///   2. UPDATE direto (row local já tem serverId). Antes mandava payload
+  ///      completo — recriava fantasma da visita 120437 do Thiago toda vez
+  ///      que limpeza no servidor era feita.
+  ///
+  /// Status_visita só sobe se for legítimo (1 Realizada / 5 Falta). Status=2
+  /// (Em andamento) é bloqueado nesse filtro porque a única forma do app
+  /// gerar payload com status=2 partindo de visita virgem é via fantasma —
+  /// o status real "Em andamento" só existe enquanto promotor está com a
+  /// tela aberta, e nesse momento ele NÃO está disparando outbox.
+  Map<String, dynamic> _filtrarPayloadMinimo(Map<String, dynamic> payload) {
+    const camposPermitidos = {
+      'fotos_antes',
+      'fotos_depois',
+      'dia_hora_abertura',
+      'dia_hora_realizado',
+      'dia_hora_fotos_antes',
+      'dia_hora_fotos_depois',
+      'localizacao_abertura',
+      'localizacao_encerramento',
+      'localizacao_fotos_antes',
+      'localizacao_fotos_depois',
+      'comentarios_visita',
+      'check_pergunta_1',
+      'obs_pergunta_1',
+      'check_pergunta_2',
+      'obs_pergunta_2',
+      'check_pergunta_3',
+      'obs_pergunta_3',
+      'check_pergunta_4',
+      'obs_pergunta_4',
+      'check_pergunta_5',
+      'obs_pergunta_5',
+      'check_pergunta_6',
+      'obs_pergunta_6',
+      'check_pergunta_7',
+      'obs_pergunta_7',
+    };
+    final out = <String, dynamic>{};
+    for (final k in camposPermitidos) {
+      if (payload.containsKey(k)) out[k] = payload[k];
+    }
+    // Status só sobe se for legítimo (1=Realizada ou 5=Falta).
+    // 2=Em andamento é bloqueado — só pode vir de fantasma.
+    final status = payload['status_visita'];
+    if (status == 1 || status == 5) {
+      out['status_visita'] = status;
+    }
+    return out;
   }
 
   /// Inverso de `_toServerStatus`. Servidor → App.
@@ -909,16 +975,21 @@ class SyncEngine {
                 'dia=${visita.diaHoraAgendado})');
           }
           novoServerId = existentes.first['id'] as int;
-          // Aplica o UPDATE com o payload completo (preserva trabalho do
-          // promotor: status, abertura, realizado, fotos).
-          await _supabase
-              .from('visitas')
-              .update(payload)
-              .eq('id', novoServerId);
+          // Payload MÍNIMO: NÃO sobrescreve status nem dia_hora_agendado
+          // do servidor. Só trabalho novo do promotor. Ver
+          // _filtrarPayloadMinimo() pra critérios.
+          final payloadMinimo = _filtrarPayloadMinimo(payload);
+          if (payloadMinimo.isNotEmpty) {
+            await _supabase
+                .from('visitas')
+                .update(payloadMinimo)
+                .eq('id', novoServerId);
+          }
           _logger.log(
               'outbox',
               'UPSERT-merge: row existente serverId=$novoServerId '
-              'recebeu UPDATE com payload local');
+              'recebeu UPDATE com ${payloadMinimo.length} campos (payload mínimo, '
+              'preserva status do servidor)');
         }
         // Consolida a PK local em serverId E re-vincula fotos+outbox na
         // mesma transação. Sem isso, idTemp e serverId divergiam e as
@@ -935,20 +1006,36 @@ class SyncEngine {
           _logger.log('outbox', 'INSERT OK serverId=$novoServerId');
         }
       } else {
-        final res = await _supabase
-            .from('visitas')
-            .update(payload)
-            .eq('id', visita.serverId!)
-            .select();
-        _logger.log(
-            'outbox',
-            'UPDATE OK localId=$entityId serverId=${visita.serverId} '
-            'op=${item.operation} rowsAfetadas=${res.length}');
-        if (res.isEmpty) {
+        // UPDATE direto: payload MÍNIMO, igual ao UPSERT-merge.
+        // Caso Thiago 120437 (10/06): a row tinha serverId=120437 do
+        // pull anterior, outbox tinha item pendente das fotos 08/06
+        // antigas. O UPDATE mandava payload completo com status=2
+        // (via _toServerStatus do app, antes do Conserto 1) — re-criava
+        // o fantasma toda vez que a limpeza no servidor era feita.
+        // Agora o UPDATE também só envia trabalho do promotor.
+        final payloadMinimo = _filtrarPayloadMinimo(payload);
+        if (payloadMinimo.isEmpty) {
           _logger.log(
               'outbox',
-              'AVISO: UPDATE 0 rows. serverId=${visita.serverId} pode não existir no servidor.',
-              erro: true);
+              'UPDATE skip: payload mínimo vazio (nenhum trabalho '
+              'novo pra enviar). serverId=${visita.serverId} op=${item.operation}');
+        } else {
+          final res = await _supabase
+              .from('visitas')
+              .update(payloadMinimo)
+              .eq('id', visita.serverId!)
+              .select();
+          _logger.log(
+              'outbox',
+              'UPDATE OK localId=$entityId serverId=${visita.serverId} '
+              'op=${item.operation} rowsAfetadas=${res.length} '
+              '(payload mínimo, ${payloadMinimo.length} campos)');
+          if (res.isEmpty) {
+            _logger.log(
+                'outbox',
+                'AVISO: UPDATE 0 rows. serverId=${visita.serverId} pode não existir no servidor.',
+                erro: true);
+          }
         }
         await _db.updateVisita(VisitasCompanion(
           id: Value(entityId),
