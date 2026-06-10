@@ -868,12 +868,58 @@ class SyncEngine {
       if (visita.serverId == null) {
         _logger.log('outbox',
             'INSERT visita local id=$entityId (sem serverId)');
+        // .maybeSingle (não .single): servidor pode retornar 0 rows quando
+        // o INSERT bate em ON CONFLICT DO NOTHING — significa que já
+        // existe uma row pra mesma chave natural (gabarito|pdv|turno|
+        // dia_hora_agendado) no servidor. Antes, .single jogava PGRST116
+        // e o item ficava em retry-loop infinito (caso Thiago/Luís
+        // 09/06: 60+ issues D5-realizada-pending, build 220→223).
         final res = await _supabase
             .from('visitas')
             .insert(payload)
             .select()
-            .single();
-        final novoServerId = res['id'] as int;
+            .maybeSingle();
+        int novoServerId;
+        if (res != null) {
+          novoServerId = res['id'] as int;
+        } else {
+          // INSERT virou no-op (conflict). Busca a row existente pela
+          // chave natural e faz UPDATE em vez disso.
+          _logger.log(
+              'outbox',
+              'INSERT 0 rows (conflict) — buscando row existente '
+              'por chave natural pra fazer UPDATE');
+          final existentes = await _supabase
+              .from('visitas')
+              .select('id')
+              .eq('id_promotor_associado', visita.idPromotorAssociado as Object)
+              .eq('id_gabarito_associado', visita.idGabaritoAssociado as Object)
+              .eq('id_pdv_associado', visita.idPdvAssociado as Object)
+              .eq('previsao_turno_realizada',
+                  visita.previsaoTurnoRealizada ?? '')
+              .eq('dia_hora_agendado', visita.diaHoraAgendado as Object)
+              .limit(1);
+          if (existentes.isEmpty) {
+            // Não achou pela chave exata. Lança pra cair no catch e
+            // retentar com backoff — pode ser problema transitório.
+            throw Exception(
+                'INSERT retornou 0 rows e SELECT por chave natural não '
+                'encontrou (entityId=$entityId, gab=${visita.idGabaritoAssociado}, '
+                'pdv=${visita.idPdvAssociado}, turno=${visita.previsaoTurnoRealizada}, '
+                'dia=${visita.diaHoraAgendado})');
+          }
+          novoServerId = existentes.first['id'] as int;
+          // Aplica o UPDATE com o payload completo (preserva trabalho do
+          // promotor: status, abertura, realizado, fotos).
+          await _supabase
+              .from('visitas')
+              .update(payload)
+              .eq('id', novoServerId);
+          _logger.log(
+              'outbox',
+              'UPSERT-merge: row existente serverId=$novoServerId '
+              'recebeu UPDATE com payload local');
+        }
         // Consolida a PK local em serverId E re-vincula fotos+outbox na
         // mesma transação. Sem isso, idTemp e serverId divergiam e as
         // fotos/outbox ficavam órfãos (causa raiz das fotos sumindo).
