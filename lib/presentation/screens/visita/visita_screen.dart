@@ -298,6 +298,12 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
   Future<void> _loadVisita() async {
     final db = _db;
     final visita = await db.getVisitaById(widget.visitaId);
+    // Guard pós-await (issue #621, Gabriel/335 build 227): no boot, o
+    // SplashRedirect retoma a última visita enquanto syncs concorrentes
+    // podem reciclar/apagar a row e a tela ser descartada antes do load
+    // terminar. setState em State morto = crash fatal "Null check
+    // operator". Mesma classe dos issues #10/#12/#13 (ref após dispose).
+    if (!mounted) return;
     if (visita == null) {
       setState(() {
         _error = 'Visita não encontrada';
@@ -347,6 +353,10 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       ));
     }
 
+    // Guard pós-await (issue #621) — vários awaits acima; a tela pode
+    // ter sido descartada no meio. Era AQUI (linha do setState abaixo)
+    // que o crash de boot do Gabriel estourava.
+    if (!mounted) return;
     setState(() {
       _promotorNome = promotorNome;
       _visita = visita;
