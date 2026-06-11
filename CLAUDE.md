@@ -44,12 +44,15 @@
   passadas; visitas "Incompleta" (263 desde 01/06) em geral sem nenhuma
   URL no slot antes e/ou depois.
 
-### Regra de consistência de datas (definida pelo Alan em 11/06/2026)
+### Anomalia temporal (termo definido pelo Alan em 11/06/2026)
 
-- Em cada visita, os campos `dia_hora_agendado`, `dia_hora_realizado`,
+- **"Anomalia temporal"** = divergência de datas em uma visita. Em cada
+  visita, os campos `dia_hora_agendado`, `dia_hora_realizado`,
   `dia_hora_abertura`, `dia_hora_fotos_antes` e `dia_hora_fotos_depois`
   **e a data lida na marca d'água das fotos do bucket (OCR) devem se
-  referir ao MESMO dia**. Qualquer divergência é **anomalia**.
+  referir ao MESMO dia**. Qualquer divergência é anomalia temporal.
+  (Existem outros tipos de anomalia; este termo cobre só divergência de
+  datas.)
 - Antes de limpar as URLs duplicadas dos arrays, conferir as fotos com
   marca d'água desde 01/06 contra essa regra.
 
