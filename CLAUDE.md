@@ -40,7 +40,13 @@
   qual flag de status) — **não deduzir nada, buscar fatos** no código e no
   Supabase. Ler a tabela `status_visita`.
 - A visita não realizada (**falta**) é carimbada **pelo Supabase** (não pelo
-  app).
+  app). **Detalhe do mecanismo (Alan, 11/06/2026): não há gatilhos/triggers
+  de status no servidor — existe apenas um job NOTURNO que lê as visitas de
+  D-1 (véspera) e: (a) marca Incompleta (5) se faltar URL de foto em um dos
+  campos antes/depois; (b) marca como falta (3, Não Realizada) as agendadas
+  não realizadas.** Consequência: o job NÃO re-avalia datas antigas — visita
+  de dias anteriores alterada hoje não recebe carimbo retroativo; qualquer
+  correção de status em data passada precisa setar o status explicitamente.
 - O status **"em andamento" só existe na data de hoje**.
 - O status **"incompleto" só existe em visitas anteriores** (datas passadas)
   que não têm URL/foto do "antes" ou do "depois".
