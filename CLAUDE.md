@@ -12,6 +12,14 @@
    histórico de outros dias que ainda não sincronizou** e, principalmente,
    **não podem perder o trabalho atual**. Mudanças na área de id temporário/
    consolidação já causaram transtornos antes — tratar como alto risco.
+6. **Pode-se apagar as informações internas do app, mas NUNCA as fotos
+   processadas (com marca d'água) da galeria de fotos do celular do
+   promotor** (definido pelo Alan em 11/06/2026). A galeria é o backup do
+   promotor. Fato verificado no código: o app só ADICIONA à galeria
+   (`Gal.putImage`, `watermark_queue.dart:278`) e não possui nenhuma
+   chamada capaz de apagar da galeria — qualquer limpeza deve se restringir
+   ao banco local (`pending_photos`) e aos arquivos internos do app
+   (`wizmart_fotos/`).
 
 ## Fatos do domínio (definidos pelo Alan em 11/06/2026)
 
