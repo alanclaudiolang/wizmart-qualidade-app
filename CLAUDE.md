@@ -107,12 +107,21 @@ segundos mostrava que já era acesso total.)
   ainda **não cadastradas** — verificado: nenhuma variável de ambiente
   com esses nomes existe. Quando o Alan cadastrar, entram como variáveis
   de ambiente do ambiente "Default" e só aparecem em **sessões novas**.
-- **Publicação iOS** (fatos do `codemagic.yaml`): todo push na `main` ou
-  na `dev` dispara build no Codemagic (inclusive commits só de docs — o
-  filtro do commit 796c099 vale apenas para o Android), que gera o `.ipa`
-  e sobe para o App Store Connect (app Apple ID 6774250898, bundle
-  `com.wizmart.promotor`). Porém `submit_to_testflight: false` — o build
-  NÃO segue automaticamente para o TestFlight.
+- **Publicação iOS**: contexto completo e status em
+  **`docs/publicacao-ios.md`** (consolidado em 11/06 das memórias do
+  Codespace + histórico). Resumo: app submetido à App Store em 01/06 com
+  pedido de distribuição Unlisted; 3 rejeições corrigidas até 04/06;
+  parado aguardando resposta do ticket Unlisted; quando aprovado, gerar
+  build novo e resubmeter. O `codemagic.yaml` configura trigger por push,
+  mas **na prática o webhook não dispara** (fato registrado na memória do
+  Codespace) — builds saem manualmente ou via API. `submit_to_testflight:
+  false`. App Apple ID 6774250898, bundle `com.wizmart.promotor`.
+- **O repositório GitHub é PÚBLICO** (verificado em 11/06 por acesso
+  anônimo + API). Motivo provável: o auto-update do APK exige URL pública
+  e o GitHub não permite release pública em repo privado. NUNCA commitar
+  credenciais. Exposições conhecidas a tratar no futuro (sem quebrar o
+  auto-update dos promotores): issues com dados de produção e anon key
+  do Supabase no código.
 - **Regra definida pelo Alan (11/06/2026) para a publicação iOS** — o
   comportamento atual acima está ERRADO e deve ser corrigido no
   `codemagic.yaml`: a publicação iOS deve acontecer **somente mediante
