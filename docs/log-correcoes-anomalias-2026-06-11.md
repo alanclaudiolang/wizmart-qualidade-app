@@ -61,14 +61,20 @@ determinística: voltar a data da pasta 09/06→08/06 nas URLs trocadas.
 
 ## Renato Louzada Junior (id 49)
 
-Fatos: 117649 (PORTAL CERVEJAS, ag 04/06): abertura e fotos "antes" em
-02/06 18h (marca d'água confere); realizado 04/06 08:09; existem 4 fotos
-"depois" na pasta de 04/06 com marca d'água "04/06/2026 08:06:04" (confere
-com o realizado). A visita começou em 02/06 e terminou em 04/06.
+Fatos (revisados em 11/06 após conferência dos arrays): 117649 (PORTAL
+CERVEJAS, ag 04/06): abertura 02/06 18:01; 5 fotos "antes" de 02/06
+(marca d'água 02/06 18:05); array "depois" JÁ CONTÉM os dois dias —
+4 fotos de 02/06 (18:23) e 4 de 04/06 (marca d'água 04/06 08:06, confere
+com realizado 04/06 08:09). A visita começou em 02/06 e terminou em 04/06;
+cada foto está vinculada ao seu dia verdadeiro.
+
+⚠️ A proposta original (trocar as 4 URLs "depois" de 02/06 para a pasta
+04/06) estava ERRADA — criaria duplicatas, pois as fotos de 04/06 já estão
+no array. Cancelada.
 
 | Visita | UPDATE proposto | Obs |
 |---|---|---|
-| 117649 | arrays "depois": trocar para as 4 URLs da pasta `2026-06-04` que existem; campo `dia_hora_fotos_depois`: `2026-06-02T18:23:28` → `2026-06-04T08:06:04` (marca d'água) | "antes" permanece de 02/06 (fato real — visita atravessou dias; avaliar com supervisor) | PROPOSTA |
+| 117649 | Opção 1 (recomendada): NENHUM update — dados refletem o fato real (visita em 2 dias; anomalia de processo, p/ supervisor). Opção 2: só `dia_hora_fotos_depois` `2026-06-02T18:23:28` → `2026-06-04T08:06:04` (cosmético) | AGUARDANDO decisão do Alan |
 
 ## Mauro Alexandre Gomez Altamirano (id 412)
 
