@@ -31,13 +31,13 @@ d'água das fotos do dia certo que existem no bucket** (verificado por OCR em
 |---|---|---|---|
 | 119937 | 09/06 | arrays: trocar 13 URLs pasta `2026-06-04` → `2026-06-09` (13/13 existem) | **EXECUTADA 11/06** — 13 trocadas |
 | 119944 | 09/06 | arrays: trocar 14 das 15 URLs antigas (14/15 existem) | **EXECUTADA 11/06** — 14 trocadas; mantida 1 (`…2026-06-04…VIV_FREGUESIA…depois-7.jpg`, sem versão de 09/06) |
-| 119966 | 09/06 | **sem correção possível**: as 4 fotos "antes" são de 04/06 e não existe versão de 09/06; "depois" já é do dia certo (09/06 17:43) | registrar p/ supervisor — NENHUM UPDATE feito |
+| 119966 | 09/06 | **sem correção possível**: as 4 fotos "antes" são de 04/06 e não existe versão de 09/06; "depois" já é do dia certo (09/06 17:43) | ANÔMALA, sem correção possível — NENHUM UPDATE feito; destino a definir pelo Alan |
 | 119970 | 09/06 | arrays: trocar 12 URLs `2026-06-04` → `2026-06-09` (12/12) | **EXECUTADA 11/06** — 12 trocadas |
 | 119971 | 08/06 | arrays: trocar 16 URLs `2026-06-05` → `2026-06-08` (16/16) | **EXECUTADA 11/06** — 16 trocadas |
 | 119977 | 08/06 | arrays: trocar 8 URLs `2026-06-05` → `2026-06-08` (8/8) | **EXECUTADA 11/06** — 8 trocadas |
 | 119978 | 08/06 | arrays: trocar 14 URLs `2026-06-05` → `2026-06-08` (14/14) | **EXECUTADA 11/06** — 14 trocadas |
 | 119979 | 08/06 | arrays: trocar 11 das 12 URLs (11/12) | **EXECUTADA 11/06** — 11 trocadas; mantida 1 (sem versão de 08/06) |
-| 119980 | 08/06 | arrays: trocar 12 das 13 URLs (12/13). A 13ª é a foto "depois" de **outro PDV** (PORTAL CERVEJAS, 10/06 18:18) — não tem substituta; manter e registrar p/ supervisor | **EXECUTADA 11/06** — 12 trocadas; mantida a foto de PDV errado (p/ supervisor) |
+| 119980 | 08/06 | arrays: trocar 12 das 13 URLs (12/13). A 13ª é a foto "depois" de **outro PDV** (PORTAL CERVEJAS, 10/06 18:18) — não tem substituta; manter | **EXECUTADA 11/06** — 12 trocadas; mantida a foto de PDV errado (sem substituta) |
 
 **Execução Felipe (11/06/2026):** as trocas são reversíveis de forma
 determinística (mesmo nome de arquivo, só muda a data da pasta:
@@ -79,9 +79,26 @@ no array. Cancelada.
 > ⚠️ **A ANOMALIA PERSISTE** (regra do mesmo dia, definida pelo Alan):
 > abertura e fotos "antes" em 02/06; agendado, realizado e parte das fotos
 > "depois" em 04/06 — as marcas d'água provam trabalho em DOIS dias.
-> Não existe UPDATE capaz de resolver; é anomalia de processo.
-> **Encaminhar ao supervisor** (atenção: a visita já consta como
-> `visita_aprovada = true`, aprovada em meio à divergência).
+> Não existe UPDATE capaz de resolver. Destino a definir pelo Alan.
+> Fato registrado: `visita_aprovada = true`.
+
+## Revalidação contra a regra do mesmo dia (11/06, pós-correções)
+
+Critério: `dia_hora_agendado/abertura/realizado/fotos_antes/fotos_depois`
+e data das fotos vinculadas, todos no mesmo dia. Data das fotos verificada
+pela pasta da URL em todas; marca d'água conferida por OCR em amostra.
+
+| Visita | Estado | Pendência |
+|---|---|---|
+| 119937, 119970, 119971, 119977, 119978, 120127 | CONSISTENTE | — |
+| 117649 | ANÔMALA | abertura e fotos "antes" de 02/06 (fato real, sem UPDATE possível) |
+| 119944 | ANÔMALA | 1 foto de 04/06 sem versão do dia certo; campo `realizado` nulo |
+| 119966 | ANÔMALA | 4 fotos "antes" de 04/06; campos `abertura` e `fotos_antes` nulos |
+| 119979 | ANÔMALA | 1 foto de 05/06 sem versão do dia certo |
+| 119980 | ANÔMALA | 1 foto de outro PDV (10/06); campo `abertura` nulo |
+| 120082 | ANÔMALA | 1 foto de 08/06 sem versão do dia certo |
+
+Destino das visitas que permanecem anômalas: **a definir pelo Alan**.
 
 ## Mauro Alexandre Gomez Altamirano (id 412)
 
