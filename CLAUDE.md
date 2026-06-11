@@ -1,5 +1,16 @@
 # Contexto do projeto — WizMart Qualidade App
 
+## ⭐ Regra principal: NÃO SUPOR NADA (definida pelo Alan em 11/06/2026)
+
+Toda afirmação deve se basear em **fatos verificados** — no código, nos
+dados, em testes executados nesta sessão ou em pesquisa — nunca em memória
+de sessões anteriores, histórico da conversa ou dedução. **Se dá para
+testar/verificar, testar ANTES de afirmar.** Vale para TUDO: respostas,
+diagnósticos, configurações de ambiente, propostas — não só para mudanças
+de código. (Exemplo real que motivou a regra: afirmar que a política de
+rede estava restrita com base em anotação antiga, quando um teste de 2
+segundos mostrava que já era acesso total.)
+
 ## Regras de trabalho (definidas pelo Alan)
 
 1. **Comunicação:** explicar sempre de forma objetiva, sem jargão técnico, em português claro.
@@ -84,6 +95,32 @@
   datas.)
 - Antes de limpar as URLs duplicadas dos arrays, conferir as fotos com
   marca d'água desde 01/06 contra essa regra.
+
+## Ambiente de execução (fatos verificados em 11/06/2026)
+
+- **Política de rede: ACESSO TOTAL.** Verificado por teste em 11/06/2026
+  (curl para domínios diversos respondeu). Esta informação **prevalece**
+  sobre o que `docs/contexto-handoff-2026-06-11.md` diz sobre rede — lá
+  está retratada a situação antiga (acesso restrito por domínio), que o
+  Alan depois mudou para acesso total.
+- Credenciais externas (token do Codemagic, chave da App Store Connect)
+  ainda **não cadastradas** — verificado: nenhuma variável de ambiente
+  com esses nomes existe. Quando o Alan cadastrar, entram como variáveis
+  de ambiente do ambiente "Default" e só aparecem em **sessões novas**.
+- **Publicação iOS** (fatos do `codemagic.yaml`): todo push na `main` ou
+  na `dev` dispara build no Codemagic (inclusive commits só de docs — o
+  filtro do commit 796c099 vale apenas para o Android), que gera o `.ipa`
+  e sobe para o App Store Connect (app Apple ID 6774250898, bundle
+  `com.wizmart.promotor`). Porém `submit_to_testflight: false` — o build
+  NÃO segue automaticamente para o TestFlight.
+- **Regra definida pelo Alan (11/06/2026) para a publicação iOS** — o
+  comportamento atual acima está ERRADO e deve ser corrigido no
+  `codemagic.yaml`: a publicação iOS deve acontecer **somente mediante
+  solicitação do Alan** (nunca automática a cada push); quando ele
+  solicitar **testar na `dev`**, o build da `dev` deve ir para o
+  **TestFlight**. Pré-requisitos antes de mexer no `codemagic.yaml`:
+  credenciais cadastradas (acima) e verificação do histórico de builds
+  no Codemagic (nunca confirmamos se algum build iOS passou desde 28/05).
 
 ## ⏳ Retomada de trabalho em andamento
 
