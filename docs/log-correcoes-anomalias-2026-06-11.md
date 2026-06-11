@@ -52,8 +52,12 @@ Fatos: idem Felipe — campos = 09/06, fotos do dia certo existem (OCR em
 
 | Visita | Agendada | UPDATE proposto | Obs |
 |---|---|---|---|
-| 120082 | 09/06 | arrays: trocar 8 das 9 URLs `2026-06-08` → `2026-06-09` | 1 sem versão de 09/06: manter e anotar | PROPOSTA |
-| 120127 | 09/06 | arrays: trocar 7 URLs `2026-06-08` → `2026-06-09` (7/7) | PROPOSTA |
+| 120082 | 09/06 | arrays: trocar 8 das 9 URLs `2026-06-08` → `2026-06-09` | **EXECUTADA 11/06** — 8 trocadas; mantida 1 (`…2026-06-08…SICOOB…antes-5.jpg`, sem versão de 09/06) |
+| 120127 | 09/06 | arrays: trocar 7 URLs `2026-06-08` → `2026-06-09` (7/7) | **EXECUTADA 11/06** — 7 trocadas |
+
+**Execução Thiago (11/06/2026):** registro completo antes/depois em
+`log_execucao_thiago_2026-06-11.json` (enviado ao Alan). Reversão
+determinística: voltar a data da pasta 09/06→08/06 nas URLs trocadas.
 
 ## Renato Louzada Junior (id 49)
 
