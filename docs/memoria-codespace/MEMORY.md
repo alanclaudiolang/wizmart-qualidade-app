@@ -1,0 +1,15 @@
+- [Build e push automáticos](feedback_workflow.md) — em dev, comite/push/build sem pedir confirmação a cada passo
+- [Avisar de issues GitHub novos proativamente](feedback_github_issues.md) — verificar `gh issue list --label=auto-reportado` no início de cada turno
+- [Port iOS em andamento](project_ios_port.md) — estrutura ios/ criada, CI via Codemagic, TestFlight; aguardando credenciais Apple Developer
+- [Workflow do port iOS](feedback_ios_port_workflow.md) — usuário desenvolve Android, Claude reflete pro iOS sem pedir; só cuidar do platform-specific
+- [Limpar sujeira do fluxo](feedback_cleanup_fluxo.md) — revogar/deletar recurso velho ANTES de criar o novo; não acumular "no caso de"
+- [Sem fix por dedução](feedback_no_speculation.md) — toda correção precisa de causa raiz confirmada com evidência, não chute
+- [Investigar issues a fundo](feedback_investigar_fundo.md) — análise profunda é default; cruzar log/servidor/bucket, não pedir confirmação pra investigar
+- [NUNCA force-update em mudança estrutural](feedback_no_force_update_estrutura.md) — promotor offline com pendências precisa reinstalar (perde tudo); só force-update em fixes de UI/lógica sem incompat de dados
+- [Não deduzir campos de domínio](feedback_visita_avulsa_inferir_do_historico.md) — visita_avulsa/status/flags só de fonte explícita (Edge Function, código, usuário); histórico NÃO é fonte
+- [PDV via título histórico, não concat de campos](feedback_pdv_lookup_via_titulo_historico.md) — pra cruzar foto-marca com PDV usar visitas.titulo literal do histórico, não CEP+heurística nem api_localCustomerName+api_specificLocation
+- [Force-update só pra alívio imediato](feedback_force_update_so_se_corrige_agora.md) — fix preventivo / futuro não justifica force-update; D+1 normal
+- [Regras dos 5 status_visita](feedback_status_incompleta_definicao.md) — 1=Concl, 2=Andam (só HOJE), 3=NãoRealiz (Supabase carimba), 4=Agend, 5=Incompleta. Em dia passado: status=2 é inválido; corrijo pra 1 ou 5 conforme fotos, nunca pra 3
+- [Procedimento de recuperação manual](feedback_recuperacao_manual_procedimento.md) — passos validados (David/Camila/Gabriel/Mauro/Leandro): OCR → Edge Function como fonte → payload fixo (checks 1-5 true, 6-7 false, visita_avulsa=false)
+- [Match visita via path da URL, não dia_hora_agendado do dump](feedback_match_visita_via_path_url.md) — em recuperação automática de issues, usar DATA extraída do path da foto, nunca confiar no dia_hora_agendado do SQLite local (pode estar bagunçado por bug)
+- [Português, objetivo, sem jargão](feedback_comunicacao_pt_br.md) — sempre PT-BR direto; tabela > parágrafo; resultado prático antes do como-funciona; não narrar tool calls
