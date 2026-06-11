@@ -1,0 +1,54 @@
+name: 🐛 Bug encontrado
+description: Algo no app não está funcionando como deveria.
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use este template para registrar um bug que você (dev) encontrou no app.
+        Quando for pedir o fix ao Claude, é só colar a URL desta issue na conversa.
+
+  - type: textarea
+    id: descricao
+    attributes:
+      label: O que está acontecendo?
+      description: Descreva o bug de forma direta.
+      placeholder: Ex.- "Após tirar a 1ª foto do antes, ela não aparece no grid e nada é gravado no DB."
+    validations:
+      required: true
+
+  - type: textarea
+    id: passos
+    attributes:
+      label: Como reproduzir
+      description: Passo a passo curto.
+      placeholder: |
+        1. Login com promotor X
+        2. Abrir visita Y
+        3. Iniciar visita
+        4. Tirar foto antes
+    validations:
+      required: false
+
+  - type: textarea
+    id: midia
+    attributes:
+      label: 📎 Mídia (screenshot, GIF, vídeo ou áudio)
+      description: |
+        Arraste arquivos aqui. Tudo é aceito, mas preferências práticas:
+        - **Screenshot ou GIF curto** — Claude consegue ver e analisar direto
+        - **Vídeo MP4** — só serve como referência humana (Claude não assiste)
+        - **Áudio** — idem (Claude não escuta) — descreva o conteúdo em texto também
+    validations:
+      required: false
+
+  - type: textarea
+    id: contexto
+    attributes:
+      label: Contexto técnico (opcional)
+      description: |
+        Qualquer pista útil — log de console, branch, tela específica, dispositivo,
+        última ação que funcionou, etc.
+    validations:
+      required: false
