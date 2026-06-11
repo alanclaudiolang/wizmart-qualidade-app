@@ -20,6 +20,10 @@
    chamada capaz de apagar da galeria — qualquer limpeza deve se restringir
    ao banco local (`pending_photos`) e aos arquivos internos do app
    (`wizmart_fotos/`).
+7. **Antes de qualquer alteração proposta, ler e estudar 100% do código**
+   (definido pelo Alan em 11/06/2026) — entender o fluxo inteiro afetado,
+   para que a mudança não gere conflitos/problemas para os usuários
+   (promotores em campo).
 
 ## Fatos do domínio (definidos pelo Alan em 11/06/2026)
 
