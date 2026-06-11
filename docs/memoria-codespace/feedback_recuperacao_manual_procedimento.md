@@ -33,7 +33,13 @@ compartilham nome comercial (filiais), confunde. Ver
 
 ## 2. Mapear visitas no servidor
 - Listar visitas do promotor na(s) data(s) das fotos
-- Pra cada grupo (PDV, data):
+- ⚠️ **Chave de casamento COMPLETA (corrigida pelo Alan em 11/06/2026):
+  PROMOTOR + PDV + data** (+ turno se houver mais de uma visita do mesmo
+  promotor no PDV/dia). O mesmo PDV no mesmo dia pode ser abastecido por
+  DOIS promotores distintos — casar só por (PDV, data) abre brecha para
+  vincular fotos à visita do promotor errado. O promotor vem da linha 2
+  da marca d'água (OCR), nunca de dedução.
+- Pra cada grupo (promotor, PDV, data):
   - **Já existe na tabela visitas (qualquer status, incluindo status=3
     Falta auto-D+1)**: UPDATE no registro existente — sobrescreve
     `status=3 → status=1`. NUNCA duplicar com INSERT.
