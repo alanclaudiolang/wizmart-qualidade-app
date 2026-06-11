@@ -114,36 +114,38 @@ class SyncEngine {
     await _pullPdvs(promotorId);
     await _pullGabaritos(promotorId);
     await _pullVisitasDia(promotorId);
-    // Limpeza D-1 em MODO OBSERVAÇÃO (fase 1 — não apaga nada).
-    // try/catch próprio: telemetria nunca pode quebrar o sync.
+    // Limpeza D-1: apaga do celular os rascunhos de fotos JÁ CONFIRMADAS
+    // no servidor (dias anteriores). try/catch próprio: a limpeza nunca
+    // pode quebrar o sync.
     try {
-      await _observarLimpezaD1(promotorId);
+      await _limparD1Sincronizada(promotorId);
     } catch (e) {
-      _logger.log('limpeza-d1', 'Observação falhou (ignorado): $e');
+      _logger.log('limpeza-d1', 'Limpeza falhou (ignorado): $e');
     }
     _logger.log('fim', 'Sincronização concluída');
   }
 
-  /// LIMPEZA D-1 — MODO OBSERVAÇÃO (Propostas 1+2, aprovadas pelo Alan em
-  /// 11/06/2026 com implantação em DUAS FASES). Nesta fase NÃO APAGA NADA:
-  /// apenas identifica o que a limpeza definitiva apagaria e registra no
-  /// log persistente (canal 'limpeza-d1'), incluindo a conferência no
-  /// servidor. A fase 2 (exclusão real) só entra depois de validarmos
-  /// esses registros com dados reais de produção.
+  /// LIMPEZA D-1 (Propostas 1+2, aprovadas pelo Alan em 11/06/2026).
+  /// Apaga do celular os rascunhos de fotos de DIAS ANTERIORES já
+  /// confirmadas no servidor: a linha em `pending_photos` e o arquivo
+  /// interno em `wizmart_fotos/`. Regras (CLAUDE.md, regras 5/6 + regra
+  /// do Alan "uma vez sincronizados no Supabase, os registros D-1 do app
+  /// devem ser excluídos"):
   ///
-  /// Regras (CLAUDE.md, regras 5/6 + regra do Alan "uma vez sincronizados
-  /// no Supabase, os registros D-1 do app devem ser excluídos"):
   ///   - Candidatas: fotos `uploaded` capturadas ANTES de hoje. Trabalho
   ///     de hoje, em andamento ou não enviado fica fora por definição.
-  ///   - Conferência obrigatória: a URL da foto precisa constar em
-  ///     `fotos_antes`/`fotos_depois` da visita NO SERVIDOR (bucket +
-  ///     tabela). Sem confirmação = não apagaria.
-  ///   - Galeria do celular: fora do escopo SEMPRE (o app nem tem
-  ///     chamada de exclusão de galeria — só `Gal.putImage`).
-  ///   - Roda no máximo 1x por dia (gate via `sync_state`) e com teto de
-  ///     consultas por rodada pra não pesar a rede do promotor.
-  Future<void> _observarLimpezaD1(int promotorId) async {
-    const gate = 'limpeza_d1_observacao';
+  ///   - Conferência OBRIGATÓRIA antes de apagar: a URL da foto precisa
+  ///     constar em `fotos_antes`/`fotos_depois` da visita NO SERVIDOR
+  ///     (bucket + tabela). Sem confirmação = não apaga (tenta amanhã).
+  ///   - Se a visita ainda existe local e NÃO está concluída+synced
+  ///     (ex.: visita de ontem em aberto), não apaga — o grid ainda
+  ///     exibe os arquivos locais (lição do caso José/PAYTEC 11/06).
+  ///   - GALERIA DO CELULAR: fora do escopo SEMPRE — backup do promotor;
+  ///     o app nem possui chamada de exclusão de galeria (só Gal.putImage).
+  ///   - Roda 1x por dia (gate em `sync_state`), teto de consultas por
+  ///     rodada pra não pesar a rede; o que não couber é avaliado amanhã.
+  Future<void> _limparD1Sincronizada(int promotorId) async {
+    const gate = 'limpeza_d1';
     final hoje = DateTime.now().toIso8601String().substring(0, 10);
     final estado = await _db.getSyncState(gate);
     if ((estado?.lastPullAt ?? '').startsWith(hoje)) return; // já rodou hoje
@@ -158,7 +160,6 @@ class SyncEngine {
 
     // Tetos por rodada: o que não couber hoje é avaliado amanhã.
     const tetoVisitasConsultadas = 15;
-    const tetoLinhasDeLog = 80;
 
     final porVisita = <int, List<PendingPhoto>>{};
     for (final p in antigas) {
@@ -166,23 +167,29 @@ class SyncEngine {
     }
 
     var visitasConsultadas = 0;
-    var apagaria = 0;
+    var apagadas = 0;
     var naoConfirmadas = 0;
     var semComoConfirmar = 0;
-    var linhasLogadas = 0;
+    var visitaEmUso = 0;
 
     for (final entry in porVisita.entries) {
       final vid = entry.key;
       final visita = await _db.getVisitaById(vid);
+
+      // Visita ainda em uso local (não concluída/sincronizada): o grid
+      // exibe esses arquivos — apagar quebraria a tela. Pula.
+      if (visita != null &&
+          !(visita.syncStatus == 'synced' &&
+              visita.localState == 'finalizada')) {
+        visitaEmUso += entry.value.length;
+        continue;
+      }
+
       // serverId: da row local; ou o próprio id quando positivo (visita
       // já consolidada cuja row local foi purgada).
       final serverId = visita?.serverId ?? (vid > 0 ? vid : null);
       if (serverId == null) {
         semComoConfirmar += entry.value.length;
-        _logger.log(
-            'limpeza-d1',
-            'OBSERVAÇÃO: ${entry.value.length} foto(s) da visita $vid sem '
-            'serverId (id temporário órfão) — NÃO apagaria');
         continue;
       }
       if (visitasConsultadas >= tetoVisitasConsultadas) break;
@@ -200,36 +207,45 @@ class SyncEngine {
         urlsServidor = {...fa, ...fd};
       } catch (e) {
         _logger.log('limpeza-d1',
-            'OBSERVAÇÃO: falha ao consultar visita $serverId — pulando');
+            'Falha ao consultar visita $serverId — pulando (tenta amanhã)');
         continue;
       }
 
       for (final p in entry.value) {
         final url = p.storageUrl ?? '';
         final confirmada = url.isNotEmpty && urlsServidor.contains(url);
-        if (confirmada) {
-          apagaria++;
-        } else {
+        if (!confirmada) {
           naoConfirmadas++;
-        }
-        if (linhasLogadas < tetoLinhasDeLog) {
-          linhasLogadas++;
           _logger.log(
               'limpeza-d1',
-              'OBSERVAÇÃO visita=$vid server=$serverId foto=${p.id} '
-              'slot=${p.slot} n=${p.numero} '
-              'criada=${p.createdAt.length >= 10 ? p.createdAt.substring(0, 10) : p.createdAt} '
-              '→ ${confirmada ? 'APAGARIA (URL confirmada no servidor)' : 'NÃO apagaria (URL não consta na visita do servidor)'}');
+              'NÃO apagada (URL não consta na visita $serverId do '
+              'servidor): foto=${p.id} slot=${p.slot} n=${p.numero}');
+          continue;
         }
+        // Confirmada no servidor: apaga arquivo interno + linha do banco.
+        // Só toca em arquivo DENTRO do app (wizmart_fotos/) — a cópia da
+        // galeria do promotor não passa por aqui.
+        try {
+          final f = File(p.localPath);
+          if (await f.exists()) await f.delete();
+        } catch (_) {/* arquivo já ausente — segue */}
+        await (_db.delete(_db.pendingPhotos)
+              ..where((t) => t.id.equals(p.id)))
+            .go();
+        apagadas++;
+        _logger.log(
+            'limpeza-d1',
+            'APAGADA (confirmada no servidor): visita=$vid '
+            'server=$serverId foto=${p.id} slot=${p.slot} n=${p.numero} '
+            'criada=${p.createdAt.length >= 10 ? p.createdAt.substring(0, 10) : p.createdAt}');
       }
     }
 
     _logger.log(
         'limpeza-d1',
-        'OBSERVAÇÃO resumo: ${antigas.length} foto(s) uploaded de dias '
-        'anteriores no banco local; apagaria=$apagaria, '
-        'nãoConfirmadas=$naoConfirmadas, semComoConfirmar=$semComoConfirmar '
-        '(MODO OBSERVAÇÃO — nada foi apagado)');
+        'Resumo: ${antigas.length} foto(s) uploaded de dias anteriores; '
+        'apagadas=$apagadas, nãoConfirmadas=$naoConfirmadas, '
+        'semComoConfirmar=$semComoConfirmar, visitaEmUso=$visitaEmUso');
 
     await _db.upsertSyncState(SyncStateCompanion(
       entityType: const Value(gate),

@@ -22,13 +22,16 @@
    passo 5 do `_pullVisitasDia`): a purga "destruir + re-baixar" agora SÓ
    roda se a Edge Function respondeu HTTP 200. Function falhou = purga
    pulada (não esvazia mais a home — caso Thamara 11/06).
-2. **Limpeza D-1 em MODO OBSERVAÇÃO** (`sync_engine.dart`,
-   `_observarLimpezaD1`, chamada ao fim do `_pullAllImpl`): roda 1x por
-   dia (gate `limpeza_d1_observacao` em `sync_state`), identifica fotos
-   `uploaded` de dias anteriores, confere a URL no array da visita NO
-   SERVIDOR e registra no log (canal `limpeza-d1`) o que a fase 2
-   apagaria. **NÃO apaga nada nesta fase.** Tetos: 15 visitas
-   consultadas / 80 linhas de log por rodada.
+2. **Limpeza D-1** (`sync_engine.dart`, `_limparD1Sincronizada`, chamada
+   ao fim do `_pullAllImpl`): roda 1x por dia (gate `limpeza_d1` em
+   `sync_state`). APAGA do celular a linha de `pending_photos` e o
+   arquivo interno (`wizmart_fotos/`) de fotos `uploaded` de DIAS
+   ANTERIORES cuja URL foi CONFERIDA no array da visita NO SERVIDOR.
+   Nunca apaga: trabalho de hoje; foto não confirmada no servidor;
+   foto de visita local ainda não concluída+synced (grid em uso);
+   id temporário órfão (sem como confirmar); e NUNCA a galeria do
+   celular. Teto: 15 visitas consultadas por rodada (o resto fica
+   para o dia seguinte). Log no canal `limpeza-d1`.
 3. **D5 anti-ruído (C1)** (`sync_engine.dart`, detector D5): antes de
    enfileirar a anomalia, lê o `last_error` do outbox da visita; se casa
    com padrão de rede transitória
