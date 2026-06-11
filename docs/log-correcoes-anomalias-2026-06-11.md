@@ -110,13 +110,27 @@ CÓPIA desses dados. Não existem fotos dos dias 05/09 no bucket. A 117587
 (SORTE NA BET, ag 03/06) ficou "Incompleta" (vazia) porque o trabalho de
 03/06 caiu na 120351 (ag 05/06).
 
-| Visita | Agendada | UPDATE proposto | Obs |
-|---|---|---|---|
-| 119493 | 05/06 | limpar campos copiados (`dia_hora_abertura/realizado/fotos_antes/fotos_depois` → NULO; arrays `fotos_antes/fotos_depois` → vazios; `status_visita` 1 → 3 Não Realizada) | dados copiados de 117034; supervisor já tinha reprovado | PROPOSTA |
-| 119512 | 09/06 | idem (cópia de 117033) | PROPOSTA |
-| 119526 | 09/06 | idem (cópia de 117032) | PROPOSTA |
-| 119529 | 09/06 | idem (cópia de 117031) | PROPOSTA |
-| 120351 | 05/06 | 1º UPDATE em **117587** (ag 03/06): receber o trabalho real (abertura 03/06 12:37, realizado 03/06 13:19, arrays de fotos, status 1); 2º UPDATE em **120351**: limpar campos copiados e `status_visita` → 3 | move o trabalho para o dia certo sem criar/excluir registros | PROPOSTA |
+**EXECUTADO em 11/06/2026** com decisões do Alan: status final **5
+(Incompleta)** — coerente com o job noturno do Supabase (só lê D-1, sem
+carimbo retroativo; visita passada com registro e sem foto = Incompleta) —
+e **117587 (SORTE NA BET 03/06) INTOCADA** por ordem do Alan: o trabalho
+de 03/06 segue referenciado apenas no bucket (fotos preservadas lá e na
+galeria do Mauro), sem vínculo na tabela.
+
+UPDATE aplicado às 5 (119493, 119512, 119526, 119529, 120351): campos de
+execução → nulo (abertura, realizado, datas/localizações de fotos,
+comentários, checklist 1-7), arrays de fotos → vazios, `status_visita`
+1 → 5. Campos do supervisor (`visita_aprovada`, `comentarios_supervisor`)
+NÃO foram tocados. Backup integral das 5 rows (todos os campos, valores
+pré-limpeza) salvo em `backup_mauro_2026-06-11.json` e enviado ao Alan.
+
+| Visita | Agendada | Resultado |
+|---|---|---|
+| 119493 | 05/06 | limpa, status 5 (era cópia de 117034; supervisor havia reprovado a cópia — `visita_aprovada=false` mantido) |
+| 119512 | 09/06 | limpa, status 5 (era cópia de 117033) |
+| 119526 | 09/06 | limpa, status 5 (era cópia de 117032) |
+| 119529 | 09/06 | limpa, status 5 (era cópia de 117031) |
+| 120351 | 05/06 | limpa, status 5. A proposta de mover o trabalho para a 117587 foi CANCELADA pelo Alan (117587 intocada) |
 
 > Escolha do status 3 (Não Realizada) nas limpezas: não há evidência de
 > visita nesses dias (sem fotos no bucket). Alternativa: 5 (Incompleta).
