@@ -114,7 +114,127 @@ class SyncEngine {
     await _pullPdvs(promotorId);
     await _pullGabaritos(promotorId);
     await _pullVisitasDia(promotorId);
+    // Limpeza D-1 em MODO OBSERVAÇÃO (fase 1 — não apaga nada).
+    // try/catch próprio: telemetria nunca pode quebrar o sync.
+    try {
+      await _observarLimpezaD1(promotorId);
+    } catch (e) {
+      _logger.log('limpeza-d1', 'Observação falhou (ignorado): $e');
+    }
     _logger.log('fim', 'Sincronização concluída');
+  }
+
+  /// LIMPEZA D-1 — MODO OBSERVAÇÃO (Propostas 1+2, aprovadas pelo Alan em
+  /// 11/06/2026 com implantação em DUAS FASES). Nesta fase NÃO APAGA NADA:
+  /// apenas identifica o que a limpeza definitiva apagaria e registra no
+  /// log persistente (canal 'limpeza-d1'), incluindo a conferência no
+  /// servidor. A fase 2 (exclusão real) só entra depois de validarmos
+  /// esses registros com dados reais de produção.
+  ///
+  /// Regras (CLAUDE.md, regras 5/6 + regra do Alan "uma vez sincronizados
+  /// no Supabase, os registros D-1 do app devem ser excluídos"):
+  ///   - Candidatas: fotos `uploaded` capturadas ANTES de hoje. Trabalho
+  ///     de hoje, em andamento ou não enviado fica fora por definição.
+  ///   - Conferência obrigatória: a URL da foto precisa constar em
+  ///     `fotos_antes`/`fotos_depois` da visita NO SERVIDOR (bucket +
+  ///     tabela). Sem confirmação = não apagaria.
+  ///   - Galeria do celular: fora do escopo SEMPRE (o app nem tem
+  ///     chamada de exclusão de galeria — só `Gal.putImage`).
+  ///   - Roda no máximo 1x por dia (gate via `sync_state`) e com teto de
+  ///     consultas por rodada pra não pesar a rede do promotor.
+  Future<void> _observarLimpezaD1(int promotorId) async {
+    const gate = 'limpeza_d1_observacao';
+    final hoje = DateTime.now().toIso8601String().substring(0, 10);
+    final estado = await _db.getSyncState(gate);
+    if ((estado?.lastPullAt ?? '').startsWith(hoje)) return; // já rodou hoje
+
+    final fotos = await (_db.select(_db.pendingPhotos)
+          ..where((p) => p.status.equals('uploaded')))
+        .get();
+    final antigas = fotos.where((p) {
+      final c = p.createdAt;
+      return c.length >= 10 && c.substring(0, 10).compareTo(hoje) < 0;
+    }).toList();
+
+    // Tetos por rodada: o que não couber hoje é avaliado amanhã.
+    const tetoVisitasConsultadas = 15;
+    const tetoLinhasDeLog = 80;
+
+    final porVisita = <int, List<PendingPhoto>>{};
+    for (final p in antigas) {
+      porVisita.putIfAbsent(p.visitaId, () => []).add(p);
+    }
+
+    var visitasConsultadas = 0;
+    var apagaria = 0;
+    var naoConfirmadas = 0;
+    var semComoConfirmar = 0;
+    var linhasLogadas = 0;
+
+    for (final entry in porVisita.entries) {
+      final vid = entry.key;
+      final visita = await _db.getVisitaById(vid);
+      // serverId: da row local; ou o próprio id quando positivo (visita
+      // já consolidada cuja row local foi purgada).
+      final serverId = visita?.serverId ?? (vid > 0 ? vid : null);
+      if (serverId == null) {
+        semComoConfirmar += entry.value.length;
+        _logger.log(
+            'limpeza-d1',
+            'OBSERVAÇÃO: ${entry.value.length} foto(s) da visita $vid sem '
+            'serverId (id temporário órfão) — NÃO apagaria');
+        continue;
+      }
+      if (visitasConsultadas >= tetoVisitasConsultadas) break;
+      visitasConsultadas++;
+
+      Set<String> urlsServidor;
+      try {
+        final row = await _supabase
+            .from('visitas')
+            .select('fotos_antes,fotos_depois')
+            .eq('id', serverId)
+            .maybeSingle();
+        final fa = (row?['fotos_antes'] as List?)?.cast<String>() ?? [];
+        final fd = (row?['fotos_depois'] as List?)?.cast<String>() ?? [];
+        urlsServidor = {...fa, ...fd};
+      } catch (e) {
+        _logger.log('limpeza-d1',
+            'OBSERVAÇÃO: falha ao consultar visita $serverId — pulando');
+        continue;
+      }
+
+      for (final p in entry.value) {
+        final url = p.storageUrl ?? '';
+        final confirmada = url.isNotEmpty && urlsServidor.contains(url);
+        if (confirmada) {
+          apagaria++;
+        } else {
+          naoConfirmadas++;
+        }
+        if (linhasLogadas < tetoLinhasDeLog) {
+          linhasLogadas++;
+          _logger.log(
+              'limpeza-d1',
+              'OBSERVAÇÃO visita=$vid server=$serverId foto=${p.id} '
+              'slot=${p.slot} n=${p.numero} '
+              'criada=${p.createdAt.length >= 10 ? p.createdAt.substring(0, 10) : p.createdAt} '
+              '→ ${confirmada ? 'APAGARIA (URL confirmada no servidor)' : 'NÃO apagaria (URL não consta na visita do servidor)'}');
+        }
+      }
+    }
+
+    _logger.log(
+        'limpeza-d1',
+        'OBSERVAÇÃO resumo: ${antigas.length} foto(s) uploaded de dias '
+        'anteriores no banco local; apagaria=$apagaria, '
+        'nãoConfirmadas=$naoConfirmadas, semComoConfirmar=$semComoConfirmar '
+        '(MODO OBSERVAÇÃO — nada foi apagado)');
+
+    await _db.upsertSyncState(SyncStateCompanion(
+      entityType: const Value(gate),
+      lastPullAt: Value(DateTime.now().toIso8601String()),
+    ));
   }
 
   /// Ciclo completo de sincronização usado por todos os gatilhos:
@@ -245,9 +365,23 @@ class SyncEngine {
       // do promotor (preservando as com pendências). O loop seguinte
       // recria tudo a partir do servidor — garantindo que app e
       // servidor fiquem idênticos a cada pull, sem duplicação possível.
-      _logger.log('limpeza',
-          'Apagando visitas synced sem pendências (re-baixa do servidor)...');
-      await _db.deleteVisitasSincronizadasSemPendencias(promotorId);
+      //
+      // GUARD (caso Thamara 11/06, tela "Nenhuma visita agendada"): a
+      // purga SÓ roda se a Edge Function respondeu 200. Antes, quando a
+      // function falhava (timeout/erro no celular), a purga apagava as
+      // visitas do dia e o loop seguinte não recriava nada — home vazia
+      // até o próximo pull bem-sucedido. Falhou a function = mantém o
+      // que está na tela e tenta de novo no próximo ciclo.
+      if (efResponse.statusCode == 200) {
+        _logger.log('limpeza',
+            'Apagando visitas synced sem pendências (re-baixa do servidor)...');
+        await _db.deleteVisitasSincronizadasSemPendencias(promotorId);
+      } else {
+        _logger.log('limpeza',
+            'Edge Function falhou (HTTP ${efResponse.statusCode}) — purga '
+            'PULADA pra não esvaziar a home sem reposição',
+            erro: true);
+      }
 
       // ── 6. Salva visitas normais ───────────────────────────────────────────
       _logger.log('salvar', 'Salvando visitas normais no SQLite...');
@@ -571,6 +705,25 @@ class SyncEngine {
       ).get();
       for (final row in travadas) {
         final vid = row.read<int>('id');
+        // ANTI-RUÍDO (C1, enxurrada Jessica 10-11/06: 1 falha de rede
+        // virou 6+ issues): se o ÚLTIMO erro registrado no outbox desta
+        // visita é rede transitória (DNS, timeout, conexão), o retry com
+        // backoff já está cuidando — re-reportar a cada ciclo é só ruído.
+        // Reporta apenas erro real ou pendência sem erro registrado
+        // (situação inexplicada, essa sim merece olhar).
+        final outboxDaVisita = await (_db.select(_db.outboxItems)
+              ..where((o) => o.entityId.equals(vid)))
+            .get();
+        final ultimoErro = outboxDaVisita
+            .where((o) => (o.lastError ?? '').isNotEmpty)
+            .fold<String?>(null, (acc, o) => o.lastError);
+        if (ultimoErro != null &&
+            ErrorClassifier.textoPareceRedeTransitoria(ultimoErro)) {
+          _logger.log('anomalia',
+              'D5 silenciado p/ visita $vid: último erro é rede '
+              'transitória (retry em curso)');
+          continue;
+        }
         // ignore: discarded_futures
         AnomaliaReporter.enfileirar(
           db: _db,

@@ -13,6 +13,36 @@
 > 3=realizada 5=(rotulado "falta" no código; equivale a Incompleta no
 > servidor).
 
+## ⚠️ MUDANÇAS DE COMPORTAMENTO — build de 11/06/2026 (pós-240)
+
+> As linhas citadas no corpo deste mapa refletem o código ANTERIOR a
+> estas mudanças; os trechos abaixo prevalecem onde houver diferença.
+
+1. **Purga do pull condicionada à Edge Function** (`sync_engine.dart`,
+   passo 5 do `_pullVisitasDia`): a purga "destruir + re-baixar" agora SÓ
+   roda se a Edge Function respondeu HTTP 200. Function falhou = purga
+   pulada (não esvazia mais a home — caso Thamara 11/06).
+2. **Limpeza D-1 em MODO OBSERVAÇÃO** (`sync_engine.dart`,
+   `_observarLimpezaD1`, chamada ao fim do `_pullAllImpl`): roda 1x por
+   dia (gate `limpeza_d1_observacao` em `sync_state`), identifica fotos
+   `uploaded` de dias anteriores, confere a URL no array da visita NO
+   SERVIDOR e registra no log (canal `limpeza-d1`) o que a fase 2
+   apagaria. **NÃO apaga nada nesta fase.** Tetos: 15 visitas
+   consultadas / 80 linhas de log por rodada.
+3. **D5 anti-ruído (C1)** (`sync_engine.dart`, detector D5): antes de
+   enfileirar a anomalia, lê o `last_error` do outbox da visita; se casa
+   com padrão de rede transitória
+   (`ErrorClassifier.textoPareceRedeTransitoria`, novo helper público em
+   `error_classifier.dart`), o alerta é silenciado (só log).
+4. **D2 anti-ruído (C2)** (`watermark_queue.dart`, detector D2): o alerta
+   só dispara se a ETAPA do slot já foi concluída (localState avançou) e
+   a foto segue presa >30 min. Durante a captura (localState ainda na
+   etapa do slot), silencia — elimina o alarme falso por design
+   (#602/#614/#627).
+5. **Guard `mounted` no `_loadVisita`** (`visita_screen.dart`): dois
+   `if (!mounted) return;` após os awaits (antes dos `setState` de
+   ~linha 302 e ~350) — corrige o crash fatal de boot da issue #621.
+
 ---
 
 # PARTE 1 — Boot, ciclo de vida e telas

@@ -89,32 +89,49 @@ class ErrorClassifier {
 
     // 6. Texto da mensagem — http package wrappa SocketException em
     //    ClientException, então procuramos padrões de rede no texto.
-    final s = e.toString().toLowerCase();
-    const padroesRede = [
-      'failed host lookup',
-      'connection refused',
-      'connection reset',
-      'connection closed',
-      'software caused connection abort',
-      'broken pipe',
-      'no address associated',
-      'errno = 7',
-      'errno = 101',
-      'errno = 104',
-      'errno = 110',
-      'errno = 111',
-      'errno = 113',
-      'network is unreachable',
-      'os error: network is unreachable',
-      'clientexception with socket',
-    ];
-    for (final p in padroesRede) {
-      if (s.contains(p)) return ClassificacaoErro.redeTransitoria;
+    if (textoPareceRedeTransitoria(e.toString())) {
+      return ClassificacaoErro.redeTransitoria;
     }
 
     // 7. Default conservador: trata como rede pra não gerar auto-issue
     //    indevido. Se aparecer problema recorrente, refinamos.
     return ClassificacaoErro.redeTransitoria;
+  }
+
+  /// Padrões de texto típicos de falha de rede transitória. Compartilhado
+  /// entre [classificar] (que recebe a exceção viva) e consumidores que
+  /// só têm a MENSAGEM persistida (ex.: `outbox_items.last_error` no
+  /// anti-ruído do D5) — onde o tipo da exceção já se perdeu.
+  static const List<String> _padroesRede = [
+    'failed host lookup',
+    'connection refused',
+    'connection reset',
+    'connection closed',
+    'software caused connection abort',
+    'broken pipe',
+    'no address associated',
+    'errno = 7',
+    'errno = 101',
+    'errno = 104',
+    'errno = 110',
+    'errno = 111',
+    'errno = 113',
+    'network is unreachable',
+    'os error: network is unreachable',
+    'clientexception with socket',
+    'socketexception',
+    'timeoutexception',
+    'handshakeexception',
+  ];
+
+  /// `true` se o texto de erro (mensagem persistida) casa com padrão de
+  /// rede transitória.
+  static bool textoPareceRedeTransitoria(String texto) {
+    final s = texto.toLowerCase();
+    for (final p in _padroesRede) {
+      if (s.contains(p)) return true;
+    }
+    return false;
   }
 
   /// Helper: rótulo curto pra log/cooldown key.

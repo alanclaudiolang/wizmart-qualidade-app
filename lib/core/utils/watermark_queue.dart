@@ -180,9 +180,25 @@ class WatermarkQueueService {
     // (app fechou no meio, isolate morreu, bug no Canvas). Não rede.
     // Enfileira anomalia pra eu olhar — não muda o fluxo (continua
     // tentando aplicar watermark).
+    //
+    // ANTI-RUÍDO (C2, casos #602/#614/#627 — alarme falso por design):
+    // o relógio do D2 contava desde o CLIQUE da câmera, mas a fila só
+    // roda ao concluir a etapa — promotor trabalhando >30 min disparava
+    // alerta à toa. Agora o D2 só alerta se a ETAPA daquele slot já foi
+    // concluída (localState avançou) e MESMO ASSIM a foto está presa.
+    // Durante a captura (localState ainda na etapa do slot), silencia.
+    final visitaD2 = await db.getVisitaById(item.visitaId);
+    final estadoD2 = visitaD2?.localState ?? '';
+    final aindaCapturando = (item.slot == 'antes' &&
+            (estadoD2 == 'idle' ||
+                estadoD2 == 'abertura' ||
+                estadoD2 == 'fotos_antes')) ||
+        (item.slot == 'depois' &&
+            (estadoD2 == 'fotos_depois' || estadoD2 == 'em_reposicao'));
     final agora = DateTime.now();
     for (final p in pendentes) {
       if (p.status != 'watermark_pending') continue;
+      if (aindaCapturando) continue;
       final criado = DateTime.tryParse(p.createdAt);
       if (criado == null) continue;
       if (agora.difference(criado) > const Duration(minutes: 30)) {
