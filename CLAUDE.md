@@ -6,6 +6,12 @@
 2. **Alterações no código:** toda mudança deve ser baseada em **fatos verificados no código atual** — nunca em suposições ou no histórico da conversa. Se faltar informação para avançar com segurança, **perguntar antes** em vez de presumir.
 3. **Alterações em geral (código, issues, dados):** perguntar antes de executar.
 4. **Branch:** trabalhar direto na `main`. Não criar ramificações.
+5. **Toda proposta deve explicitar os RISCOS da implantação** (definido pelo
+   Alan em 11/06/2026). Considerar sempre que: há **muitos promotores usando
+   o app ao mesmo tempo, em versões distintas**; eles **não podem perder o
+   histórico de outros dias que ainda não sincronizou** e, principalmente,
+   **não podem perder o trabalho atual**. Mudanças na área de id temporário/
+   consolidação já causaram transtornos antes — tratar como alto risco.
 
 ## Fatos do domínio (definidos pelo Alan em 11/06/2026)
 
