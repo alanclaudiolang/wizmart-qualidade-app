@@ -29,15 +29,21 @@ d'água das fotos do dia certo que existem no bucket** (verificado por OCR em
 
 | Visita | Agendada | UPDATE proposto | Obs |
 |---|---|---|---|
-| 119937 | 09/06 | arrays: trocar 13 URLs pasta `2026-06-04` → `2026-06-09` (13/13 existem) | PROPOSTA |
-| 119944 | 09/06 | arrays: trocar 14 das 15 URLs antigas (14/15 existem) | 1 foto sem versão de 09/06: manter URL antiga e anotar | PROPOSTA |
-| 119966 | 09/06 | **sem correção possível**: as 4 fotos "antes" são de 04/06 e não existe versão de 09/06; "depois" já é do dia certo (09/06 17:43) | registrar p/ supervisor |
-| 119970 | 09/06 | arrays: trocar 12 URLs `2026-06-04` → `2026-06-09` (12/12) | PROPOSTA |
-| 119971 | 08/06 | arrays: trocar 16 URLs `2026-06-05` → `2026-06-08` (16/16) | PROPOSTA |
-| 119977 | 08/06 | arrays: trocar 8 URLs `2026-06-05` → `2026-06-08` (8/8) | PROPOSTA |
-| 119978 | 08/06 | arrays: trocar 14 URLs `2026-06-05` → `2026-06-08` (14/14) | PROPOSTA |
-| 119979 | 08/06 | arrays: trocar 11 das 12 URLs (11/12) | 1 sem versão de 08/06: manter e anotar | PROPOSTA |
-| 119980 | 08/06 | arrays: trocar 12 das 13 URLs (12/13). A 13ª é a foto "depois" de **outro PDV** (PORTAL CERVEJAS, 10/06 18:18) — não tem substituta; manter e registrar p/ supervisor | PROPOSTA |
+| 119937 | 09/06 | arrays: trocar 13 URLs pasta `2026-06-04` → `2026-06-09` (13/13 existem) | **EXECUTADA 11/06** — 13 trocadas |
+| 119944 | 09/06 | arrays: trocar 14 das 15 URLs antigas (14/15 existem) | **EXECUTADA 11/06** — 14 trocadas; mantida 1 (`…2026-06-04…VIV_FREGUESIA…depois-7.jpg`, sem versão de 09/06) |
+| 119966 | 09/06 | **sem correção possível**: as 4 fotos "antes" são de 04/06 e não existe versão de 09/06; "depois" já é do dia certo (09/06 17:43) | ANÔMALA, sem correção possível — NENHUM UPDATE feito; destino a definir pelo Alan |
+| 119970 | 09/06 | arrays: trocar 12 URLs `2026-06-04` → `2026-06-09` (12/12) | **EXECUTADA 11/06** — 12 trocadas |
+| 119971 | 08/06 | arrays: trocar 16 URLs `2026-06-05` → `2026-06-08` (16/16) | **EXECUTADA 11/06** — 16 trocadas |
+| 119977 | 08/06 | arrays: trocar 8 URLs `2026-06-05` → `2026-06-08` (8/8) | **EXECUTADA 11/06** — 8 trocadas |
+| 119978 | 08/06 | arrays: trocar 14 URLs `2026-06-05` → `2026-06-08` (14/14) | **EXECUTADA 11/06** — 14 trocadas |
+| 119979 | 08/06 | arrays: trocar 11 das 12 URLs (11/12) | **EXECUTADA 11/06** — 11 trocadas; mantida 1 (sem versão de 08/06) |
+| 119980 | 08/06 | arrays: trocar 12 das 13 URLs (12/13). A 13ª é a foto "depois" de **outro PDV** (PORTAL CERVEJAS, 10/06 18:18) — não tem substituta; manter | **EXECUTADA 11/06** — 12 trocadas; mantida a foto de PDV errado (sem substituta) |
+
+**Execução Felipe (11/06/2026):** as trocas são reversíveis de forma
+determinística (mesmo nome de arquivo, só muda a data da pasta:
+09/06→04/06 ou 08/06→05/06). Registro completo antes/depois de cada array
+salvo em `log_execucao_felipe_2026-06-11.json` (enviado ao Alan; cópia do
+conteúdo recuperável pelos padrões acima).
 
 ## Thiago Alves Silva (id 115)
 
@@ -46,19 +52,53 @@ Fatos: idem Felipe — campos = 09/06, fotos do dia certo existem (OCR em
 
 | Visita | Agendada | UPDATE proposto | Obs |
 |---|---|---|---|
-| 120082 | 09/06 | arrays: trocar 8 das 9 URLs `2026-06-08` → `2026-06-09` | 1 sem versão de 09/06: manter e anotar | PROPOSTA |
-| 120127 | 09/06 | arrays: trocar 7 URLs `2026-06-08` → `2026-06-09` (7/7) | PROPOSTA |
+| 120082 | 09/06 | arrays: trocar 8 das 9 URLs `2026-06-08` → `2026-06-09` | **EXECUTADA 11/06** — 8 trocadas; mantida 1 (`…2026-06-08…SICOOB…antes-5.jpg`, sem versão de 09/06) |
+| 120127 | 09/06 | arrays: trocar 7 URLs `2026-06-08` → `2026-06-09` (7/7) | **EXECUTADA 11/06** — 7 trocadas |
+
+**Execução Thiago (11/06/2026):** registro completo antes/depois em
+`log_execucao_thiago_2026-06-11.json` (enviado ao Alan). Reversão
+determinística: voltar a data da pasta 09/06→08/06 nas URLs trocadas.
 
 ## Renato Louzada Junior (id 49)
 
-Fatos: 117649 (PORTAL CERVEJAS, ag 04/06): abertura e fotos "antes" em
-02/06 18h (marca d'água confere); realizado 04/06 08:09; existem 4 fotos
-"depois" na pasta de 04/06 com marca d'água "04/06/2026 08:06:04" (confere
-com o realizado). A visita começou em 02/06 e terminou em 04/06.
+Fatos (revisados em 11/06 após conferência dos arrays): 117649 (PORTAL
+CERVEJAS, ag 04/06): abertura 02/06 18:01; 5 fotos "antes" de 02/06
+(marca d'água 02/06 18:05); array "depois" JÁ CONTÉM os dois dias —
+4 fotos de 02/06 (18:23) e 4 de 04/06 (marca d'água 04/06 08:06, confere
+com realizado 04/06 08:09). A visita começou em 02/06 e terminou em 04/06;
+cada foto está vinculada ao seu dia verdadeiro.
+
+⚠️ A proposta original (trocar as 4 URLs "depois" de 02/06 para a pasta
+04/06) estava ERRADA — criaria duplicatas, pois as fotos de 04/06 já estão
+no array. Cancelada.
 
 | Visita | UPDATE proposto | Obs |
 |---|---|---|
-| 117649 | arrays "depois": trocar para as 4 URLs da pasta `2026-06-04` que existem; campo `dia_hora_fotos_depois`: `2026-06-02T18:23:28` → `2026-06-04T08:06:04` (marca d'água) | "antes" permanece de 02/06 (fato real — visita atravessou dias; avaliar com supervisor) | PROPOSTA |
+| 117649 | `dia_hora_fotos_depois`: `2026-06-02T18:23:28-03:00` → `2026-06-04T08:06:04-03:00` (horário da marca d'água da última leva "depois") | **EXECUTADA 11/06** — Alan escolheu corrigir só esse campo; arrays intactos (fotos dos 2 dias preservadas); demais campos de 02/06 mantidos por refletirem o fato real |
+
+> ⚠️ **A ANOMALIA PERSISTE** (regra do mesmo dia, definida pelo Alan):
+> abertura e fotos "antes" em 02/06; agendado, realizado e parte das fotos
+> "depois" em 04/06 — as marcas d'água provam trabalho em DOIS dias.
+> Não existe UPDATE capaz de resolver. Destino a definir pelo Alan.
+> Fato registrado: `visita_aprovada = true`.
+
+## Revalidação contra a regra do mesmo dia (11/06, pós-correções)
+
+Critério: `dia_hora_agendado/abertura/realizado/fotos_antes/fotos_depois`
+e data das fotos vinculadas, todos no mesmo dia. Data das fotos verificada
+pela pasta da URL em todas; marca d'água conferida por OCR em amostra.
+
+| Visita | Estado | Pendência |
+|---|---|---|
+| 119937, 119970, 119971, 119977, 119978, 120127 | CONSISTENTE | — |
+| 117649 | ANÔMALA | abertura e fotos "antes" de 02/06 (fato real, sem UPDATE possível) |
+| 119944 | ANÔMALA | 1 foto de 04/06 sem versão do dia certo; campo `realizado` nulo |
+| 119966 | ANÔMALA | 4 fotos "antes" de 04/06; campos `abertura` e `fotos_antes` nulos |
+| 119979 | ANÔMALA | 1 foto de 05/06 sem versão do dia certo |
+| 119980 | ANÔMALA | 1 foto de outro PDV (10/06); campo `abertura` nulo |
+| 120082 | ANÔMALA | 1 foto de 08/06 sem versão do dia certo |
+
+Destino das visitas que permanecem anômalas: **a definir pelo Alan**.
 
 ## Mauro Alexandre Gomez Altamirano (id 412)
 
