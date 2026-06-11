@@ -7,6 +7,43 @@
 3. **Alterações em geral (código, issues, dados):** perguntar antes de executar.
 4. **Branch:** trabalhar direto na `main`. Não criar ramificações.
 
+## Fatos do domínio (definidos pelo Alan em 11/06/2026)
+
+- **A marca d'água nas fotos do bucket é a informação mais correta/segura
+  que temos sobre os fatos.** Para tirar dúvidas sobre uma visita, ler a
+  imagem (OCR da marca d'água).
+- **Antes de qualquer alteração**, verificar como o app captura e salva os
+  dados de visitas realizadas e em andamento (qual edge function é usada e
+  qual flag de status) — **não deduzir nada, buscar fatos** no código e no
+  Supabase. Ler a tabela `status_visita`.
+- A visita não realizada (**falta**) é carimbada **pelo Supabase** (não pelo
+  app).
+- O status **"em andamento" só existe na data de hoje**.
+- O status **"incompleto" só existe em visitas anteriores** (datas passadas)
+  que não têm URL/foto do "antes" ou do "depois".
+
+### Fatos verificados em 11/06/2026 (tabela `status_visita` + código)
+
+- Tabela `status_visita` no Supabase: **1=Concluída, 2=Em Andamento,
+  3=Não Realizada, 4=Agendada, 5=Incompleta**.
+- ⚠️ O código do app chama o status 5 de "Falta" (`statusFalta`), mas no
+  servidor **5 = Incompleta** e **3 = Não Realizada**. Comentários do código
+  (ex.: `sync_engine.dart`, cabeçalho de `faltas_screen.dart`) repetem o
+  rótulo errado — o código em si está coerente com o servidor:
+  `faltas_screen` busca `status_visita=3` (Não Realizada) e
+  `realizado_screen` busca `status_visita` 1 ou 5 (Concluída + Incompleta).
+- O app só ESCREVE status no servidor em 2 pontos (`visita_screen.dart`):
+  ao abrir a visita envia **2 (Em Andamento)** e ao finalizar envia
+  **Realizada** (local 3 → servidor 1, via `_toServerStatus`). O app nunca
+  grava 3 (Não Realizada) nem 4 — esses são carimbados pelo Supabase.
+- Edge function usada pelo app: **`gerar_datas_gabaritos_att`** (gera a
+  programação do dia a partir dos gabaritos; chamada no pull do
+  `sync_engine.dart` e na `programado_screen.dart`). A lógica que carimba
+  Não Realizada/Incompleta é do lado do Supabase (não visível no app).
+- Validado nos dados em 11/06: nenhuma visita "Em Andamento" em datas
+  passadas; visitas "Incompleta" (263 desde 01/06) em geral sem nenhuma
+  URL no slot antes e/ou depois.
+
 ## ⏳ Retomada de trabalho em andamento
 
 Há uma investigação em aberto com pendências. **Leia
