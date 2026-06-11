@@ -76,6 +76,13 @@ no array. Cancelada.
 |---|---|---|
 | 117649 | `dia_hora_fotos_depois`: `2026-06-02T18:23:28-03:00` → `2026-06-04T08:06:04-03:00` (horário da marca d'água da última leva "depois") | **EXECUTADA 11/06** — Alan escolheu corrigir só esse campo; arrays intactos (fotos dos 2 dias preservadas); demais campos de 02/06 mantidos por refletirem o fato real |
 
+> ⚠️ **A ANOMALIA PERSISTE** (regra do mesmo dia, definida pelo Alan):
+> abertura e fotos "antes" em 02/06; agendado, realizado e parte das fotos
+> "depois" em 04/06 — as marcas d'água provam trabalho em DOIS dias.
+> Não existe UPDATE capaz de resolver; é anomalia de processo.
+> **Encaminhar ao supervisor** (atenção: a visita já consta como
+> `visita_aprovada = true`, aprovada em meio à divergência).
+
 ## Mauro Alexandre Gomez Altamirano (id 412)
 
 Fatos: o trabalho de 02/06 está corretamente registrado em 117034 (INTERTEK,
