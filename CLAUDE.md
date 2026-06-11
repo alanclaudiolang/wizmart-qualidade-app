@@ -1,5 +1,16 @@
 # Contexto do projeto — WizMart Qualidade App
 
+## ⭐ Regra principal: NÃO SUPOR NADA (definida pelo Alan em 11/06/2026)
+
+Toda afirmação deve se basear em **fatos verificados** — no código, nos
+dados, em testes executados nesta sessão ou em pesquisa — nunca em memória
+de sessões anteriores, histórico da conversa ou dedução. **Se dá para
+testar/verificar, testar ANTES de afirmar.** Vale para TUDO: respostas,
+diagnósticos, configurações de ambiente, propostas — não só para mudanças
+de código. (Exemplo real que motivou a regra: afirmar que a política de
+rede estava restrita com base em anotação antiga, quando um teste de 2
+segundos mostrava que já era acesso total.)
+
 ## Regras de trabalho (definidas pelo Alan)
 
 1. **Comunicação:** explicar sempre de forma objetiva, sem jargão técnico, em português claro.
