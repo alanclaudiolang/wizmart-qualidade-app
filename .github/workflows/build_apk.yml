@@ -5,6 +5,8 @@ on:
     branches: [ main, dev ]
     paths-ignore:
       - 'bug-reports/**'
+      - '**.md'
+      - 'docs/**'
   workflow_dispatch:
 
 jobs:
