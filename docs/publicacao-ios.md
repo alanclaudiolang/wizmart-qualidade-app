@@ -5,7 +5,30 @@
 > feitas em 11/06 (API pública da Apple, codemagic.yaml). Substitui o
 > contexto que estava preso no Codespace.
 
-## Status em 11/06/2026 (verificado direto nas APIs do Codemagic e da Apple)
+## ⏩ ATUALIZAÇÃO 11/06/2026 ~20:50 UTC — RESUBMETIDO À APPLE
+
+Executado nesta data, sob comando do Alan ("podemos iniciar"):
+
+1. `dev` igualada à `main` (incluiu os 4 fixes de sync de 10/06).
+2. **Build #19** disparado via API do Codemagic, concluído e enviado ao
+   App Store Connect; processado **VALID** na Apple. Contém a correção
+   da 4ª rejeição (botão "Continuar") + fixes de 10/06.
+3. `releaseType` da versão 1.0 mudado de AFTER_APPROVAL para **MANUAL**
+   (estava configurado para entrar na loja sozinho ao ser aprovado, o
+   que violaria a regra do Alan e o Unlisted pendente; agora a
+   liberação final é sempre um ato explícito nosso).
+4. Submissão antiga (UNRESOLVED_ISSUES, de 03/06) **cancelada**; build
+   #19 anexado à versão 1.0; **nova submissão enviada — estado
+   WAITING_FOR_REVIEW desde 2026-06-11 20:46 UTC** (5ª submissão).
+5. Restou 1 rascunho órfão não-cancelável (`0e754b7a...`), obsoleto e
+   inofensivo.
+
+Aguardando: veredito da revisão (típico 24–48h; chega por e-mail
+também) e resposta do ticket Unlisted (sem e-mail até 11/06). Quando
+aprovado, a liberação na loja é manual e só ocorre sob comando do Alan.
+Correções operacionais pendentes do app entrarão em build futuro.
+
+## Status em 11/06/2026 antes da resubmissão (histórico)
 
 - **Versão 1.0 no App Store Connect: estado REJECTED.**
 - Houve **4 submissões à revisão** (não 3): 01/06 14:10, 01/06 16:30,
