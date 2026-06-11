@@ -44,6 +44,15 @@
   passadas; visitas "Incompleta" (263 desde 01/06) em geral sem nenhuma
   URL no slot antes e/ou depois.
 
+### Regra de consistência de datas (definida pelo Alan em 11/06/2026)
+
+- Em cada visita, os campos `dia_hora_agendado`, `dia_hora_realizado`,
+  `dia_hora_abertura`, `dia_hora_fotos_antes` e `dia_hora_fotos_depois`
+  **e a data lida na marca d'água das fotos do bucket (OCR) devem se
+  referir ao MESMO dia**. Qualquer divergência é **anomalia**.
+- Antes de limpar as URLs duplicadas dos arrays, conferir as fotos com
+  marca d'água desde 01/06 contra essa regra.
+
 ## ⏳ Retomada de trabalho em andamento
 
 Há uma investigação em aberto com pendências. **Leia
