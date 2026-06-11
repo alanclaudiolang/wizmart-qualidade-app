@@ -74,7 +74,7 @@ no array. Cancelada.
 
 | Visita | UPDATE proposto | Obs |
 |---|---|---|
-| 117649 | Opção 1 (recomendada): NENHUM update — dados refletem o fato real (visita em 2 dias; anomalia de processo, p/ supervisor). Opção 2: só `dia_hora_fotos_depois` `2026-06-02T18:23:28` → `2026-06-04T08:06:04` (cosmético) | AGUARDANDO decisão do Alan |
+| 117649 | `dia_hora_fotos_depois`: `2026-06-02T18:23:28-03:00` → `2026-06-04T08:06:04-03:00` (horário da marca d'água da última leva "depois") | **EXECUTADA 11/06** — Alan escolheu corrigir só esse campo; arrays intactos (fotos dos 2 dias preservadas); demais campos de 02/06 mantidos por refletirem o fato real |
 
 ## Mauro Alexandre Gomez Altamirano (id 412)
 
