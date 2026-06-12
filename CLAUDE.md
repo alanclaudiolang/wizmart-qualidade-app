@@ -133,8 +133,9 @@ segundos mostrava que já era acesso total.)
 
 ## ⏳ Retomada de trabalho em andamento
 
-Há uma investigação em aberto com pendências. **Leia
-`docs/contexto-handoff-2026-06-11.md`** antes de qualquer tarefa — ele contém
-o histórico completo da sessão anterior (estudo do código, issues encerradas,
-caso Jessica, pendências no Supabase). Quando as pendências forem concluídas,
-aquele arquivo temporário pode ser removido (perguntar ao Alan antes).
+**Leia `docs/pendencias-2026-06-12.md`** — checklist atualizado (build 245
+em campo, limpeza D-1, verificações do job noturno e casos em aberto).
+Histórico completo das correções de 11/06 em
+`docs/log-correcoes-anomalias-2026-06-11.md`. O handoff antigo
+(`docs/contexto-handoff-2026-06-11.md`) está concluído — pode ser removido
+(perguntar ao Alan antes).
