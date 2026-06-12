@@ -66,6 +66,14 @@
    (caso Camila 12/06: home vazia por inanição do pull).
 8. **Workflow**: `[FORCE-UPDATE]` na mensagem do commit que dispara o
    build propaga o marcador para as notas do release v-latest.
+9. **INSERT da visita — exceção PGRST116 tratada como conflito**
+   (`sync_engine.dart`, caminho INSERT): nesta versão da lib,
+   `.maybeSingle()` LANÇA PGRST116 quando o INSERT retorna 0 rows
+   (ON CONFLICT DO NOTHING), em vez de retornar null — o UPSERT-merge
+   do build 226 era CÓDIGO MORTO nesse cenário e o item ficava em retry
+   eterno (casos Camila -131004246 e Thiago -1031635450, assinatura
+   "Cannot coerce the result... contains 0 rows" em loop nos logs).
+   Agora a exceção é capturada e o merge roda de fato.
 
 ---
 
