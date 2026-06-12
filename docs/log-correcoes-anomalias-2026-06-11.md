@@ -173,3 +173,19 @@ e SOLLO 11/06 — redundantes) e 1 print de tela. Visitas de 25-27/05 e
 Backup integral pré-UPDATE: `backup_jeferson_2026-06-11.json` (enviado ao
 Alan). Hash dos nomes: convenção atual do app; na 115519 foi reusado o
 hash dos arquivos pré-existentes da própria visita (agrupamento).
+
+## Visitas-fantasma do Thiago (id 115) presas como "Agendada" — 11/06/2026
+
+Fato: 120437, 120438, 120440, 120441 (ag 10/06, criadas 10/06 ~10:24,
+avulsa=false, sem abertura/fotos) são sobras do bug de fantasma do build
+224 ("caso Thiago 120437" citado nos comentários do código). O job
+noturno carimbou as demais visitas de 10/06 como Não Realizada, mas
+PULOU estas 4 (motivo a verificar no critério do job, lado Supabase).
+
+**EXECUTADO 11/06 (aprovado pelo Alan):** UPDATE `status_visita` 4 → 3
+(Não Realizada) nas 4. Backup pré-UPDATE:
+`backup_fantasmas_thiago_2026-06-11.json` (enviado ao Alan).
+
+Pendência: amanhã (12/06) reconferir se avulsas de 11/06 não realizadas
+foram carimbadas pelo job; se amanhecerem como 4, o filtro do job tem
+segunda lacuna.
