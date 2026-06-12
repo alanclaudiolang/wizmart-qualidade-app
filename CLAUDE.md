@@ -16,6 +16,10 @@ segundos mostrava que já era acesso total.)
 1. **Comunicação:** explicar sempre de forma objetiva, sem jargão técnico, em português claro.
 2. **Alterações no código:** toda mudança deve ser baseada em **fatos verificados no código atual** — nunca em suposições ou no histórico da conversa. Se faltar informação para avançar com segurança, **perguntar antes** em vez de presumir.
 3. **Alterações em geral (código, issues, dados):** perguntar antes de executar.
+   **3a. PUBLICAR exige pergunta SEMPRE (definido pelo Alan em 12/06/2026):**
+   nenhum push que gere build/release (main ou dev) sem OK explícito do
+   Alan NAQUELE momento — aprovação anterior não se estende ao próximo
+   push, mesmo que pareça continuação do mesmo trabalho.
 4. **Branch:** trabalhar direto na `main`. Não criar ramificações.
 5. **Toda proposta deve explicitar os RISCOS da implantação** (definido pelo
    Alan em 11/06/2026). Considerar sempre que: há **muitos promotores usando
