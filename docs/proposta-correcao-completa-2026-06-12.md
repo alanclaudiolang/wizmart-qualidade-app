@@ -135,21 +135,39 @@ ficam represados atrás do ruído; D5 duplica por visita a cada ciclo.
   Felipe; 122381/119980/119966 sem abertura; órfãos `…//visita-…` no
   bucket.
 
-## Riscos da implantação (regra 5)
-- **Item 1** muda QUANDO o servidor passa a ver "Em Andamento" (chega ao
-  sair da visita/concluir, não mais no meio). Risco baixo; com sinal ruim
-  já era assim. Não toca consolidação em si.
-- **Item 3** afrouxa um guard anti-duplicata: critério exige sinal
-  POSITIVO de trabalho (fantasma não tem) — risco de fantasma voltar é
-  baixo e monitorável (D-detector já loga).
-- **Item 6/4** mexem em consolidação/payload — área de alto risco
-  declarado; mudanças são aditivas (merge/dedup), sem alterar chaves nem
-  fluxo de ids. Testar com cenário de redo antes de publicar.
-- **Item 9** reduz frequência de pull em background — agenda atualiza ao
-  abrir o app/home (gatilhos atuais da UI permanecem).
-- Promotores em versões antigas continuam expostos até atualizar
-  (force-update + varredura manual dos builds <196).
-- Galeria do promotor: nenhuma das mudanças toca (regra 6).
+## Riscos da implantação — UM POR UM (regra 5)
+
+Nível: 🔴 alto / 🟠 médio / 🟢 baixo. "Área de id/consolidação" é tratada
+como alto risco por decisão do Alan (mudanças passadas já causaram
+transtorno).
+
+| Item | O que muda | Risco concreto (o que pode dar errado) | Nível | Mitigação / como testar antes |
+|---|---|---|---|---|
+| **1** Postergar consolidação enquanto a visita está em uso | `_processOutboxItem` adia o INSERT da visita sem serverId enquanto `LastVisitaService`/`ProcessingTracker`/`watermark_pending` indicarem uso | Se a flag de "em uso" não for limpa (crash da tela, `LastVisitaService.clear` não roda), a visita **nunca consolida** → fotos nunca chegam ao servidor. E o supervisor demora mais pra ver "Em Andamento" (só ao sair da visita) | 🟠 | Timeout de segurança: se a row tem >2h sem atualização, consolida assim mesmo. `dispose` já reforça resume; adicionar reforço de `clear`. Testar: abrir visita, matar o app no meio, reabrir → tem de consolidar |
+| **2** Re-resolução do id novo na tela | Toda escrita da tela que afetar 0 linhas re-busca o serverId (mapa de migração) e reaplica | **Pior caso = gravar no id ERRADO** (de outra visita) se o mapa estiver trocado → corrompe a visita do colega de chave. É área de id (alto risco) | 🔴 | Mapa restrito a `idTemp→serverId` daquela visita, gravado na mesma transação do `consolidar`; reaplicar só se o id resolvido casar gabarito|pdv|turno|data da tela. Teste obrigatório com 2 visitas do mesmo PDV em semanas diferentes (colisão de idTemp determinístico) |
+| **3** Guard anti-fantasma só descarta fantasma real | Descarte exige ausência TOTAL de trabalho; com trabalho e abertura nula, faz INSERT usando `abertura := createdAt` da 1ª foto | (a) Critério frouxo → fantasmas Felipe/Thamara **voltam** (visita duplicada "Em Andamento sem clique"). (b) Se a 1ª foto for de idTemp reciclado de outro dia, `createdAt` carimba **data errada** → anomalia temporal | 🟠 | (a) Exigir status local 2 OU foto no JSON OU pending_photo — fantasma não tem nenhum. (b) Só usar `createdAt` se for de HOJE; senão usa `now()`. Teste: visita com 5 fotos e abertura apagada tem de subir; vaga vazia tem de ser descartada |
+| **4** Dedup de fotos na origem + índice único `(visitaId,slot,numero)` | `getUploadedPhotoUrls` distinct; índice único em `pending_photos` | **Migração de schema quebra o boot**: se um celular já tem linhas duplicadas `(visitaId,slot,numero)`, criar índice UNIQUE **falha na migração** e o app não abre. Risco sério em base instalada | 🔴 | NÃO criar índice UNIQUE direto. Fazer dedup defensivo em Dart (distinct por URL na leitura) — sem migração destrutiva. Se quiser índice, limpar duplicatas na migração ANTES de criá-lo, com try/catch que nunca derruba o boot |
+| **5** Carimbo não apaga o cru se a troca no JSON não foi efetivada | `watermark_queue.dart:281-318` só deleta o raw quando `_trocarPathNoJson` confirmou a troca | Mantendo o raw e o watermarked, pode haver **upload em dobro** da mesma foto (raw + wm) se ambos entrarem no JSON. Acúmulo de arquivos raw no disco | 🟢 | Trocar a ordem: deletar o raw só DEPOIS de confirmar troca E status='pending' do wm. Raw órfão é varrido pela limpeza D-1. Teste: pivotar id no meio do carimbo → grade tem de mostrar a foto, sem duplicar |
+| **6** Consolidação preserva trabalho local (merge no branch `existenteServer`) | Em vez de deletar a row local, faz MERGE dos campos de execução na row sobrevivente | 🔴 **É EXATAMENTE o bug que o código de 09-10/06 removeu de propósito**: preservar campos locais fazia "realizada virar Em Andamento" / perder `dia_hora_realizado` (Jessica/Felipe/Thamara). Reintroduzir merge mal feito **regride esse bug** | 🔴 | Merge SÓ de campos que o servidor NÃO tem (null no servidor) E só de execução de HOJE; nunca sobrescrever status nem datas já preenchidas no servidor. Teste com a sequência exata dos casos de 09/06 antes de publicar. **Se houver dúvida, NÃO mexer aqui** e resolver A1-A3 só com itens 1+2 |
+| **7** Reset da largada vira UPDATE condicional atômico + insert-se-ausente | Substitui o upsert-zerador do passo 6 por `UPDATE … WHERE abertura IS NULL AND synced AND status=1` | Se a condição errar, dois caminhos ruins: (a) deixa de zerar uma vaga reciclada → `localState='finalizada'` **vaza** pra visita nova (promotor cai direto em "Visita finalizada"); (b) ainda zera numa corrida | 🟠 | Manter exatamente o conjunto de campos zerados atual; só trocar o "ler-decidir-gravar" por WHERE atômico. Teste: PDV recorrente (mesma chave 2 semanas) tem de começar do zero, sem herdar finalizada |
+| **8** Pausa de sync na tela da visita INTEIRA + re-check entre push e pull | `SyncPause` liga em qualquer estado da visita; `fullSync` re-checa pausa antes do pull | Em visita longa, **nada sobe enquanto a tela está aberta** (inclui fotos antes já prontas) → acúmulo e sensação de "não sincroniza". Se um crash deixar a pausa ligada, sync trava | 🟢 | `dispose` já faz `resume()` defensivo. Pausa só bloqueia o ciclo, não perde dado. Aceitável: o upload retoma ao sair. Teste: ficar 10 min no checklist e sair → tudo sobe |
+| **9** Lock com heartbeat + WorkManager só faz push | Renova o lock por lote; background deixa de rodar pull destrutivo | (a) Background não puxa mais agenda → se o promotor quase não abre o app, agenda fica velha (mas mudança de supervisor só importa com app aberto). (b) Heartbeat bugado pode **segurar o lock mais tempo** que o TTL pretendia | 🟠 | TTL continua limitando o pior caso (libera se isolate morrer). Pull continua nos gatilhos da UI (abrir app/home/voltar). Teste: 2 processos concorrentes (forçar WorkManager) não podem rodar pull+push ao mesmo tempo |
+| **10** Aviso de sessão expirada vira bloqueante na home | Dialog "Entrar novamente" repetido até relogar; upload nunca monta path com segmento vazio | **Falso positivo**: uma falha transitória de auth (não expiração real) **trancaria** o promotor fora do trabalho | 🟠 | Só disparar após `refreshSession` falhar de fato (não em erro de rede transitório) — o código já distingue (`AuthSessionExpired.set()` só após refresh falhar). Não bloquear durante visita aberta. Teste: derrubar rede 30s não pode abrir o dialog; sessão realmente expirada deve abrir |
+| **11** Dedup da fila de anomalias + throttle + fechar D5 antigos | 1 issue por tipo+entidade+dia; respeitar rate-limit; fechar D5 em massa | (a) Dedup pode **engolir** uma 2ª ocorrência legítima (perda de sinal). (b) Fechar D5 em massa pode fechar algum ainda não resolvido | 🟢 | Dedup só por janela de 1 dia (reabre amanhã se persistir). Fechamento em massa só dos D5 já entendidos (filtro por build/promotor), com OK. Sem impacto no app do promotor |
+
+**Riscos transversais:**
+- Promotores em versões antigas (<196) continuam expostos até atualizar —
+  force-update não os alcança (item F); depende da varredura manual +
+  link por WhatsApp.
+- **Galeria do promotor: nenhuma das 11 mudanças toca** nela (regra 6) —
+  todas operam em `pending_photos`, `outbox`, `visitas` e arquivos
+  internos `wizmart_fotos/`.
+- Itens 2, 4 e 6 são os 🔴 (área de id/consolidação/schema). Se o tempo
+  apertar, dá pra entregar um build com 1+3+5+7+8+10 (que já mata os
+  sintomas de campo) e deixar 2/4/6 para um 2º build revisado — mas
+  isso contraria "não gerar infinidade de versões"; por isso a
+  recomendação é fazer todos juntos COM os testes da coluna ao lado
+  antes de publicar.
 
 ## Sequência de execução sugerida
 1. Implementar blocos A+C+B (mesmo PR), com log de cada guard novo.
