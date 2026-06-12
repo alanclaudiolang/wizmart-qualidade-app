@@ -145,3 +145,31 @@ pré-limpeza) salvo em `backup_mauro_2026-06-11.json` e enviado ao Alan.
   mesmo id temporário faz visita nova apontar para foto de visita anterior
   do mesmo PDV/turno; e o sync por chave natural sem data copia trabalho
   antigo para visitas futuras (casos Mauro).
+
+## Recuperação manual — Jeferson Martins Sotério (id 590), 11/06/2026
+
+Fotos enviadas pelo promotor via WhatsApp (92 arquivos), OCR completo das
+marcas d'água (fonte de verdade), casamento por **promotor + PDV + data**.
+Procedimento padrão de recuperação (docs/memoria-codespace/
+feedback_recuperacao_manual_procedimento.md). 63 fotos enviadas ao bucket
+nos paths determinísticos (uid 1fdf9537…, pastas por data); upload e
+UPDATEs executados com a chave administrativa (variável de ambiente).
+
+| Visita | PDV / dia | Antes → Depois | Resultado |
+|---|---|---|---|
+| 115519 | ENERGISA 30/05 | Incompleta (6/0) → **Concluída (6/4)** | depois 12:22-12:23 anexado |
+| 117607 | TVV 03/06 | Não Realizada (0/0) → **Incompleta (5/0)** | só havia "antes" nas fotos; marca d'água prova presença |
+| 119436 | TVV 08/06 | Não Realizada → **Concluída (7/7)** | série "antes" mais recente (decisão Alan) |
+| 120209 | SOLLO 09/06 | Não Realizada → **Concluída (7/6)** | depois sem nº 2; nº 1 duplicado → usado o mais recente |
+| 120219 | ENERGISA 09/06 | Não Realizada → **Concluída (6/6)** | — |
+| 120951 | TVV 10/06 | Não Realizada → **Concluída (8/7)** | série "antes" mais recente |
+
+Campos: abertura = 1ª foto antes −30s; realizado = última depois;
+localização do PDV; checklist 1-5 sim / 6-7 não; turno manha;
+visita_avulsa=false; sincronizada_promotor=true (payload padrão validado).
+Fotos NÃO usadas: visitas já completas no servidor (TVV 29/05, SOLLO 30/05
+e SOLLO 11/06 — redundantes) e 1 print de tela. Visitas de 25-27/05 e
+01/02/04/05/06/06 SEM fotos no material → permanecem como falta.
+Backup integral pré-UPDATE: `backup_jeferson_2026-06-11.json` (enviado ao
+Alan). Hash dos nomes: convenção atual do app; na 115519 foi reusado o
+hash dos arquivos pré-existentes da própria visita (agrupamento).
