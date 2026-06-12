@@ -46,6 +46,27 @@
    `if (!mounted) return;` após os awaits (antes dos `setState` de
    ~linha 302 e ~350) — corrige o crash fatal de boot da issue #621.
 
+### Build 246 (12/06/2026) — hotfix
+
+6. **Guard anti-corrida do reset** (`sync_engine.dart`, ramo idTemp do
+   passo 6 do pull): visita de HOJE com evidência de trabalho
+   (`serverId`, `dia_hora_abertura`, ou status local 2/3) NUNCA é
+   zerada pela reciclagem — o snapshot do passo 4 pode ser mais velho
+   que um INSERT recém-feito (caso Gabriel/KIAN 12/06: promotor era
+   jogado de volta pro "antes"; o refazer duplicava fotos nos arrays).
+   Reciclagem de sobras de outras semanas segue funcionando (lookup
+   restrito a hoje).
+7. **Fila de anomalias** (`anomalia_queue_processor.dart`):
+   (a) `_dividirBody` agora corta DENTRO de blocos de código (fecha e
+   reabre o ```)+trunca parte >64k — antes um log gigante num único
+   bloco fazia a parte 1 passar de 65.536 e o GitHub recusar (422);
+   (b) HTTP 422 vira falha PERMANENTE: item descartado (status
+   'error') com registro no log — antes retentava pra sempre,
+   envenenando a fila e segurando a trava de sync a cada ciclo
+   (caso Camila 12/06: home vazia por inanição do pull).
+8. **Workflow**: `[FORCE-UPDATE]` na mensagem do commit que dispara o
+   build propaga o marcador para as notas do release v-latest.
+
 ---
 
 # PARTE 1 — Boot, ciclo de vida e telas

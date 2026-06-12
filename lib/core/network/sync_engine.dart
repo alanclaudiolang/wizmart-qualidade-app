@@ -466,6 +466,26 @@ class SyncEngine {
           // antigo.
           final existente = await _db.getVisitaByGabaritoTurnoData(
               gabaritoId, pdvId, turno, inicioDia, fimDia);
+          // GUARD (caso Gabriel/KIAN 12/06, build 245): NUNCA zerar uma
+          // visita de HOJE com evidência de trabalho. O snapshot do
+          // passo 4 (reconcilia) pode ser mais velho que um INSERT que
+          // acabou de acontecer — o comentário antigo dizia "qualquer
+          // trabalho legítimo já chegou no servidor", o que é FALSO na
+          // janela da corrida: o trabalho chegou, mas o snapshot não o
+          // viu. Zerar aqui jogava o promotor de volta pro início e o
+          // refazer gerava as fotos duplicadas nos arrays. A reciclagem
+          // legítima (sobra de outra semana com o mesmo idTemp) não é
+          // afetada: o lookup acima é restrito a HOJE, e sobra antiga
+          // nunca tem row de hoje — segue caindo no upsert por PK.
+          final temTrabalho = existente != null &&
+              (existente.serverId != null ||
+                  existente.diaHoraAbertura != null ||
+                  existente.statusVisita == AppConstants.statusEmAndamento ||
+                  existente.statusVisita == AppConstants.statusRealizada);
+          if (temTrabalho) {
+            puladas++;
+            continue;
+          }
           final idAlvo = existente?.id ?? idTemp;
           // Reseta campos de execução da rodada anterior. Sem isso, em
           // PDVs recorrentes (mesmo gabarito|pdv|turno em semanas
