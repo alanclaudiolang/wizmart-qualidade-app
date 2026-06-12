@@ -153,17 +153,22 @@ jobs:
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_MSG: ${{ github.event.head_commit.message }}
         run: |
           gh release delete v-latest --yes --cleanup-tag 2>/dev/null || true
           # Regra padrão D+1: o app só obriga atualização no primeiro
           # acesso do DIA SEGUINTE ao publish. Pra forçar atualização
-          # imediata em algum build específico, edite o release no
-          # GitHub e adicione o marker `[FORCE-UPDATE]` no body.
+          # imediata: incluir `[FORCE-UPDATE]` na MENSAGEM DO COMMIT
+          # que dispara o build (ou editar o release no GitHub depois).
+          NOTES="Build automático do commit ${{ github.sha }} em ${{ steps.meta.outputs.build_time }}."
+          case "$HEAD_MSG" in
+            *"[FORCE-UPDATE]"*) NOTES="$NOTES [FORCE-UPDATE]";;
+          esac
           gh release create v-latest \
             "${{ steps.meta.outputs.apk_name }}" \
             "${{ steps.meta.outputs.fixed_name }}" \
             --title "Promotor Wizmart v${{ steps.meta.outputs.version }} (build ${{ github.run_number }})" \
-            --notes "Build automático do commit ${{ github.sha }} em ${{ steps.meta.outputs.build_time }}." \
+            --notes "$NOTES" \
             --target ${{ github.sha }}
 
       - name: Publicar release v-dev (TESTE)

@@ -138,6 +138,24 @@ class AnomaliaQueueProcessor {
         } else {
           await _marcarRetryIssue(p, 'POST retornou null');
         }
+      } on _FalhaPermanenteIssue catch (e) {
+        // 422 (Validation Failed) é PERMANENTE: retentar nunca vai
+        // passar. Antes ficava em retry eterno — envenenava a fila e
+        // segurava a trava de sync a cada ciclo (caso Camila 12/06).
+        // Descarta em definitivo, com registro no log local.
+        await _db.update(_db.pendingIssues).replace(p.copyWith(
+              status: 'error',
+              lastError: drift.Value(e.motivo.length > 500
+                  ? '${e.motivo.substring(0, 500)}…'
+                  : e.motivo),
+            ));
+        try {
+          await PersistentLogger.append(
+              'anomalia',
+              'Issue ${p.id} (${p.tipo}) DESCARTADA em definitivo: '
+              '${e.motivo}',
+              erro: true);
+        } catch (_) {}
       } catch (e) {
         await _marcarRetryIssue(p, e.toString());
       }
@@ -201,6 +219,11 @@ class AnomaliaQueueProcessor {
         'POST issue falhou status=${res.statusCode} body=${res.body}',
         erro: true,
       );
+      if (res.statusCode == 422) {
+        // Validation Failed — erro permanente (corpo/título/label
+        // inválido). Retentar é inútil; sinaliza descarte definitivo.
+        throw _FalhaPermanenteIssue('HTTP 422: ${res.body}');
+      }
       return null;
     }
     final j = jsonDecode(res.body) as Map<String, dynamic>;
@@ -242,7 +265,14 @@ class AnomaliaQueueProcessor {
   }
 
   /// Divide o body markdown em pedaços de no máx [maxChars] chars,
-  /// preservando linhas inteiras e blocos de código.
+  /// preservando linhas inteiras. Blocos de código SÃO cortados quando
+  /// necessário: fecha o ``` no fim da parte e reabre na seguinte.
+  ///
+  /// BUG HISTÓRICO (caso Camila 12/06, build 245): a versão anterior
+  /// NUNCA cortava dentro de code fence — como o log é um único bloco
+  /// ``` gigante, a "parte 1" passava de 65.536 chars e o GitHub
+  /// recusava com 422 pra sempre, envenenando a fila (e segurando a
+  /// trava de sync a cada ciclo).
   static List<String> _dividirBody(String body, int maxChars) {
     if (body.length <= maxChars) return [body];
     final partes = <String>[];
@@ -251,13 +281,34 @@ class AnomaliaQueueProcessor {
     var emCodeFence = false;
     for (final l in linhas) {
       if (l.startsWith('```')) emCodeFence = !emCodeFence;
-      if (buf.length + l.length + 1 > maxChars && !emCodeFence) {
-        partes.add(buf.toString());
-        buf.clear();
+      if (buf.length + l.length + 1 > maxChars) {
+        if (emCodeFence) {
+          // Corta dentro do bloco: fecha aqui, reabre na próxima parte.
+          buf.writeln('```');
+          partes.add(buf.toString());
+          buf.clear();
+          buf.writeln('```');
+        } else {
+          partes.add(buf.toString());
+          buf.clear();
+        }
       }
       buf.writeln(l);
     }
     if (buf.isNotEmpty) partes.add(buf.toString());
-    return partes;
+    // Paranoia: nenhuma parte pode passar do limite do GitHub (65.536).
+    // Se alguma linha individual for absurda, trunca.
+    return partes
+        .map((p) => p.length > 64000 ? '${p.substring(0, 64000)}\n…```' : p)
+        .toList();
   }
+}
+
+/// Falha que nunca vai passar com retry (ex.: 422 Validation Failed).
+/// Sinaliza ao drenador que o item deve ser descartado em definitivo.
+class _FalhaPermanenteIssue implements Exception {
+  final String motivo;
+  _FalhaPermanenteIssue(this.motivo);
+  @override
+  String toString() => 'FalhaPermanenteIssue: $motivo';
 }
