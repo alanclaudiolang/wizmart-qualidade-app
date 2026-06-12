@@ -25,7 +25,12 @@
 6. **Jeferson (590)**: visitas recuperadas entram na avaliação do
    supervisor (Leandro, 564) — conferir se issue #619 pode fechar (foto
    presa 12 dias; app dele voltou a funcionar e dados recuperados).
-7. Decisões menores em aberto (sem pressa): aviso proativo de issues
+7. **Frente iOS**: crash "Null check" na home do build 19 do TestFlight
+   (issue #642, teste do Alan em 11/06 — fechada, bug rastreado aqui).
+   O build 19 é anterior às correções do Android 245; ao retomar a
+   esteira iOS, gerar build novo a partir da main atual. O
+   `CODEMAGIC_API_TOKEN` já está na variável de ambiente.
+8. Decisões menores em aberto (sem pressa): aviso proativo de issues
    novas; anonimizar nomes de promotores nos docs (repo é PÚBLICO);
    modo de trabalho (docs direto × perguntar sempre); destino das 6
    visitas com anomalia temporal permanente.
