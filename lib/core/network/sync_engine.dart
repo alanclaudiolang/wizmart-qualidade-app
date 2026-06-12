@@ -1129,11 +1129,32 @@ class SyncEngine {
         // dia_hora_agendado) no servidor. Antes, .single jogava PGRST116
         // e o item ficava em retry-loop infinito (caso Thiago/Luís
         // 09/06: 60+ issues D5-realizada-pending, build 220→223).
-        final res = await _supabase
-            .from('visitas')
-            .insert(payload)
-            .select()
-            .maybeSingle();
+        // CUIDADO (caso Camila/Thiago 11-12/06): nesta versão da lib,
+        // `.maybeSingle()` LANÇA PostgrestException PGRST116 ("Cannot
+        // coerce the result to a single JSON object / result contains
+        // 0 rows") quando o INSERT bate em ON CONFLICT DO NOTHING — em
+        // vez de retornar null. Resultado: o UPSERT-merge abaixo era
+        // CÓDIGO MORTO e o item caía em retry eterno (assinatura nos
+        // logs: PGRST116 em loop + D3/D5). Tratamos a exceção como
+        // "0 rows" pra que o merge finalmente rode.
+        Map<String, dynamic>? res;
+        try {
+          res = await _supabase
+              .from('visitas')
+              .insert(payload)
+              .select()
+              .maybeSingle();
+        } on PostgrestException catch (e) {
+          if (e.code == 'PGRST116') {
+            _logger.log(
+                'outbox',
+                'INSERT PGRST116 (0 rows via exceção da lib) — tratando '
+                'como conflito e seguindo pro UPSERT-merge');
+            res = null;
+          } else {
+            rethrow;
+          }
+        }
         int novoServerId;
         if (res != null) {
           novoServerId = res['id'] as int;
