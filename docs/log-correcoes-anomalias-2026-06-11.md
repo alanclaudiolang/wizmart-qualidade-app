@@ -189,3 +189,14 @@ PULOU estas 4 (motivo a verificar no critério do job, lado Supabase).
 Pendência: amanhã (12/06) reconferir se avulsas de 11/06 não realizadas
 foram carimbadas pelo job; se amanhecerem como 4, o filtro do job tem
 segunda lacuna.
+
+## David (113) — visita 122194 INTERTECHNE, 12/06/2026
+
+Janela do pivot (defeito conhecido, instrumentado): o Finalizar do
+promotor caiu no id morto ("afetou 0 linhas") e o close foi descartado
+como órfão — visita ficou Em Andamento no servidor com fotos completas.
+**EXECUTADO (OK do Alan):** UPDATE fechando a 122194 — status 1,
+realizado=10:09 (última foto depois), checklist padrão; em seguida
+dedup do array depois (9→5; o celular re-empurrou URLs no intervalo).
+Backup: `backup_david_122194.json`. Correção definitiva da janela do
+pivot: candidata ao próximo build (aguardando OK).
