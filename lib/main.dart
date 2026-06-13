@@ -17,6 +17,7 @@ import 'core/utils/session_service.dart';
 import 'core/utils/gps_status_service.dart';
 import 'core/utils/permissions_status_service.dart';
 import 'core/utils/error_reporter.dart';
+import 'core/utils/error_classifier.dart';
 import 'core/utils/sync_logger.dart';
 import 'presentation/screens/home/home_screen.dart'
     show contadoresProvider, pdvsProvider, visitasHojeProvider;
@@ -99,6 +100,12 @@ void main() async {
 
   // Erros assíncronos não tratados (Future sem catch, isolates).
   PlatformDispatcher.instance.onError = (error, stack) {
+    // ITEM 11: erro de rede transitória (ex.: 521/servidor fora, refresh
+    // de token no boot) NÃO é bug — não reporta nem alarma. O app é
+    // offline-first e segue normalmente; reportar só geraria ruído (#690).
+    if (ErrorClassifier.textoPareceRedeTransitoria(error.toString())) {
+      return true;
+    }
     // ignore: discarded_futures
     ErrorReporter.reportar(
       contexto: 'PlatformDispatcher erro assíncrono',

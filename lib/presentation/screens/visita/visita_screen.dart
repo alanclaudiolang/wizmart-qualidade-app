@@ -312,6 +312,15 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       return;
     }
 
+    // LOG item 15: registra a (re)abertura da visita com o estado atual.
+    // Crucial para detectar reinício/rebaixamento (faltava no caso Felipe).
+    // ignore: discarded_futures
+    PersistentLogger.append(
+        'interacao',
+        'ABRIR visita=${widget.visitaId} localState=${visita.localState} '
+        'status=${visita.statusVisita} serverId=${visita.serverId} '
+        'fotosAntes=${visita.fotosAntesJson != null}');
+
     Pdv? pdv;
     if (visita.idPdvAssociado != null) {
       pdv = await db.getPdvById(visita.idPdvAssociado!);
@@ -803,6 +812,11 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       _localState = 'fotos_antes';
       _busy = false;
     });
+    // LOG item 15: registra a interação para reconstruir a sequência de
+    // eventos no celular do promotor (faltou no caso Felipe #2441).
+    // ignore: discarded_futures
+    PersistentLogger.append('interacao',
+        'INICIAR visita=${widget.visitaId} (abertura gravada local)');
     _updateSyncPause('fotos_antes');
   }
 
@@ -1062,14 +1076,15 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       // _finalizarVisita vem do 'checklist' (não captura), então o
       // SyncPause já está liberado — mas garantimos defensivamente.
       await SyncPause.resume();
-      // AGUARDA o push terminar antes de ir pra home. Sem o await, a
-      // home montava com a visita ainda em syncStatus='pending' local
-      // e o pullAll subsequente pulava ela (regra do "não sobrescrever
-      // pending"), deixando o status visualmente sem mudar.
+      // ITEM 12 (offline-first): NÃO trava a tela esperando o servidor. A
+      // visita já está Realizada no banco LOCAL e a home reflete isso na
+      // hora (Stream do Drift). O envio roda em background — SEM await. O
+      // "status não muda" que o await antigo evitava agora é coberto pelo
+      // item 14: o pull não rebaixa visita realizada/em-andamento pendente.
+      // Igual ao fluxo offline, que nunca travou.
       if (isOnline) {
-        try {
-          await syncEngine.processOutbox();
-        } catch (_) {}
+        // ignore: discarded_futures
+        syncEngine.processOutbox();
       }
 
       await LastVisitaService.clear();

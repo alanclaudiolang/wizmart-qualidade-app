@@ -143,6 +143,20 @@ class SyncEngine {
     return 'abastecimentos/$authUid/$dataSeg/$nomeSeg-$visitaHash-$slot-$numero.$extSeg';
   }
 
+  /// `true` se a visita tem QUALQUER sinal de execução. Usado pelo reset do
+  /// pull (Causa B) para NUNCA zerar uma visita que o promotor iniciou —
+  /// protege contra a corrida "clicar Iniciar no instante do sync".
+  static bool visitaTemTrabalho({
+    required int? serverId,
+    required String? diaHoraAbertura,
+    required int? statusVisita,
+  }) {
+    return serverId != null ||
+        diaHoraAbertura != null ||
+        statusVisita == AppConstants.statusEmAndamento ||
+        statusVisita == AppConstants.statusRealizada;
+  }
+
   /// Executa [action] sob exclusão mútua: re-entrância no mesmo isolate
   /// (_syncing) + lock cross-process no SQLite (app ↔ WorkManager).
   /// Se já houver sync rodando em qualquer processo, pula o ciclo.
@@ -539,10 +553,11 @@ class SyncEngine {
           // afetada: o lookup acima é restrito a HOJE, e sobra antiga
           // nunca tem row de hoje — segue caindo no upsert por PK.
           final temTrabalho = existente != null &&
-              (existente.serverId != null ||
-                  existente.diaHoraAbertura != null ||
-                  existente.statusVisita == AppConstants.statusEmAndamento ||
-                  existente.statusVisita == AppConstants.statusRealizada);
+              visitaTemTrabalho(
+                serverId: existente.serverId,
+                diaHoraAbertura: existente.diaHoraAbertura,
+                statusVisita: existente.statusVisita,
+              );
           if (temTrabalho) {
             puladas++;
             continue;
@@ -1128,6 +1143,27 @@ class SyncEngine {
             'Fotos penduradas: antes=${fotosOrfas.length} '
             'depois=${fotosOrfasDepois.length}',
             erro: true);
+        // TELEMETRIA item 13: se há fotos penduradas no id morto, houve
+        // PERDA por pivot (Causa A) — emite anomalia para nunca mais passar
+        // invisível (o detector D4 não enxerga esse caso).
+        if (fotosOrfas.isNotEmpty || fotosOrfasDepois.isNotEmpty) {
+          // ignore: discarded_futures
+          AnomaliaReporter.enfileirar(
+            db: _db,
+            tipo: 'D7-fotos-orfas-descartadas',
+            entidadeId: entityId.toString(),
+            resumo: 'Outbox órfão descartado com fotos penduradas: '
+                'antes=${fotosOrfas.length} depois=${fotosOrfasDepois.length} '
+                '(perda por pivot — Causa A)',
+            contextoExtra: {
+              'visitaId': entityId,
+              'itemEntityId': item.entityId,
+              'operation': item.operation,
+              'orfasAntes': fotosOrfas.length,
+              'orfasDepois': fotosOrfasDepois.length,
+            },
+          );
+        }
         await _db.deleteOutboxItem(item.id);
         return;
       }

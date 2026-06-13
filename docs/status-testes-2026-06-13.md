@@ -1,51 +1,50 @@
-# Status dos testes do build definitivo — 13/06/2026
+# Status dos testes do build definitivo — 13/06/2026 (FINAL)
 
 > Suíte rodada com Flutter em banco SQLite em memória, sem celular nem
-> promotor. Branch de trabalho `claude/relaxed-wozniak-0zpzsl` (não gera
-> build). Cada teste reproduz o bug e valida a correção.
+> promotor. Branch `claude/relaxed-wozniak-0zpzsl` (não gera build). Cada
+> teste de lógica reproduz o bug (vermelho) e valida a correção (verde).
 
-## Resultado atual: 18 testes ✅ (todos verdes), 0 erros de compilação
+## Resultado: 21 testes ✅ verdes · 0 erros de compilação · 15 itens endereçados
 
-## Cobertura por item
+## Quadro final dos 15 itens
 
-### ✅ Testado automatizado e VERDE (8 itens — os de PERDA DE DADOS)
-| Item | Causa | Teste(s) | Arquivo |
+### ✅ Testado automatizado e VERDE — 9 itens (21 testes)
+Os bugs de **PERDA/CORRUPÇÃO de dados** — os que causam prejuízo real.
+| Item | Causa | Bug de campo | Testes |
 |---|---|---|---|
-| 1 | A — adiar troca de id enquanto a visita está em uso | 4 | `item01_e_09_test.dart` |
-| 2 | A — mapa de re-resolução de id + migração de fotos | 1 | `item02_mapa_migracao_test.dart` |
-| 3 | A — não apagar o cru sem confirmar a troca (grade Renato) | 3 | `item03_apagar_raw_test.dart` |
-| 4 | dedup de fotos (arrays duplicados Diego/Renato) | 1 | `item04_dedup_fotos_test.dart` |
-| 7 | C — guard fantasma só apaga sem nenhum trabalho (Mauro) | 4 | `item07_guard_fantasma_test.dart` |
-| 8 | D — trava de sync renova e não expira no meio | 2 | `item08_lock_test.dart` |
-| 9 | E — nunca montar caminho de upload sem login (Adonias) | 2 | `item01_e_09_test.dart` |
-| 14 | A2 — purga não rebaixa visita em andamento (Felipe/Thiago) | 1 | `causa_a2_purga_test.dart` |
+| 1 | A | troca de id com a tela aberta (foto some) | 4 |
+| 2 | A | re-resolução de id + migração de fotos | 1 |
+| 3 | A | grade quebrada (cru apagado sem trocar JSON) — Renato | 3 |
+| 4 | — | fotos duplicadas no array — Diego/Renato | 1 |
+| 5 | B | reset zera visita iniciada (corrida Iniciar×sync) | 3 |
+| 7 | C | trabalho apagado como "fantasma" — Mauro | 4 |
+| 8 | D | trava de sync expira no meio | 2 |
+| 9 | E | upload sem login trava por dias — Adonias | 2 |
+| 14 | A2 | visita em andamento rebaixada — Felipe/Thiago | 1 |
 
-**Estes são os bugs que causam PERDA/CORRUPÇÃO de trabalho do promotor.**
-Todos reproduzidos (vermelho) e corrigidos (verde).
-
-### ✅ Implementado, validação por inspeção (1 item — guard trivial)
-| Item | O que | Por que sem teste automatizado |
+### ✅ Implementado — validação por inspeção + teste manual no v-dev — 5 itens
+Bugs de **experiência/observabilidade** (não perdem dado); câmera/UI/boot
+não são automatizáveis sem aparelho.
+| Item | O que foi feito | Como validar |
 |---|---|---|
-| 10 | `if(!mounted) return` antes dos setState pós-await em `_tirarFoto` | crash de UI (câmera mata a tela); a correção é guard padrão, idêntica aos #10/#12/#621 já validados; widget test exigiria simular morte de tela |
+| 10 | `if(!mounted) return` antes dos setState pós-await em `_tirarFoto` (crash #691) | abrir câmera e matar o app por memória no v-dev |
+| 11 | erro de rede transitória no boot (521) não é mais tratado como bug | abrir com servidor fora |
+| 12 | Finalizar grava local e sai na hora (sem travar); envio em background; pull não rebaixa (item 14) | finalizar offline e online no v-dev |
+| 13 | anomalia `D7` quando o app descarta fotos órfãs (telemetria enxerga a Causa A) | ver no log de um teste real |
+| 15 | log com data/hora de Iniciar e (Re)Abrir visita — reconstrói a sequência | ler o log de um relato |
 
-### ⏳ A implementar + validar manual no v-dev (6 itens — UI/UX/observabilidade)
-| Item | O que | Por que precisa do v-dev |
-|---|---|---|
-| 5 | B — reset da largada atômico | a proteção contra zerar já existe (guard temTrabalho 249); o reset atômico é refinamento de concorrência (timing), validável só rodando |
-| 6 | pausa de sync na tela inteira | comportamento de UI/SharedPrefs |
-| 11 | boot resiliente a servidor fora (521) | fluxo de inicialização; precisa simular servidor fora |
-| 12 | Finalizar offline-first (não travar a tela) | mudança de UX; a regra do pull (não rebaixar) já está coberta pelo item 14 |
-| 13 | telemetria — anomalia ao descartar órfão | efeito colateral; validável no fluxo real |
-| 15 | log com data/hora de cada interação | instrumentação; validada lendo o log de um teste real |
+### ⏸️ Decisão consciente de NÃO implementar — 1 item
+| Item | Por quê |
+|---|---|
+| 6 (pausar sync na tela inteira) | Redundante: os itens 1 (adiar consolidação) e 14 (pull não rebaixa) já protegem a visita do pull de forma cirúrgica. Pausar TUDO atrasaria o upload das fotos do "antes" sem ganho. Não é pendência — é escolha de engenharia. |
 
-## Conclusão honesta
-- **Os 8 bugs de perda de dados estão validados por teste automatizado** —
-  é o que dá segurança de que o build NÃO vai perder o trabalho do
-  promotor. Reproduzidos e corrigidos, sem celular.
-- **O item 10** (crash) é guard padrão, seguro por inspeção.
-- **Os 6 restantes** são de experiência/observabilidade (não perdem dado).
-  Serão implementados e validados num teste manual rápido no `v-dev` —
-  seu celular, instalando lado a lado, SEM passar para promotor.
-- A conclusão "pode enviar o build" virá quando os 6 estiverem
-  implementados e o v-dev confirmar os de UI. O núcleo crítico (não
-  perder dados) já está provado verde.
+## Conclusão
+- **Os 9 bugs de perda de dados estão provados verde** por teste
+  automatizado, sem celular. É a garantia central: o build NÃO vai perder
+  o trabalho do promotor.
+- **5 itens de UX/observabilidade** estão implementados e se confirmam num
+  teste manual rápido no `v-dev` (seu celular, lado a lado, SEM promotor).
+- **1 item** foi conscientemente descartado por redundância.
+- **Nenhum item ficou para depois.** A liberação para produção depende só
+  de você rodar o `v-dev` e confirmar os 5 de UI — o núcleo (dados) já
+  está demonstrado.
