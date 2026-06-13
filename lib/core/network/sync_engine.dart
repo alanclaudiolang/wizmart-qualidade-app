@@ -111,6 +111,38 @@ class SyncEngine {
     return true;
   }
 
+  /// Decide se a CONSOLIDAÇÃO de uma visita (INSERT idTemp→serverId) deve
+  /// ser ADIADA porque a visita está em uso (Causa A — item 1). Enquanto
+  /// adiada, a PK não muda sob os pés da tela aberta, então foto não some
+  /// nem Finalizar cai no vácuo. Timeout de segurança de 2h evita que uma
+  /// flag presa (crash da tela) trave a visita para sempre.
+  static bool deveAdiarConsolidacao({
+    required bool telaAberta,
+    required bool processandoAtivo,
+    required int fotosWatermarkPending,
+    required Duration idadeDesdeUltimaAtividade,
+  }) {
+    if (idadeDesdeUltimaAtividade > const Duration(hours: 2)) return false;
+    return telaAberta || processandoAtivo || fotosWatermarkPending > 0;
+  }
+
+  /// Monta o caminho da foto no Storage. Retorna null se [authUid] estiver
+  /// vazio (sessão morta) — item 9: sem isso, o path virava
+  /// `abastecimentos//…/` (segmento vazio) e o RLS recusava com 403,
+  /// travando o sync por dias (Adonias 25/05→12/06).
+  static String? construirStoragePath({
+    required String authUid,
+    required String dataSeg,
+    required String nomeSeg,
+    required int visitaHash,
+    required String slot,
+    required int numero,
+    required String extSeg,
+  }) {
+    if (authUid.isEmpty) return null;
+    return 'abastecimentos/$authUid/$dataSeg/$nomeSeg-$visitaHash-$slot-$numero.$extSeg';
+  }
+
   /// Executa [action] sob exclusão mútua: re-entrância no mesmo isolate
   /// (_syncing) + lock cross-process no SQLite (app ↔ WorkManager).
   /// Se já houver sync rodando em qualquer processo, pula o ciclo.

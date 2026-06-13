@@ -517,6 +517,10 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       return;
     }
 
+    // GUARD item 10 (#691): o Android pode ter matado/recriado a tela
+    // enquanto a câmera estava aberta (low memory). setState em State
+    // morto = crash "Null check operator". Mesma classe dos #10/#12/#621.
+    if (!mounted) return;
     setState(() => _savingPhoto = true);
 
     try {
@@ -562,7 +566,9 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       // Galeria só recebe a foto com watermark, ao concluir a etapa.
       // Não duplicamos: nada vai pro carretel agora.
 
-      // DB OK → AGORA atualiza o grid em memória.
+      // DB OK → AGORA atualiza o grid em memória. Guard item 10: vários
+      // awaits acima; a tela pode ter sido descartada no meio.
+      if (!mounted) return;
       setState(() {
         if (slot == 'antes') {
           _fotosAntes = novaLista;
