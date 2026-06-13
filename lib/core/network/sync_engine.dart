@@ -157,6 +157,21 @@ class SyncEngine {
         statusVisita == AppConstants.statusRealizada;
   }
 
+  /// Detecta o "0 rows" do PostgREST (PGRST116) de forma ROBUSTA. A lib às
+  /// vezes coloca o código em `e.code` ('PGRST116'), e às vezes deixa em
+  /// `e.code` o HTTP status ('406') com o 'PGRST116' SÓ no `message` —
+  /// foi esse o caso da Camila (13/06, build 249): o tratamento antigo
+  /// checava só `e.code=='PGRST116'`, então o INSERT que batia em conflito
+  /// fazia `rethrow` e a visita COMPLETA (4 antes/5 depois) entrava em
+  /// LOOP INFINITO de INSERT, sem nunca consolidar. Checa código E mensagem.
+  static bool ehErroZeroRows({required String? code, required String message}) {
+    if (code == 'PGRST116') return true;
+    final m = message.toLowerCase();
+    return m.contains('pgrst116') ||
+        m.contains('cannot coerce') ||
+        m.contains('contains 0 rows');
+  }
+
   /// Executa [action] sob exclusão mútua: re-entrância no mesmo isolate
   /// (_syncing) + lock cross-process no SQLite (app ↔ WorkManager).
   /// Se já houver sync rodando em qualquer processo, pula o ciclo.
@@ -1246,10 +1261,10 @@ class SyncEngine {
               .select()
               .maybeSingle();
         } on PostgrestException catch (e) {
-          if (e.code == 'PGRST116') {
+          if (ehErroZeroRows(code: e.code, message: e.message)) {
             _logger.log(
                 'outbox',
-                'INSERT PGRST116 (0 rows via exceção da lib) — tratando '
+                'INSERT 0 rows (PGRST116 via code OU message) — tratando '
                 'como conflito e seguindo pro UPSERT-merge');
             res = null;
           } else {
