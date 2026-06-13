@@ -54,3 +54,14 @@ na ordem da numeração.
   campo abertura. Preencher exigiria aproximar a hora (não temos o clique
   real em "Iniciar") — NÃO preenchido para não "chutar". Aguarda decisão:
   deixar nulo (cosmético, não afeta nada) ou preencher com aproximação.
+
+## 6. dia_hora_abertura preenchido — 11 visitas ✅ (procedimento documentado)
+Procedimento de `feedback_recuperacao_manual_procedimento.md`:
+`dia_hora_abertura = horário da 1ª foto do "antes" (marca d'água) − 30s`,
+`localizacao_abertura = localizacao_fotos_antes`. Conferida a marca d'água
+da 1ª foto de cada e verificado que a data bate com o dia agendado.
+Preenchidas: 118959, 119001, 119161, 119170, 119185, 119302, 119965,
+119980, 120726, 122039, 122381.
+**PULADA: 119966** — a 1ª foto é de 04/06 mas a visita é agendada 09/06
+(anomalia temporal real, já registrada como anômala em 11/06). Não
+preenchida para não criar inconsistência.

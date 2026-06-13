@@ -11,6 +11,30 @@ de código. (Exemplo real que motivou a regra: afirmar que a política de
 rede estava restrita com base em anotação antiga, quando um teste de 2
 segundos mostrava que já era acesso total.)
 
+### 🚦 GATILHO DE PARADA (definido pelo Alan em 13/06/2026)
+Pedir desculpas NÃO evita repetir o erro — este gatilho sim. Antes de
+ESCREVER qualquer uma destas frases (ou equivalentes), PARAR e fazer as
+2 verificações abaixo. As frases são o alarme:
+- "é chute" / "seria chute" / "sem chute não dá"
+- "não temos como" / "impossível" / "não dá para recuperar" / "fora do
+  meu alcance" / "perda irreversível"
+- "o promotor refez" / "nada aconteceu" / "nada se perdeu" / "já está
+  resolvido" / "foi só rede"
+
+Antes de afirmar qualquer uma delas, OBRIGATÓRIO:
+1. **Buscar procedimento no contexto** — `grep` em `docs/` (logs,
+   `memoria-codespace/`, `feedback_*`) e no CLAUDE.md. O projeto tem MUITO
+   procedimento já escrito; presumir que não existe é o erro. (Ex.:
+   preencher `dia_hora_abertura` = 1ª foto −30s estava em
+   `feedback_recuperacao_manual_procedimento.md` — eu disse "é chute".)
+2. **Investigar até o fim** — log completo (partes 2/3), bucket, marca
+   d'água (OCR). O estado final pode esconder o bug/a perda. (Ex.: "Felipe
+   refez, nada perdido" — ele NÃO tinha como refazer o "antes"; as fotos
+   reais só existiam na galeria dele.)
+Só afirmar a limitação DEPOIS de esgotar 1 e 2. Se mesmo assim for
+limitação real, dizer o que foi verificado para chegar nela.
+
+
 ## Regras de trabalho (definidas pelo Alan)
 
 1. **Comunicação:** explicar sempre de forma objetiva, sem jargão técnico, em português claro.
