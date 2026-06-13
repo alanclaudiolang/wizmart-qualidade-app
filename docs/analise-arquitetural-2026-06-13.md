@@ -130,8 +130,9 @@ recriar row.
 
 **Recomendação:** Arquitetura 1. Resolve a Causa A de raiz (a PK não migra
 enquanto alguém escreve) com superfície mínima. O cinto de segurança
-abaixo (re-resolução de id) cobre o resíduo. A Arquitetura 2 fica
-registrada como dívida técnica para um momento sem promotores em campo.
+abaixo (re-resolução de id) cobre o resíduo. A Arquitetura 2 NÃO fica como
+pendência: é descartada salvo evidência nos testes de que o item 1 é
+insuficiente (decisão registrada no plano mestre).
 
 ## 5. As 6 causas — pontos exatos + correção + por que não regride
 
@@ -171,6 +172,7 @@ de cooldown. Risco 🟢.
    celular real antes de produção. APK 249 guardado como rollback.
 6. Atualizar o mapa técnico `docs/fluxo-e-gatilhos-app.md` (regra 7).
 
-A Arquitetura 2 fica registrada como dívida: a correção definitiva da
-Causa A é honrar "id local nunca muda", mas o custo/risco hoje não se
-justifica frente à Arquitetura 1.
+A Arquitetura 2 (honrar "id local nunca muda") NÃO fica como pendência: é
+descartada salvo evidência nos testes de que a Arquitetura 1 é
+insuficiente. O custo/risco de reescrever o pull hoje não se justifica
+frente à Arquitetura 1, que resolve a Causa A de raiz.
