@@ -34,6 +34,14 @@ item: 🔴 alto / 🟠 médio / 🟢 baixo.
 | 11 | **GAP3** boot-521 | App pode falhar no boot quando o servidor está fora (Cloudflare 521) | Envolver o refresh de sessão do boot em try/catch que degrada para offline | 🟢 |
 | 12 | **H** finalizar | Finalizar trava a tela esperando o servidor (fere offline-first) | Finalizar local e ir pra home na hora; envio em background; **pull nunca rebaixa visita com post pendente** (regra do Alan); card mostra "Realizada + enviando" | 🟠 |
 | 13 | telemetria | `D4` é cego para a Causa A (órfãos descartados antes da conta) | Emitir anomalia quando o guard de ÓRFÃO descartar fotos (`sync_engine.dart:1060`) — para nunca mais a perda por pivot passar invisível | 🟢 |
+| 14 | **A2 visita "em andamento" rebaixada** (achado no relato Felipe #2441, 13/06) | O app NÃO consegue subir o status "Em Andamento" (2) ao servidor: `_filtrarPayloadMinimo` (`sync_engine.dart:856-861`) só deixa passar status 1/5. Então o servidor nunca fica "em andamento". Quando o `open` sobe e a visita vira `synced`, o **pull a PURGA** (`deleteVisitasSincronizadasSemPendencias`) e a **recria como AGENDADA** (servidor não tem o "em andamento") → volta pra tela "Iniciar visita" e zera o `fotosAntesJson` local. As fotos antes só não se perdem se já tiverem subido (sorte de timing). | A proteção do pull (regra do Alan/item 12) passa a ser por **trabalho em andamento** — `statusVisita=2` OU `localState` não-terminal — e NÃO só por `syncStatus='pending'` (após o `open`, a visita fica `synced` mas ainda está em execução). A purga e a recriação NUNCA tocam visita com execução em curso. | 🔴 |
+
+> **A2 é grave e foi confirmada por anomalia temporal:** na 122556 (Felipe),
+> `dia_hora_abertura`=13:11 é POSTERIOR a `dia_hora_fotos_antes`=12:49 —
+> impossível sem reinício. O promotor foi forçado a reiniciar a visita; só
+> não perdeu o antes porque as 7 fotos já haviam subido ao servidor às
+> 13:07 (rede voltou pouco antes do pull rebaixar). Em rede pior, seria
+> perda real. NÃO estava nas 6 causas — descoberta na leitura do relato.
 
 **Itens 🔴 (id/consolidação):** só 2 e 7 têm componente sensível; o item 1
 (adiar) faz a PK não mudar sob os pés do escritor, o que reduz muito a
