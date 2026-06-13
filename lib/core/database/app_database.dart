@@ -6,6 +6,8 @@ import 'package:drift/native.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
+import '../constants/app_constants.dart';
+
 part 'app_database.g.dart';
 
 // ─── TABELAS ─────────────────────────────────────────────────────────────────
@@ -236,6 +238,11 @@ class PendingBugPhotos extends Table {
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
+  /// Construtor para TESTES: recebe um executor (ex.: NativeDatabase.memory()).
+  /// Não usado em produção — permite reproduzir bugs de lógica num banco
+  /// SQLite em memória, sem celular nem servidor.
+  AppDatabase.forTesting(super.executor);
+
   @override
   int get schemaVersion => 5;
 
@@ -405,7 +412,15 @@ class AppDatabase extends _$AppDatabase {
     final query = delete(visitas)
       ..where((v) =>
           v.idPromotorAssociado.equals(promotorId) &
-          v.syncStatus.equals('synced'));
+          v.syncStatus.equals('synced') &
+          // PROTEÇÃO A2 (item 14 / regra do Alan): NUNCA purgar visita em
+          // execução. Status 2 = Em Andamento; localState fora de
+          // idle/finalizada = etapa em curso. Sem isso, depois que o
+          // `open` sobe (visita vira synced) o pull apagava e recriava a
+          // visita como "agendada" → promotor via "Iniciar" e perdia o
+          // "antes" (caso Felipe 122556, 13/06; perda real no Thiago 121455).
+          v.statusVisita.equals(AppConstants.statusEmAndamento).not() &
+          v.localState.isIn(const ['idle', 'finalizada']));
     if (naoApagar.isNotEmpty) {
       query.where((v) => v.id.isNotIn(naoApagar.toList()));
     }
@@ -455,6 +470,14 @@ class AppDatabase extends _$AppDatabase {
       return;
     }
     await transaction(() async {
+      // Mapa de migração (item 2): registra idLocal→serverId para a tela
+      // de visita reapontar, via `idVigente`, escritas que ainda usem o
+      // id antigo (Causa A — pivot com a tela aberta).
+      await into(syncState).insertOnConflictUpdate(SyncStateCompanion(
+        entityType: Value('migra:$idLocal'),
+        lastPushAt: Value(serverId.toString()),
+        lastPullAt: Value(agora),
+      ));
       // CAUSA HISTÓRICA do bug "realizadas viram em andamento": a
       // implementação antiga deletava a row com PK=serverId (vinda do
       // pull, com dados frescos do servidor) e PRESERVAVA todos os
@@ -733,6 +756,13 @@ class AppDatabase extends _$AppDatabase {
         .map((r) => r.storageUrl)
         .where((u) => u != null && u.isNotEmpty)
         .cast<String>()
+        // DEDUP (item 4): se o promotor refez fotos após um reset/pivot,
+        // pode haver 2+ pending_photos com a MESMA URL (nome de arquivo
+        // determinístico + upsert no Storage). O Set (LinkedHashSet)
+        // remove repetidas PRESERVANDO a ordem de inserção — sem isso o
+        // array fotos_antes/depois do servidor subia com URLs duplicadas
+        // (Diego 122527, Renato 122383/122384).
+        .toSet()
         .toList();
   }
 
@@ -800,6 +830,31 @@ class AppDatabase extends _$AppDatabase {
           ..where((s) =>
               s.entityType.equals(_lockRow) & s.lastPushAt.equals(holder)))
         .write(SyncStateCompanion(lastPullAt: Value(_ts(0))));
+  }
+
+  /// Renova o prazo do lock SE [holder] for o dono atual. Usado durante um
+  /// ciclo de sync longo (rede ruim) pra a trava NÃO expirar no meio e
+  /// deixar o WorkManager (outro processo) entrar em paralelo rodando pull
+  /// destrutivo — a Causa D. Retorna true se renovou (ainda é o dono).
+  Future<bool> renewSyncLock(
+      {required String holder, required int ttlMs}) async {
+    final agora = DateTime.now().millisecondsSinceEpoch;
+    final rows = await (update(syncState)
+          ..where((s) =>
+              s.entityType.equals(_lockRow) & s.lastPushAt.equals(holder)))
+        .write(SyncStateCompanion(lastPullAt: Value(_ts(agora + ttlMs))));
+    return rows > 0;
+  }
+
+  /// Mapa de migração idLocal→serverId (item 2). `consolidarVisitaNoServer`
+  /// grava aqui quando troca a PK; a tela de visita consulta `idVigente`
+  /// para reapontar escritas que cairiam no id antigo (Causa A — pivot com
+  /// a tela aberta). Sem isso, foto/finalizar caíam num id morto.
+  Future<int> idVigente(int id) async {
+    final row = await (select(syncState)
+          ..where((s) => s.entityType.equals('migra:$id')))
+        .getSingleOrNull();
+    return int.tryParse(row?.lastPushAt ?? '') ?? id;
   }
 }
 

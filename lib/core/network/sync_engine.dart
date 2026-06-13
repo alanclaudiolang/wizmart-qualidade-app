@@ -82,6 +82,35 @@ class SyncEngine {
 
   SyncEngine(this._db, this._supabase, this._logger);
 
+  /// Decide se uma visita LOCAL é fantasma/lixo a ser descartada no outbox
+  /// (Causa C). SÓ é fantasma quando NÃO tem NENHUM sinal de trabalho:
+  /// não-avulsa, sem serverId, sem abertura, sem realizado, sem status em
+  /// execução E sem fotos no JSON. Antes faltava checar status/fotos —
+  /// uma visita rebaixada (Causa A2) com fotos mas sem abertura era
+  /// apagada por engano (caso Mauro 12/06).
+  static bool visitaEhFantasma({
+    required bool isAvulsa,
+    required int? serverId,
+    required String? diaHoraAbertura,
+    required String? diaHoraRealizado,
+    required int? statusVisita,
+    required String? fotosAntesJson,
+  }) {
+    if (isAvulsa) return false;
+    if (serverId != null) return false;
+    if (diaHoraAbertura != null) return false;
+    if (diaHoraRealizado != null) return false;
+    if (statusVisita == AppConstants.statusEmAndamento ||
+        statusVisita == AppConstants.statusRealizada) {
+      return false;
+    }
+    final temFotos = fotosAntesJson != null &&
+        fotosAntesJson.isNotEmpty &&
+        fotosAntesJson != '[]';
+    if (temFotos) return false;
+    return true;
+  }
+
   /// Executa [action] sob exclusão mútua: re-entrância no mesmo isolate
   /// (_syncing) + lock cross-process no SQLite (app ↔ WorkManager).
   /// Se já houver sync rodando em qualquer processo, pula o ciclo.
@@ -1088,15 +1117,19 @@ class SyncEngine {
       // Visita com abertura OU realizado preenchidos NUNCA descarta:
       // execução offline legítima atrasada.
       final isAvulsa = visita.visitaAvulsa ?? false;
-      if (!isAvulsa &&
-          visita.serverId == null &&
-          visita.diaHoraAbertura == null &&
-          visita.diaHoraRealizado == null) {
+      if (visitaEhFantasma(
+        isAvulsa: isAvulsa,
+        serverId: visita.serverId,
+        diaHoraAbertura: visita.diaHoraAbertura,
+        diaHoraRealizado: visita.diaHoraRealizado,
+        statusVisita: visita.statusVisita,
+        fotosAntesJson: visita.fotosAntesJson,
+      )) {
         _logger.log(
             'outbox',
             'DESCARTANDO fantasma: visita id=$entityId '
-            'agendado=${visita.diaHoraAgendado} sem serverId/abertura/realizado '
-            '(qualquer INSERT viraria status=2 fantasma no servidor)',
+            'agendado=${visita.diaHoraAgendado} sem nenhum sinal de trabalho '
+            '(sem serverId/abertura/realizado/status-execução/fotos)',
             erro: true);
         await _db.deletePendingPhotosByVisita(entityId);
         await _db.deleteVisitaById(entityId);
