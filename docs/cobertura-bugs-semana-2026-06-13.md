@@ -79,9 +79,10 @@ fotos por pivot (Causa A). Motivo: no pivot, as fotos caem no id MORTO e
 são descartadas como órfãs ANTES de chegar ao `_buildVisitaPayload`, então
 a comparação capturadas×enviadas (que roda no id certo) não as enxerga. Ou
 seja: **a telemetria atual NÃO "vê" a Causa A diretamente** — o que
-explica por que ela demorou a ser diagnosticada. Sugestão (pós-build):
-emitir anomalia quando o guard de ÓRFÃO descartar fotos
-(`sync_engine.dart:1060-1069` já loga `Fotos penduradas: depois=N`).
+explica por que ela demorou a ser diagnosticada. **Correção (item 13 do
+plano mestre, dentro do build):** emitir anomalia quando o guard de ÓRFÃO
+descartar fotos (`sync_engine.dart:1060-1069` já loga `Fotos penduradas:
+depois=N`). Não fica para depois.
 
 ## Conclusão
 A proposta de 6 causas cobre **100% dos sintomas de perda/corrupção de
