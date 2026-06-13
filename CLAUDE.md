@@ -56,6 +56,31 @@ segundos mostrava que já era acesso total.)
    Registrar a cobertura da leitura (o que foi lido, o que faltou e por
    quê), como em `docs/analise-arquitetural-2026-06-13.md`.
 
+8. **PROIBIDO diagnóstico raso de caso de campo (definido pelo Alan em
+   13/06/2026).** Ao investigar um issue/relato de promotor, NUNCA concluir
+   "nada aconteceu / foi só rede" a partir do estado FINAL. O estado final
+   pode estar correto **por sorte de timing ou porque o promotor refez** —
+   e isso ESCONDE o bug. Checklist obrigatório, com o tempo e a
+   profundidade que precisar (inclusive em background):
+   1. **Reconstruir a cronologia COMPLETA do log**, do início ao fim (não
+      só as últimas linhas) — ler as partes 2/3 dos comentários do issue,
+      que trazem as linhas mais recentes.
+   2. **Cruzar os 5 campos de data da visita** (`dia_hora_abertura`,
+      `dia_hora_fotos_antes`, `dia_hora_fotos_depois`, `dia_hora_realizado`
+      + data da marca d'água) contra a ordem física esperada
+      (abertura ≤ fotos_antes ≤ fotos_depois ≤ realizado). **Qualquer
+      inversão é "anomalia temporal" e PROVA reinício/zeramento**, mesmo
+      que o resultado final pareça completo. (Caso real que motivou a
+      regra: Felipe #2441 — `abertura`=13:11 POSTERIOR a `fotos_antes`=12:49
+      provou que a visita foi rebaixada e reiniciada; eu havia concluído
+      "nada aconteceu" olhando só o 7/7 final — diagnóstico raso e ERRADO.)
+   3. **O relato do promotor é FATO de campo.** Se o log/servidor parecem
+      contradizê-lo, a falha está na MINHA leitura — investigar mais fundo
+      até reconciliar, nunca descartar o relato como "percepção".
+   4. Confirmada a perda/zeramento por timing, perguntar: "e se a rede
+      fosse pior?" — se a resposta é "perda real", é bug grave, não
+      "rede ruim".
+
 ## Fatos do domínio (definidos pelo Alan em 11/06/2026)
 
 - **A marca d'água nas fotos do bucket é a informação mais correta/segura
