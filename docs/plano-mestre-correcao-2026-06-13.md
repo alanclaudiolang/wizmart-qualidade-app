@@ -12,7 +12,11 @@
 
 ---
 
-## BLOCO 1 — Build Android (código) · um único build, com force-update
+## BLOCO 1 — Build Android (código) · UM BUILD DEFINITIVO, com force-update
+
+**Requisito do Alan (13/06): este é o build DEFINITIVO — não passar várias
+versões. Os 15 itens vão TODOS juntos, validados no `v-dev` antes de
+produção.**
 
 Risco p/ quem está em versão anterior, em TODOS os itens deste bloco:
 nenhuma mudança toca galeria nem dados já gravados; quem está em build
@@ -35,6 +39,7 @@ item: 🔴 alto / 🟠 médio / 🟢 baixo.
 | 12 | **H** finalizar | Finalizar trava a tela esperando o servidor (fere offline-first) | Finalizar local e ir pra home na hora; envio em background; **pull nunca rebaixa visita com post pendente** (regra do Alan); card mostra "Realizada + enviando" | 🟠 |
 | 13 | telemetria | `D4` é cego para a Causa A (órfãos descartados antes da conta) | Emitir anomalia quando o guard de ÓRFÃO descartar fotos (`sync_engine.dart:1060`) — para nunca mais a perda por pivot passar invisível | 🟢 |
 | 14 | **A2 visita "em andamento" rebaixada** (achado no relato Felipe #2441, 13/06) | O app NÃO consegue subir o status "Em Andamento" (2) ao servidor: `_filtrarPayloadMinimo` (`sync_engine.dart:856-861`) só deixa passar status 1/5. Então o servidor nunca fica "em andamento". Quando o `open` sobe e a visita vira `synced`, o **pull a PURGA** (`deleteVisitasSincronizadasSemPendencias`) e a **recria como AGENDADA** (servidor não tem o "em andamento") → volta pra tela "Iniciar visita" e zera o `fotosAntesJson` local. As fotos antes só não se perdem se já tiverem subido (sorte de timing). | A proteção do pull (regra do Alan/item 12) passa a ser por **trabalho em andamento** — `statusVisita=2` OU `localState` não-terminal — e NÃO só por `syncStatus='pending'` (após o `open`, a visita fica `synced` mas ainda está em execução). A purga e a recriação NUNCA tocam visita com execução em curso. | 🔴 |
+| 15 | **observabilidade** (requisito do Alan, 13/06) — log cego para ações de UI | O log atual registra só sync/foto, NÃO os toques/navegação do promotor. Por isso, no caso Felipe, o log "parou" e a sequência do reinício ficou invisível — tive de inferir pela anomalia temporal | `PersistentLogger` passa a carimbar com data/hora CADA interação do usuário na tela de visita: clicar Iniciar, tirar/remover/reordenar foto, concluir antes/depois, voltar, descartar etapa, finalizar, REABRIR visita + cada transição de `localState`/`statusVisita`. Assim qualquer caso é reconstruível sem adivinhação | 🟢 |
 
 > **A2 é grave e foi confirmada por anomalia temporal:** na 122556 (Felipe),
 > `dia_hora_abertura`=13:11 é POSTERIOR a `dia_hora_fotos_antes`=12:49 —
