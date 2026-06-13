@@ -65,3 +65,10 @@ Preenchidas: 118959, 119001, 119161, 119170, 119185, 119302, 119965,
 **PULADA: 119966** — a 1ª foto é de 04/06 mas a visita é agendada 09/06
 (anomalia temporal real, já registrada como anômala em 11/06). Não
 preenchida para não criar inconsistência.
+
+## 7. Felipe — Portal Cervejas 122555 (4 fotos do antes) ✅
+A visita estava AGENDADA quando o Alan enviou; ao re-verificar, já havia
+sido CONCLUÍDA pelo Felipe (4/4, realizada 17:32; abertura 17:21 posterior
+às fotos 17:09 = reinício). Substituídas as 4 fotos do "antes" pelas
+originais (badge 1-4, FOTO Antes 17:09:10/43/55), na ordem da numeração.
+Verificado por OCR (antes-1 = geladeira de cervejas, badge 1, 17:09:10).
