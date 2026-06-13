@@ -44,6 +44,17 @@ segundos mostrava que já era acesso total.)
    o mapa + reler os arquivos afetados pela mudança. **Obrigatório manter
    o mapa atualizado em todo commit que altere comportamento descrito
    nele** — mapa desatualizado é pior que nenhum mapa.
+   **7a. LER 100% DOS ARQUIVOS antes de QUALQUER proposta de alteração do
+   app (definido pelo Alan em 13/06/2026):** o mapa técnico é um índice,
+   NÃO substitui a leitura. Antes de propor qualquer mudança no app, ler
+   integralmente todos os arquivos `.dart` do projeto (não só os
+   "afetados") — o objetivo é ter 100% do código na memória para que a
+   correção de cada causa-raiz não gere outro bug por cegueira/falta de
+   profundidade. Pode levar o tempo que precisar, inclusive em background.
+   Motivo (Alan): "não existe um profissional extra que revise o que você
+   faz — você tem que garantir sozinho que a solução não gera regressão".
+   Registrar a cobertura da leitura (o que foi lido, o que faltou e por
+   quê), como em `docs/analise-arquitetural-2026-06-13.md`.
 
 ## Fatos do domínio (definidos pelo Alan em 11/06/2026)
 
