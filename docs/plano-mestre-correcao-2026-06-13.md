@@ -116,6 +116,60 @@ iOS novo, já vai corrigido. Não há ação de campo possível antes disso.
 
 ---
 
+---
+
+## RISCO DE TRANSIÇÃO — atualizar um celular que está em build anterior
+
+Pergunta do Alan (13/06). Analisado com o código de migração e o fluxo de
+update na mão.
+
+### O que é SEGURO por design (não é risco)
+1. **Dados locais preservados.** Instalar o APK por cima (mesmo
+   `applicationId`) NÃO apaga o sandbox do app: banco SQLite, fotos em
+   `wizmart_fotos/`, outbox, SharedPrefs e a GALERIA continuam intactos.
+   Só `logoutCompletely` apaga, e ele só roda em troca de conta confirmada.
+2. **Migração de banco = ZERO risco, com 1 requisito de implementação:**
+   manter `schemaVersion = 5`. Nenhum dos 15 itens exige nova
+   coluna/tabela/índice — o dedup (item 4) é em Dart, o mapa de re-resolução
+   (item 2) usa a tabela `sync_state` existente, e o log (item 15) é
+   arquivo. **Sem schema novo = sem migração = sem risco de o app não
+   abrir.** Se algum item vier a exigir schema, a migração será defensiva
+   (try/catch que nunca derruba o boot; índice só após limpar duplicatas).
+3. **Force-update não interrompe trabalho.** O bloqueio de atualização só
+   dispara na HOME e com zero processamento ativo (`ProcessingTracker==0`
+   e sync parado). Ninguém é forçado a atualizar no meio de uma visita ou
+   de um upload — o trabalho em trânsito não se perde.
+4. **Recovery no boot do build novo** (`resetUploadingNoBoot` +
+   `recoverPendingOnBoot`) retoma fotos em estados intermediários deixadas
+   pelo build antigo.
+5. **Convivência de versões em campo:** cada promotor tem seu celular
+   (estado isolado); o build novo escreve os MESMOS campos no servidor
+   (lógica corrigida, formato igual), então servidor segue compatível com
+   quem ainda está no antigo. Um não afeta o outro.
+
+### Os riscos REAIS (a mitigar)
+1. **Regressão (o maior).** O build mexe no coração do sync (pull,
+   consolidação, guards). Um erro afeta TODOS, inclusive quem estava OK.
+   Mitigação: cada item com teste que reproduz o bug ANTES; validação no
+   `v-dev` (lado a lado) num celular real; APK 249 guardado para rollback
+   imediato via force-update.
+2. **Estados herdados "sujos".** Visitas gravadas pelo build antigo podem
+   estar inconsistentes (resíduo dos próprios bugs: status em andamento
+   com `localState=idle`, idTemp com fotos órfãs, visita rebaixada com
+   fotos). O código novo precisa RESOLVER esses resíduos, não perpetuá-los
+   nem travá-los. Mitigação: testar o build novo abrindo um banco "sujo"
+   real de um build antigo antes de publicar.
+3. **Alcance, não dano: builds < ~196** (ex.: Franciele/186) não recebem o
+   force-update porque o app antigo bloqueia update com pendência. Não é
+   risco do build novo — é que ele não os alcança sozinho; precisam do
+   link do APK por WhatsApp (Bloco 3).
+
+### Conclusão
+A atualização em si é de baixo risco para os dados (preservados; sem
+migração se mantivermos schema 5; force-update não interrompe trabalho). O
+risco concentra-se em REGRESSÃO de lógica — endereçado por teste +
+`v-dev` + rollback — e em tratar bem os estados herdados sujos.
+
 ## Sequência de execução (com OK do Alan a cada publish — regra 3a)
 1. Build Android: itens 1–13 no mesmo build, cada um com teste que falha
    no código atual; validar no `v-dev`; APK 249 guardado como rollback.
