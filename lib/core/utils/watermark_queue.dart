@@ -278,8 +278,9 @@ class WatermarkQueueService {
         // arquivo wm ainda existe. Sem isso, havia uma janela em que o
         // JSON ainda tinha raw_path mas o raw já estava deletado, e a
         // grid quebrava com PathNotFoundException.
+        var trocouNoJson = false;
         if (wmPath != p.localPath) {
-          await _trocarPathNoJson(
+          trocouNoJson = await _trocarPathNoJson(
             visitaId: item.visitaId,
             slot: item.slot,
             de: p.localPath,
@@ -310,8 +311,13 @@ class WatermarkQueueService {
           );
         }
 
-        // Apaga o arquivo cru original — JSON já não aponta mais pra ele.
-        if (wmPath != p.localPath) {
+        // Apaga o cru SÓ se a troca no JSON foi confirmada (item 3). Sem
+        // isso, o cru sumia enquanto o JSON ainda apontava pra ele e a
+        // grade quebrava (caso Renato 13/06).
+        if (deveApagarRaw(
+            rawPath: p.localPath,
+            wmPath: wmPath,
+            trocaNoJsonConfirmada: trocouNoJson)) {
           try {
             await File(p.localPath).delete();
           } catch (_) {}
@@ -343,10 +349,24 @@ class WatermarkQueueService {
     }
   }
 
+  /// Decide se o arquivo CRU pode ser apagado (item 3). Só apaga quando há
+  /// um arquivo com watermark DIFERENTE do cru E a troca do caminho no JSON
+  /// foi CONFIRMADA. Sem isso, o cru era apagado mesmo quando a troca não
+  /// vingou (ex.: id da visita pivotou e o JSON não foi atualizado) e a
+  /// grade ficava apontando para um arquivo morto (grade quebrada do Renato).
+  static bool deveApagarRaw({
+    required String rawPath,
+    required String wmPath,
+    required bool trocaNoJsonConfirmada,
+  }) {
+    if (wmPath == rawPath) return false;
+    return trocaNoJsonConfirmada;
+  }
+
   /// Lê o JSON atual de fotosXxxJson, substitui [de] por [para] e grava
   /// de volta. Mantém ordem original (importante — é o que o promotor vê
-  /// na grid). Se [de] não estiver na lista, não faz nada.
-  Future<void> _trocarPathNoJson({
+  /// na grid). Retorna `true` se a troca foi efetivada (item 3).
+  Future<bool> _trocarPathNoJson({
     required int visitaId,
     required String slot,
     required String de,
@@ -354,10 +374,10 @@ class WatermarkQueueService {
   }) async {
     final db = _ref.read(appDatabaseProvider);
     final visita = await db.getVisitaById(visitaId);
-    if (visita == null) return;
+    if (visita == null) return false;
     final atualJson =
         slot == 'antes' ? visita.fotosAntesJson : visita.fotosDepoisJson;
-    if (atualJson == null || atualJson.isEmpty) return;
+    if (atualJson == null || atualJson.isEmpty) return false;
     final lista = List<String>.from(jsonDecode(atualJson));
     var alterou = false;
     for (var i = 0; i < lista.length; i++) {
@@ -366,7 +386,7 @@ class WatermarkQueueService {
         alterou = true;
       }
     }
-    if (!alterou) return;
+    if (!alterou) return false;
     final novoJson = jsonEncode(lista);
     if (slot == 'antes') {
       await db.updateVisita(VisitasCompanion(
@@ -379,6 +399,7 @@ class WatermarkQueueService {
         fotosDepoisJson: drift.Value(novoJson),
       ));
     }
+    return true;
   }
 
   Future<void> _dispararSync() async {

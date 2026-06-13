@@ -82,6 +82,96 @@ class SyncEngine {
 
   SyncEngine(this._db, this._supabase, this._logger);
 
+  /// Decide se uma visita LOCAL é fantasma/lixo a ser descartada no outbox
+  /// (Causa C). SÓ é fantasma quando NÃO tem NENHUM sinal de trabalho:
+  /// não-avulsa, sem serverId, sem abertura, sem realizado, sem status em
+  /// execução E sem fotos no JSON. Antes faltava checar status/fotos —
+  /// uma visita rebaixada (Causa A2) com fotos mas sem abertura era
+  /// apagada por engano (caso Mauro 12/06).
+  static bool visitaEhFantasma({
+    required bool isAvulsa,
+    required int? serverId,
+    required String? diaHoraAbertura,
+    required String? diaHoraRealizado,
+    required int? statusVisita,
+    required String? fotosAntesJson,
+  }) {
+    if (isAvulsa) return false;
+    if (serverId != null) return false;
+    if (diaHoraAbertura != null) return false;
+    if (diaHoraRealizado != null) return false;
+    if (statusVisita == AppConstants.statusEmAndamento ||
+        statusVisita == AppConstants.statusRealizada) {
+      return false;
+    }
+    final temFotos = fotosAntesJson != null &&
+        fotosAntesJson.isNotEmpty &&
+        fotosAntesJson != '[]';
+    if (temFotos) return false;
+    return true;
+  }
+
+  /// Decide se a CONSOLIDAÇÃO de uma visita (INSERT idTemp→serverId) deve
+  /// ser ADIADA porque a visita está em uso (Causa A — item 1). Enquanto
+  /// adiada, a PK não muda sob os pés da tela aberta, então foto não some
+  /// nem Finalizar cai no vácuo. Timeout de segurança de 2h evita que uma
+  /// flag presa (crash da tela) trave a visita para sempre.
+  static bool deveAdiarConsolidacao({
+    required bool telaAberta,
+    required bool processandoAtivo,
+    required int fotosWatermarkPending,
+    required Duration idadeDesdeUltimaAtividade,
+  }) {
+    if (idadeDesdeUltimaAtividade > const Duration(hours: 2)) return false;
+    return telaAberta || processandoAtivo || fotosWatermarkPending > 0;
+  }
+
+  /// Monta o caminho da foto no Storage. Retorna null se [authUid] estiver
+  /// vazio (sessão morta) — item 9: sem isso, o path virava
+  /// `abastecimentos//…/` (segmento vazio) e o RLS recusava com 403,
+  /// travando o sync por dias (Adonias 25/05→12/06).
+  static String? construirStoragePath({
+    required String authUid,
+    required String dataSeg,
+    required String nomeSeg,
+    required int visitaHash,
+    required String slot,
+    required int numero,
+    required String extSeg,
+  }) {
+    if (authUid.isEmpty) return null;
+    return 'abastecimentos/$authUid/$dataSeg/$nomeSeg-$visitaHash-$slot-$numero.$extSeg';
+  }
+
+  /// `true` se a visita tem QUALQUER sinal de execução. Usado pelo reset do
+  /// pull (Causa B) para NUNCA zerar uma visita que o promotor iniciou —
+  /// protege contra a corrida "clicar Iniciar no instante do sync".
+  static bool visitaTemTrabalho({
+    required int? serverId,
+    required String? diaHoraAbertura,
+    required int? statusVisita,
+  }) {
+    return serverId != null ||
+        diaHoraAbertura != null ||
+        statusVisita == AppConstants.statusEmAndamento ||
+        statusVisita == AppConstants.statusRealizada;
+  }
+
+  /// Detecta o "0 rows" do PostgREST (PGRST116) de forma ROBUSTA. A lib às
+  /// vezes coloca o código em `e.code` ('PGRST116'), e às vezes deixa em
+  /// `e.code` o HTTP status ('406') com o 'PGRST116' SÓ no `message` —
+  /// foi esse o caso da Camila (13/06, build 249): o tratamento antigo
+  /// checava só `e.code=='PGRST116'`, então o INSERT que batia em conflito
+  /// fazia `rethrow` e a visita COMPLETA (4 antes/5 depois) entrava em
+  /// LOOP INFINITO de INSERT, sem nunca consolidar. Checa código E mensagem.
+  static bool ehErroZeroRows({required String? code, required String message}) {
+    if (code == 'PGRST116') return true;
+    final m = message.toLowerCase();
+    return m.contains('pgrst116') ||
+        m.contains('cannot coerce') ||
+        m.contains('contains 0 rows');
+  }
+
   /// Executa [action] sob exclusão mútua: re-entrância no mesmo isolate
   /// (_syncing) + lock cross-process no SQLite (app ↔ WorkManager).
   /// Se já houver sync rodando em qualquer processo, pula o ciclo.
@@ -478,10 +568,11 @@ class SyncEngine {
           // afetada: o lookup acima é restrito a HOJE, e sobra antiga
           // nunca tem row de hoje — segue caindo no upsert por PK.
           final temTrabalho = existente != null &&
-              (existente.serverId != null ||
-                  existente.diaHoraAbertura != null ||
-                  existente.statusVisita == AppConstants.statusEmAndamento ||
-                  existente.statusVisita == AppConstants.statusRealizada);
+              visitaTemTrabalho(
+                serverId: existente.serverId,
+                diaHoraAbertura: existente.diaHoraAbertura,
+                statusVisita: existente.statusVisita,
+              );
           if (temTrabalho) {
             puladas++;
             continue;
@@ -1067,6 +1158,27 @@ class SyncEngine {
             'Fotos penduradas: antes=${fotosOrfas.length} '
             'depois=${fotosOrfasDepois.length}',
             erro: true);
+        // TELEMETRIA item 13: se há fotos penduradas no id morto, houve
+        // PERDA por pivot (Causa A) — emite anomalia para nunca mais passar
+        // invisível (o detector D4 não enxerga esse caso).
+        if (fotosOrfas.isNotEmpty || fotosOrfasDepois.isNotEmpty) {
+          // ignore: discarded_futures
+          AnomaliaReporter.enfileirar(
+            db: _db,
+            tipo: 'D7-fotos-orfas-descartadas',
+            entidadeId: entityId.toString(),
+            resumo: 'Outbox órfão descartado com fotos penduradas: '
+                'antes=${fotosOrfas.length} depois=${fotosOrfasDepois.length} '
+                '(perda por pivot — Causa A)',
+            contextoExtra: {
+              'visitaId': entityId,
+              'itemEntityId': item.entityId,
+              'operation': item.operation,
+              'orfasAntes': fotosOrfas.length,
+              'orfasDepois': fotosOrfasDepois.length,
+            },
+          );
+        }
         await _db.deleteOutboxItem(item.id);
         return;
       }
@@ -1088,15 +1200,19 @@ class SyncEngine {
       // Visita com abertura OU realizado preenchidos NUNCA descarta:
       // execução offline legítima atrasada.
       final isAvulsa = visita.visitaAvulsa ?? false;
-      if (!isAvulsa &&
-          visita.serverId == null &&
-          visita.diaHoraAbertura == null &&
-          visita.diaHoraRealizado == null) {
+      if (visitaEhFantasma(
+        isAvulsa: isAvulsa,
+        serverId: visita.serverId,
+        diaHoraAbertura: visita.diaHoraAbertura,
+        diaHoraRealizado: visita.diaHoraRealizado,
+        statusVisita: visita.statusVisita,
+        fotosAntesJson: visita.fotosAntesJson,
+      )) {
         _logger.log(
             'outbox',
             'DESCARTANDO fantasma: visita id=$entityId '
-            'agendado=${visita.diaHoraAgendado} sem serverId/abertura/realizado '
-            '(qualquer INSERT viraria status=2 fantasma no servidor)',
+            'agendado=${visita.diaHoraAgendado} sem nenhum sinal de trabalho '
+            '(sem serverId/abertura/realizado/status-execução/fotos)',
             erro: true);
         await _db.deletePendingPhotosByVisita(entityId);
         await _db.deleteVisitaById(entityId);
@@ -1145,10 +1261,10 @@ class SyncEngine {
               .select()
               .maybeSingle();
         } on PostgrestException catch (e) {
-          if (e.code == 'PGRST116') {
+          if (ehErroZeroRows(code: e.code, message: e.message)) {
             _logger.log(
                 'outbox',
-                'INSERT PGRST116 (0 rows via exceção da lib) — tratando '
+                'INSERT 0 rows (PGRST116 via code OU message) — tratando '
                 'como conflito e seguindo pro UPSERT-merge');
             res = null;
           } else {
