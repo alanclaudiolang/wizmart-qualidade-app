@@ -5,6 +5,44 @@
 > feitas em 11/06 (API pública da Apple, codemagic.yaml). Substitui o
 > contexto que estava preso no Codespace.
 
+## ✅ ATUALIZAÇÃO 14/06/2026 ~22:35 UTC — APROVADO E PUBLICADO
+
+App **aprovado pela Apple e publicado na App Store** (versão 1.0,
+build #20). Estado da versão: **READY_FOR_SALE**. Foi a **6ª submissão**
+e a primeira aprovada.
+
+O que destravou (executado 13/06):
+1. Causa da 5ª rejeição (12/06): **diretriz 2.3.10 — screenshots eram
+   reaproveitados do Android e mostravam a barra de navegação do
+   Android** ("non-iOS menu bar"). NÃO era código.
+2. Build novo **#20** disparado via API do Codemagic a partir da `main`
+   (commit de 13/06 "Build definitivo"; mesmo código do APK Android
+   build 250). Processado VALID na Apple.
+3. **Screenshots reais de iPhone** (login/home/faltas) enviados pelo Alan
+   via GitHub (`IMG_5281/5282/5283.png`, 960×2079). Redimensionados aqui
+   para **1290×2796** (slot 6.7", display type APP_IPHONE_67) com Pillow
+   (Lanczos) e subidos via API substituindo os 3 do Android.
+4. Submissão rejeitada (`49a5152f`) cancelada; versão anexada a um
+   rascunho (`0e754b7a`) e **submetida** (WAITING_FOR_REVIEW 13/06
+   21:21 UTC). Obs.: o `POST reviewSubmissionItems` retorna 409
+   transitório logo após o cancelamento — repetir até 201.
+5. `releaseType` mudado para **AFTER_APPROVAL** (a pedido do Alan em
+   13/06: publicar assim que aprovar, independente do Unlisted; "não tem
+   problema aparecer na listagem inicialmente").
+6. Apple aprovou entre 13/06 21:21 e 14/06 22:35 → auto-liberou.
+
+Estado em 14/06: **READY_FOR_SALE** (a busca pública pode levar minutos/
+horas para indexar — propagação, não bloqueio). Link direto:
+https://apps.apple.com/app/id6774250898
+
+Pendências em aberto:
+- **Unlisted**: o app nasceu LISTADO (público). Quando a Apple responder
+  o ticket Unlisted, aplicar para sair da busca pública sem tirar do ar.
+- **Screenshots**: estão em upscale de 960→1290 (qualidade boa, passou).
+  Se quiser nitidez máxima no futuro, trocar pelos originais full-res.
+- Os `IMG_528x.png` foram removidos do repositório (eram públicos) após
+  o uso — ver commit de limpeza.
+
 ## ⏩ ATUALIZAÇÃO 11/06/2026 ~20:50 UTC — RESUBMETIDO À APPLE
 
 Executado nesta data, sob comando do Alan ("podemos iniciar"):
