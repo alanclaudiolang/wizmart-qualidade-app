@@ -339,21 +339,32 @@ class AppDatabase extends _$AppDatabase {
                 v.statusVisita.equals(2)))
           .getSingleOrNull();
 
-  /// Busca visita existente por gabarito+pdv+turno dentro de uma janela de data
+  /// Busca visita existente por gabarito+pdv+turno dentro de uma janela de data.
+  ///
+  /// NÃO usa getSingleOrNull: se houver linha DUPLICADA pra mesma chave
+  /// natural (estado local bagunçado — resquício de idTemp antigo, refez,
+  /// etc.), getSingleOrNull LANÇAVA StateError. Como o pull chama isto
+  /// DEPOIS de purgar as visitas do dia, o estouro deixava a home VAZIA
+  /// (purgou e não recriou) — causa da "agenda vazia" (Camila/Thamara
+  /// 15/06). Agora retorna a linha mais relevante (prioriza serverId real
+  /// sobre idTemp) e nunca lança.
   Future<Visita?> getVisitaByGabaritoTurnoData(
     int gabaritoId,
     int pdvId,
     String turno,
     String inicioDia,
     String fimDia,
-  ) =>
-      (select(visitas)
-            ..where((v) =>
-                v.idGabaritoAssociado.equals(gabaritoId) &
-                v.idPdvAssociado.equals(pdvId) &
-                v.previsaoTurnoRealizada.equals(turno) &
-                v.diaHoraAgendado.isBetweenValues(inicioDia, fimDia)))
-          .getSingleOrNull();
+  ) async {
+    final rows = await (select(visitas)
+          ..where((v) =>
+              v.idGabaritoAssociado.equals(gabaritoId) &
+              v.idPdvAssociado.equals(pdvId) &
+              v.previsaoTurnoRealizada.equals(turno) &
+              v.diaHoraAgendado.isBetweenValues(inicioDia, fimDia))
+          ..orderBy([(v) => OrderingTerm.desc(v.serverId)]))
+        .get();
+    return rows.isEmpty ? null : rows.first;
+  }
 
   /// Remove visitas agendadas do dia que não foram modificadas localmente
   Future<void> deleteVisitasAgendadasHojeNaoModificadas(int promotorId) {

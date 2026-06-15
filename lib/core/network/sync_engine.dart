@@ -535,6 +535,7 @@ class SyncEngine {
       int puladas = 0;
 
       for (final item in visitasNormais) {
+       try {
         final gabaritoId = item['gabarito_id'] as int? ?? 0;
         final pdvId = item['pdv_associado'] as int? ?? 0;
         final turno = item['turno'] as String? ?? '';
@@ -671,9 +672,23 @@ class SyncEngine {
           ));
         }
         salvas++;
+       } catch (e) {
+         // ITEM 1c (agenda vazia): um erro ao recriar UMA vaga NÃO pode
+         // abortar a recriação das outras — senão a home fica vazia depois
+         // da purga. Pula esta e segue; as outras vagas ainda entram.
+         puladas++;
+         _logger.log(
+             'salvar',
+             'vaga pulada por erro ao recriar (gab=${item['gabarito_id']} '
+             'pdv=${item['pdv_associado']}): $e',
+             erro: true);
+       }
       }
 
-      _logger.log('salvar', '$salvas visitas normais salvas, $puladas puladas (pending local)');
+      _logger.log(
+          'salvar',
+          'PULL visitas: edge=${visitasNormais.length} → salvas=$salvas '
+          'puladas=$puladas');
 
       // ── 6b. Recria QUALQUER visita realizada/andamento do servidor
       //     que não foi criada pelo loop principal ──────────────────────────
@@ -1450,14 +1465,29 @@ class SyncEngine {
       final delaySeconds = min(pow(2, attempts).toInt() * 30, 1800);
       final nextRetry =
           DateTime.now().add(Duration(seconds: delaySeconds)).toIso8601String();
-      // D3: outbox item travado há > 2h E erro classificado como real
-      // (4xx, payload bad, constraint violado etc) → enfileira anomalia.
-      // Mantém o item em pending (não vira error — outbox semântica é
-      // diferente da photo), e o backoff continua tentando.
+      // Classifica o erro UMA vez (usado pelo D3 e pela decisão de estacionar).
+      ClassificacaoErro classe;
+      try {
+        classe =
+            ErrorClassifier.classificar(e, statusCode: _extrairHttpStatus(e));
+      } catch (_) {
+        classe = ClassificacaoErro.erroReal;
+      }
+      // ── FILA ENVENENADA (item 2): NÃO retentar pra sempre ────────────────
+      // Antes o outbox NUNCA virava 'error' — um item com erro PERMANENTE
+      // (4xx / PGRST116 que não casa) ficava em loop eterno, consumia o sync
+      // e INUNDAVA o log, escondendo o pull (caso Camila 15/06: 24h de log
+      // sem 1 linha de pull → agenda nunca aparecia). Agora ESTACIONA o item
+      // (status='error', para de tentar) quando o erro é real e já tentou
+      // bastante, OU num teto absoluto de tentativas (cobre qualquer loop,
+      // ex. o UPSERT-merge que lança quando o SELECT não acha). Rede
+      // transitória NÃO estaciona — continua o backoff normal.
+      final estacionar =
+          (classe == ClassificacaoErro.erroReal && attempts >= 8) ||
+              attempts >= 25;
+      // D3: item travado há > 2h E erro real → anomalia (mantido).
       try {
         final criado = DateTime.tryParse(item.createdAt);
-        final classe = ErrorClassifier.classificar(e,
-            statusCode: _extrairHttpStatus(e));
         if (criado != null &&
             DateTime.now().difference(criado) > const Duration(hours: 2) &&
             (classe == ClassificacaoErro.erroReal || attempts > 5)) {
@@ -1466,14 +1496,15 @@ class SyncEngine {
             db: _db,
             tipo: 'D3-outbox-stuck',
             entidadeId: entityId.toString(),
-            resumo: 'Outbox travado: $attempts tentativas, '
-                'classe=${classe.name}',
+            resumo: 'Outbox ${estacionar ? "ESTACIONADO" : "travado"}: '
+                '$attempts tentativas, classe=${classe.name}',
             contextoExtra: {
               'visitaId': entityId,
               'outboxId': item.id,
               'operation': item.operation,
               'attempts': attempts,
               'classe': classe.name,
+              'estacionado': estacionar,
               'criadoEm': item.createdAt,
             },
             erro: e,
@@ -1481,9 +1512,17 @@ class SyncEngine {
           );
         }
       } catch (_) {/* não crítico */}
+      if (estacionar) {
+        _logger.log(
+            'outbox',
+            'ESTACIONANDO item entityId=$entityId após $attempts tentativas '
+            '(erro permanente, classe=${classe.name}) — para de retentar pra '
+            'não envenenar a fila',
+            erro: true);
+      }
       await _db.updateOutboxItem(OutboxItemsCompanion(
         id: Value(item.id),
-        status: const Value('pending'),
+        status: Value(estacionar ? 'error' : 'pending'),
         attempts: Value(attempts),
         nextRetryAt: Value(nextRetry),
         lastError: Value(e.toString()),

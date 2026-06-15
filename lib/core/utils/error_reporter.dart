@@ -49,6 +49,18 @@ class ErrorReporter {
   /// Anti-duplo-toque do relato MANUAL (enfileiramento é instantâneo).
   static DateTime? _ultimoRelatoManual;
 
+  /// Rótulo curto do promotor pro TÍTULO do issue — identificação imediata
+  /// (antes só dava pra saber quem era abrindo o corpo do issue).
+  static String promotorLabel(Map<String, dynamic> ctx) {
+    final p = (ctx['promotor'] as Map?) ?? {};
+    final nome = (p['nome'] as String?)?.trim() ?? '';
+    final id = p['id'];
+    final primeiro = nome.isEmpty
+        ? ''
+        : nome.split(RegExp(r'\s+')).take(2).join(' ');
+    return primeiro.isEmpty ? 'id ${id ?? '?'}' : '$primeiro (id ${id ?? '?'})';
+  }
+
   /// Reporta um erro. `screen` é opcional — se não passado, lê o
   /// `CurrentScreen.nome` atual.
   /// Reporta erro automaticamente como issue no GitHub.
@@ -92,7 +104,7 @@ class ErrorReporter {
           ? '${tituloErro.substring(0, 70)}…'
           : tituloErro;
 
-      final title = '[BUG][$tela] $resumo';
+      final title = '[BUG][$tela] ${promotorLabel(ctx)} — $resumo';
       final body = _montarBody(
         contexto: contexto,
         erro: erro,
@@ -155,7 +167,7 @@ class ErrorReporter {
       final resumo = descricao.length > 60
           ? '${descricao.substring(0, 60).replaceAll('\n', ' ')}…'
           : descricao.replaceAll('\n', ' ');
-      final title = '[USUÁRIO][$tela] $resumo';
+      final title = '[USUÁRIO][$tela] ${promotorLabel(ctx)} — $resumo';
 
       final b = StringBuffer();
       b.writeln('## Relato do promotor');
