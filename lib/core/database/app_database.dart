@@ -741,6 +741,20 @@ class AppDatabase extends _$AppDatabase {
     return rows.length;
   }
 
+  /// Fotos da visita ainda EM VOO (qualquer slot): watermark/upload em
+  /// curso — mesmos status de [countFotosEmProgresso] (sem 'error' nem
+  /// 'uploaded'). Usado pelo item 1 (Causa A): enquanto há foto em voo a
+  /// consolidação (pivô idTemp→serverId) é adiada, pra a foto recém-tirada
+  /// não apontar pra um id morto e virar órfã descartada (D7).
+  Future<List<PendingPhoto>> getPendingPhotosEmVoo(int visitaId) =>
+      (select(pendingPhotos)
+            ..where((p) =>
+                p.visitaId.equals(visitaId) &
+                (p.status.equals('watermark_pending') |
+                    p.status.equals('pending') |
+                    p.status.equals('uploading'))))
+          .get();
+
   /// Retorna URLs públicas das fotos já uploadadas para uma visita+slot,
   /// ordenadas pelo número da foto. Usado pelo sync engine para preencher
   /// fotos_antes/fotos_depois no payload da visita.
