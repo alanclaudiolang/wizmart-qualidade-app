@@ -26,6 +26,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:system_info_plus/system_info_plus.dart';
 
 import '../constants/app_constants.dart';
+import '../database/app_database.dart';
+import 'anomalia_reporter.dart';
 import 'current_screen.dart';
 import 'persistent_logger.dart';
 import 'session_service.dart';
@@ -43,6 +45,9 @@ class ErrorReporter {
 
   /// Cooldown por screen — key: nome da tela.
   static final Map<String, DateTime> _ultimoReportePorScreen = {};
+
+  /// Anti-duplo-toque do relato MANUAL (enfileiramento é instantâneo).
+  static DateTime? _ultimoRelatoManual;
 
   /// Reporta um erro. `screen` é opcional — se não passado, lê o
   /// `CurrentScreen.nome` atual.
@@ -123,7 +128,8 @@ class ErrorReporter {
   ///   - Sem erro/stack — só a descrição livre do promotor.
   ///   - Label `user-report` em vez de `auto`.
   /// Retorna o número da issue criada (ou null em falha).
-  static Future<int?> reportarUsuario({
+  static Future<bool> reportarUsuario({
+    required AppDatabase db,
     required String descricao,
   }) async {
     final tela = CurrentScreen.nome;
@@ -132,8 +138,15 @@ class ErrorReporter {
       'Promotor reportou: $descricao',
     );
 
-    final token = AppConstants.githubBugReportToken;
-    if (token.isEmpty) return null;
+    // Anti-duplo-toque: com o enfileiramento instantâneo o promotor pode
+    // tocar 2x e gerar 2 relatos iguais (caso Caline+Paula, build 176).
+    // Janela curta de dedup — não bloqueia relatos legítimos espaçados.
+    final agora = DateTime.now();
+    if (_ultimoRelatoManual != null &&
+        agora.difference(_ultimoRelatoManual!) < const Duration(seconds: 10)) {
+      return true; // já registrado há instantes — trata como sucesso
+    }
+    _ultimoRelatoManual = agora;
 
     try {
       final ctx = await _coletarContexto();
@@ -185,25 +198,37 @@ class ErrorReporter {
       b.writeln();
       b.writeln('_Issue criado pelo promotor via menu Reportar problema._');
 
-      return await _postarIssueParticionado(
-        token: token,
-        title: title,
-        body: b.toString(),
+      // ENFILEIRA na fila persistente (NÃO posta direto): sobrevive offline
+      // e a restart; o AnomaliaQueueProcessor drena quando houver rede, com
+      // partição de body e backoff. Antes, o POST direto falhava sem rede e
+      // o relato SE PERDIA — caso Thamara 15/06, cujo relato das 08:34 nunca
+      // chegou ao GitHub porque o aparelho estava sem rede no momento.
+      final ok = await AnomaliaReporter.enfileirarIssuePronta(
+        db: db,
+        tipo: 'manual',
+        titulo: title,
+        bodyMd: b.toString(),
         labels: [
           'bug',
           'user-report',
           'screen:$tela',
           'build:${AppConstants.buildNumber}',
         ],
-        logTag: 'user-report:$tela',
       );
+      await PersistentLogger.append(
+          'user-report:$tela',
+          ok
+              ? 'Relato enfileirado (drena quando houver rede)'
+              : 'Falha ao enfileirar relato',
+          erro: !ok);
+      return ok;
     } catch (e) {
       await PersistentLogger.append(
         'user-report:$tela',
-        'Exceção ao postar: $e',
+        'Exceção ao enfileirar relato: $e',
         erro: true,
       );
-      return null;
+      return false;
     }
   }
 
