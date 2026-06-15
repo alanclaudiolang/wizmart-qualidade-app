@@ -330,7 +330,7 @@ class _HomeContent extends ConsumerWidget {
   /// raramente trazia informação útil ("não funciona", vazio); o que
   /// importa pra diagnóstico está no log+sondas. Zero atrito = mais
   /// relatos chegam = mais cobertura.
-  Future<void> _reportarProblema(BuildContext context) async {
+  Future<void> _reportarProblema(BuildContext context, WidgetRef ref) async {
     // Snackbar PERSISTENTE durante o envio (com spinner) — antes era
     // duration de 2s e sumia enquanto o POST continuava em background,
     // promotor pensava que travou e clicava de novo, criando duplicatas
@@ -351,26 +351,35 @@ class _HomeContent extends ConsumerWidget {
               ),
             ),
             SizedBox(width: 12),
-            Text('Enviando relato…'),
+            Text('Registrando relato…'),
           ],
         ),
-        duration: Duration(seconds: 60),
+        duration: Duration(seconds: 10),
       ),
     );
 
-    final numero = await ErrorReporter.reportarUsuario(
+    final db = ref.read(appDatabaseProvider);
+    final ok = await ErrorReporter.reportarUsuario(
+      db: db,
       descricao: '(relato sem descrição — log+sondas no body)',
     );
+    // Dispara o sync pra DRENAR o relato agora se houver rede; offline,
+    // ele fica na fila persistente e drena depois — não se perde mais
+    // (antes o POST direto falhava sem rede e o log sumia).
+    if (ok) {
+      // ignore: discarded_futures
+      ref.read(syncEngineProvider).processOutbox();
+    }
     if (!context.mounted) return;
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
         content: Text(
-          numero != null
-              ? 'Relato enviado (#$numero). Obrigado!'
-              : 'Não foi possível enviar agora. Tente novamente quando tiver internet.',
+          ok
+              ? 'Relato registrado! Será enviado assim que houver internet. Obrigado!'
+              : 'Não consegui registrar o relato agora. Tente de novo.',
         ),
-        backgroundColor: numero != null ? AppColors.primary : AppColors.danger,
+        backgroundColor: ok ? AppColors.primary : AppColors.danger,
         duration: const Duration(seconds: 4),
       ),
     );
@@ -561,7 +570,7 @@ class _HomeContent extends ConsumerWidget {
                   if (context.mounted) context.push('/faltas');
                   break;
                 case 'reportar':
-                  if (context.mounted) await _reportarProblema(context);
+                  if (context.mounted) await _reportarProblema(context, ref);
                   break;
                 case 'logout':
                   await _confirmarLogout(context, ref);

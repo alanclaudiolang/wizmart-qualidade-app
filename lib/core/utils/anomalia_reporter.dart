@@ -109,6 +109,47 @@ class AnomaliaReporter {
     }
   }
 
+  /// Enfileira um issue JÁ MONTADO (título/body/labels prontos) na MESMA
+  /// fila persistente das anomalias (`pending_issues`). Diferente de
+  /// [enfileirar], NÃO aplica template nem cooldown próprio.
+  ///
+  /// Criado pro relato MANUAL do promotor ("Reportar problema"): antes ele
+  /// fazia POST direto e, se o aparelho estava offline, o `catch` engolia e
+  /// o log SE PERDIA (não havia fila). Agora o relato vira um item da fila e
+  /// drena quando houver rede — mesmo mecanismo das anomalias (que sabemos
+  /// funcionar: a fila sobrevive a restart e ao rate limit). NUNCA lança.
+  /// Retorna `true` se enfileirou.
+  static Future<bool> enfileirarIssuePronta({
+    required AppDatabase db,
+    required String tipo,
+    required String titulo,
+    required String bodyMd,
+    required List<String> labels,
+  }) async {
+    try {
+      final agora = DateTime.now().toIso8601String();
+      await db.into(db.pendingIssues).insert(PendingIssuesCompanion(
+            id: drift.Value(const Uuid().v4()),
+            tipo: drift.Value(tipo),
+            // entidadeId omitido (NULL) — relato manual não é de 1 visita;
+            // assim `_injetarUrlsFotos` no drenador não tenta anexar fotos.
+            titulo: drift.Value(titulo),
+            bodyMd: drift.Value(bodyMd),
+            labelsJson: drift.Value(jsonEncode(labels)),
+            nextRetryAt: drift.Value(agora),
+            createdAt: drift.Value(agora),
+          ));
+      return true;
+    } catch (e) {
+      try {
+        await PersistentLogger.append(
+            'anomalia', 'Falha ao enfileirar issue pronta ($tipo): $e',
+            erro: true);
+      } catch (_) {}
+      return false;
+    }
+  }
+
   /// Enfileira upload de uma foto física pro bucket bug-reports. Usado
   /// junto com [enfileirar] quando a anomalia precisa anexar a foto pra
   /// recovery posterior (D1, D2). NUNCA lança.
