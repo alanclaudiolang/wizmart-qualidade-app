@@ -104,6 +104,20 @@ limitação real, dizer o que foi verificado para chegar nela.
    4. Confirmada a perda/zeramento por timing, perguntar: "e se a rede
       fosse pior?" — se a resposta é "perda real", é bug grave, não
       "rede ruim".
+   5. **INVESTIGAR ISSUE DE PONTA A PONTA (definido pelo Alan em
+      15/06/2026).** Sempre que o Alan perguntar sobre issue(s), investigar
+      profunda e detalhadamente TODOS os eventos relacionados, de ponta a
+      ponta, ANTES de responder. **NUNCA concluir pela contagem, título,
+      label ou estado agregado** — abrir os eventos: a data/hora dos logs
+      DENTRO do issue, o `created_at` vs a data dos eventos, o estado atual
+      no servidor (drenou? mudou?), e a cronologia completa. (Caso que
+      motivou: 15/06 eu vi "315 D5 hoje" e concluí "Camila/Adonias com
+      trabalho preso, peça relogin" — ERRADO. Abrindo os logs: todos eram
+      de 12/06 = telemetria REPRESADA pelo rate limit do GitHub, postada
+      com atraso; o trabalho deles JÁ tinha drenado. Eu quase induzi o
+      Alan a uma ação inútil.) O número alto de issues quase sempre é fila
+      represada/telemetria atrasada, não problema novo — confirmar pela
+      data interna antes de afirmar qualquer coisa.
 
 ## Fatos do domínio (definidos pelo Alan em 11/06/2026)
 
