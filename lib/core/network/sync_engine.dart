@@ -16,6 +16,8 @@ import '../utils/auth_session_expired.dart';
 import '../utils/error_classifier.dart';
 import '../constants/app_constants.dart';
 import '../utils/sync_logger.dart';
+import '../utils/last_visita_service.dart';
+import '../utils/processing_tracker.dart';
 import 'sync_pause.dart';
 
 /// Hash determinístico ENTRE RUNS pra usar como idTemp local e como
@@ -124,6 +126,44 @@ class SyncEngine {
   }) {
     if (idadeDesdeUltimaAtividade > const Duration(hours: 2)) return false;
     return telaAberta || processandoAtivo || fotosWatermarkPending > 0;
+  }
+
+  /// Lê o DB + sinais de UI e decide se o PIVÔ (consolidação idTemp→
+  /// serverId) desta visita deve ESPERAR — item 1 (Causa A). Extraído pra
+  /// ser testável sem servidor: o chamador passa os sinais de UI (tela
+  /// aberta / processando) já lidos dos services.
+  static Future<bool> consolidacaoDeveEsperar(
+    AppDatabase db,
+    int entityId, {
+    required bool telaAberta,
+    required bool processandoAtivo,
+  }) async {
+    final emVoo = await db.getPendingPhotosEmVoo(entityId);
+    final visita = await db.getVisitaById(entityId);
+    final ultima = _ultimaAtividadeVisita(visita, emVoo);
+    return deveAdiarConsolidacao(
+      telaAberta: telaAberta,
+      processandoAtivo: processandoAtivo,
+      fotosWatermarkPending: emVoo.length,
+      idadeDesdeUltimaAtividade: DateTime.now().difference(ultima),
+    );
+  }
+
+  /// Momento da última atividade da visita (pro timeout anti-trava de 2h
+  /// do item 1): a foto em voo mais recente, ou a abertura, ou agora.
+  static DateTime _ultimaAtividadeVisita(
+      Visita? visita, List<PendingPhoto> emVoo) {
+    DateTime? maior;
+    for (final p in emVoo) {
+      final t = DateTime.tryParse(p.createdAt);
+      if (t != null && (maior == null || t.isAfter(maior))) maior = t;
+    }
+    final aberturaStr = visita?.diaHoraAbertura;
+    if (aberturaStr != null) {
+      final ab = DateTime.tryParse(aberturaStr);
+      if (ab != null && (maior == null || ab.isAfter(maior))) maior = ab;
+    }
+    return maior ?? DateTime.now();
   }
 
   /// Monta o caminho da foto no Storage. Retorna null se [authUid] estiver
@@ -1218,6 +1258,40 @@ class SyncEngine {
         await _db.deleteVisitaById(entityId);
         await _db.deleteOutboxItem(item.id);
         return;
+      }
+
+      // ── ITEM 1 (Causa A): adia o PIVÔ enquanto a visita está EM USO ──
+      // O caminho de INSERT abaixo chama consolidarVisitaNoServer, que
+      // troca a PK idTemp→serverId. Se isso ocorre enquanto o promotor
+      // ainda trabalha NESTA visita (tela aberta, foto em voo ou
+      // processamento), a próxima foto/escrita da tela (que usa o idTemp
+      // fixo) aponta pro id morto e é DESCARTADA como órfã (D7 — Thiago
+      // #4135, Gabriel #4136, Adilson #3925, build 251). O `Posterga`
+      // acima só cobre o slot exigido pela operação (o `open` só exige
+      // `antes`), então NÃO via a captura de `depois` em andamento — a
+      // brecha exata do #4135. Aqui, só quando o pivô aconteceria
+      // (serverId==null), se a visita está em uso, deixamos o item em
+      // pending com retry curto e consolidamos quando ela ficar ociosa
+      // (promotor finaliza ou sai da tela). Timeout de 2h em
+      // deveAdiarConsolidacao evita travar por flag presa (crash da tela).
+      if (visita.serverId == null) {
+        final telaAberta = (await LastVisitaService.get()) == entityId;
+        final processando = ProcessingTracker.isActive(entityId);
+        if (await consolidacaoDeveEsperar(_db, entityId,
+            telaAberta: telaAberta, processandoAtivo: processando)) {
+          _logger.log(
+              'outbox',
+              'ADIANDO pivô visita id=$entityId (em uso: tela=$telaAberta '
+              'proc=$processando) — evita foto órfã (Causa A); retry ~20s');
+          await _db.updateOutboxItem(OutboxItemsCompanion(
+            id: Value(item.id),
+            status: const Value('pending'),
+            nextRetryAt: Value(DateTime.now()
+                .add(const Duration(seconds: 20))
+                .toIso8601String()),
+          ));
+          return;
+        }
       }
 
       final payload =
