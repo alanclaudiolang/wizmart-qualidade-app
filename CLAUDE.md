@@ -158,6 +158,14 @@ limitação real, dizer o que foi verificado para chegar nela.
   programação do dia a partir dos gabaritos; chamada no pull do
   `sync_engine.dart` e na `programado_screen.dart`). A lógica que carimba
   Não Realizada/Incompleta é do lado do Supabase (não visível no app).
+- **🛑 O SUPABASE E A EDGE FUNCTION SEMPRE FUNCIONARAM CORRETAMENTE — o
+  problema é SEMPRE do app (definido pelo Alan em 15/06/2026, reforçado
+  múltiplas vezes).** PROIBIDO atribuir qualquer bug de campo ao servidor,
+  à edge function, à rede ou a "intermitência" do backend. Quando a edge
+  retorna a vaga e o promotor não a vê, a causa está no app (pull/filtro/
+  exibição) — investigar o CÓDIGO do app a fundo, de ponta a ponta, até
+  achar o ponto exato onde a vaga válida se perde. "Inventar que o problema
+  é dos outros" (edge/Supabase/rede) é exatamente o erro a NÃO cometer.
 - Validado nos dados em 11/06: nenhuma visita "Em Andamento" em datas
   passadas; visitas "Incompleta" (263 desde 01/06) em geral sem nenhuma
   URL no slot antes e/ou depois.
