@@ -37,9 +37,22 @@
 - Conferência: todas as 53 URLs respondem 200; OCR de amostra confirmou
   que o slot do caminho bate com o slot da marca d'água em todas.
 
-## Pendente
-- **3 visitas de 11/06 já Concluídas** (LENNY 121068, CACAY 121229,
-  TACO 122833): o Edilson mandou a galeria do dia inteiro. Pendente
-  **comparar por posição (badge) com as fotos atuais do bucket e
-  substituir só as diferentes** (regra do Alan).
-- As 21 fotos sem slot ficaram de fora (relação no histórico da conversa).
+## 3 visitas já Concluídas (LENNY/CACAY/TACO) — comparadas, SEM substituição
+LENNY 121068, CACAY 121229, TACO 122833. O Edilson mandou a galeria do dia
+inteiro, então elas também vieram no zip. Comparei **pelo horário da marca
+d'água** (identidade da foto) posição a posição:
+- **TACO**: 4 antes + 4 depois — todas IGUAIS às do bucket.
+- **CACAY**: 5 depois iguais; 2 antes iguais (+2 antes do bucket que o OCR
+  não leu o horário, mas as demais batem).
+- **LENNY**: 4 depois iguais; 3 antes iguais + 1 antes a MAIS já no bucket
+  (08:20:39) que não veio no zip.
+Conclusão: o trabalho dessas 3 **sincronizou normalmente** — o bucket já
+tem as originais. Substituir só colocaria cópias do WhatsApp (qualidade
+pior) das mesmas fotos. **Decisão do Alan (15/06): deixar como estão.**
+
+## As 21 fotos sem slot — fora (decisão do Alan: não subir)
+Não têm a 3ª linha "FOTO Antes/Depois" na marca d'água, então não dava
+para saber antes/depois sem chutar. Relação completa no histórico da
+conversa. Consequência: CONCREMAT ficou Incompleta (só "antes").
+
+## Status final: CASO ENCERRADO ✅
