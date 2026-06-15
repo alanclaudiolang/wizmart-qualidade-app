@@ -67,7 +67,18 @@ class AnomaliaReporter {
 
       // Monta body + grava na fila. Faz fora do cooldown pra não bloquear
       // se algo der ruim aqui.
-      final titulo = '[ANOMALIA][$tipo] $resumo';
+      // Promotor no TÍTULO (identificação imediata, sem abrir o corpo).
+      String promo = 'id ?';
+      try {
+        final sess = await SessionService.getSession();
+        final nome = sess?.nome.trim() ?? '';
+        final primeiro =
+            nome.isEmpty ? '' : nome.split(RegExp(r'\s+')).take(2).join(' ');
+        promo = primeiro.isEmpty
+            ? 'id ${sess?.userId ?? '?'}'
+            : '$primeiro (id ${sess?.userId ?? '?'})';
+      } catch (_) {}
+      final titulo = '[ANOMALIA][$tipo] $promo — $resumo';
       final body = await _montarBodyMarkdown(
         db: db,
         tipo: tipo,

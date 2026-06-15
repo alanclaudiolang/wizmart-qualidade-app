@@ -41,12 +41,45 @@ class PersistentLogger {
     return _writeQueue;
   }
 
+  // Dedup de linha repetida: um loop (ex. outbox em erro) escrevia
+  // centenas de linhas idênticas e afogava as linhas úteis (o log só
+  // guarda as últimas 2000). Agora linhas consecutivas IGUAIS viram 1
+  // linha + um resumo "(repetiu Nx)" — mantém o log diagnóstico.
+  static String? _lastKey;
+  static int _dupCount = 0;
+  static String? _dupFirstTs;
+
   static Future<void> _appendImpl(String tag, String msg,
       {bool erro = false}) async {
     try {
       final f = await _file();
       final ts = DateTime.now().toIso8601String();
       final flag = erro ? ' ERRO' : '';
+      final key = '$tag|$erro|$msg';
+      if (key == _lastKey) {
+        _dupCount++;
+        _dupFirstTs ??= ts;
+        // Em loops MUITO longos, marca progresso a cada 200 — sem isso, se
+        // nenhuma outra linha vier, o resumo nunca seria escrito.
+        if (_dupCount % 200 == 0) {
+          await f.writeAsString(
+            '$ts [log] (repetiu ${_dupCount}x desde $_dupFirstTs) $msg\n',
+            mode: FileMode.append,
+            flush: false,
+          );
+        }
+        return;
+      }
+      if (_dupCount > 0) {
+        await f.writeAsString(
+          '$ts [log] (linha anterior repetiu ${_dupCount}x desde $_dupFirstTs)\n',
+          mode: FileMode.append,
+          flush: false,
+        );
+      }
+      _lastKey = key;
+      _dupCount = 0;
+      _dupFirstTs = null;
       await f.writeAsString(
         '$ts [$tag]$flag $msg\n',
         mode: FileMode.append,
