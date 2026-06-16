@@ -5,6 +5,29 @@
 > feitas em 11/06 (API pública da Apple, codemagic.yaml). Substitui o
 > contexto que estava preso no Codespace.
 
+## ⚠️ ATUALIZAÇÃO 16/06/2026 ~00:15 UTC — APROVADO MAS NÃO APARECE NA LOJA; CHAMADO ABERTO
+
+Apesar de aprovado/liberado (estado `READY_FOR_DISTRIBUTION`,
+`downloadable=true`, Brasil, grátis, sem release futuro/faseado), o app
+**NÃO apareceu na App Store pública após ~25h**: a página
+https://apps.apple.com/app/id6774250898 retorna "An Error Occurred" e o
+app não é encontrado na busca nem no iTunes Lookup/Search API em nenhuma
+loja (br, us, pt). Configuração toda verificada — é falha de propagação/
+publicação do lado da Apple, sem ação possível pela API.
+
+**Chamado aberto na Apple (Developer → Contato → Distribuição → Outras
+perguntas sobre distribuição):**
+- **Nº do caso: 102916582924** (conta SMART CAFE / contato@smartcafe.com.br)
+- Aberto em 16/06/2026 ~00:14 UTC. Apple responde em até 2 dias úteis
+  (por e-mail no contato@smartcafe.com.br).
+- Resumo enviado: versão 1.0 (build 20) READY_FOR_DISTRIBUTION há +25h
+  mas invisível na loja; pedida investigação/agilização.
+
+**Próximo passo:** aguardar retorno da Apple. Quando responderem (ou se
+o app aparecer antes), reverificar o link/busca e seguir a partir daí.
+Indicador confiável de que entrou no ar: `itunes.apple.com/lookup?id=
+6774250898&country=br` retornar resultado.
+
 ## ✅ ATUALIZAÇÃO 14/06/2026 ~22:35 UTC — APROVADO E PUBLICADO
 
 App **aprovado pela Apple e publicado na App Store** (versão 1.0,
