@@ -167,7 +167,9 @@ class ErrorReporter {
 
     try {
       final ctx = await _coletarContexto();
-      final logLines = await PersistentLogger.readRecent(lines: 1000);
+      // 100% do log de HOJE (não "últimas N linhas") — mesmo texto vai pro
+      // arquivo compartilhado e pro issue do GitHub. Regra do Alan (16/06).
+      final logLines = await PersistentLogger.readToday();
 
       final resumo = descricao.length > 60
           ? '${descricao.substring(0, 60).replaceAll('\n', ' ')}…'
@@ -208,7 +210,7 @@ class ErrorReporter {
       b.writeln('- versão define: ${a['appVersionDefine'] ?? '?'}');
       b.writeln('- pubspec: ${a['versao'] ?? '?'}+${a['build'] ?? '?'}');
       b.writeln();
-      b.writeln('## Log (últimas 1000 linhas)');
+      b.writeln('## Log (hoje)');
       b.writeln('```');
       b.writeln(logLines);
       b.writeln('```');
