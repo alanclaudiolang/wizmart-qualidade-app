@@ -23,6 +23,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:disk_space_plus/disk_space_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:system_info_plus/system_info_plus.dart';
 
 import '../constants/app_constants.dart';
@@ -139,8 +140,14 @@ class ErrorReporter {
   ///   - Sem cooldown (cada envio é uma nova issue).
   ///   - Sem erro/stack — só a descrição livre do promotor.
   ///   - Label `user-report` em vez de `auto`.
-  /// Retorna o número da issue criada (ou null em falha).
-  static Future<bool> reportarUsuario({
+  /// Gera o relato (log + contexto), ENFILEIRA pro GitHub e ESCREVE um
+  /// arquivo `.json` com o issue completo. Retorna o CAMINHO do arquivo
+  /// (ou null em falha) pra UI compartilhar via WhatsApp/folha de
+  /// compartilhamento — assim o relato chega ao suporte MESMO sem rede
+  /// (o aparelho que não alcança o servidor é justamente o que precisa
+  /// reportar). Pedido do Alan (16/06): "o app não consegue enviar, mas
+  /// eu recebo o arquivo por WhatsApp".
+  static Future<String?> reportarUsuario({
     required AppDatabase db,
     required String descricao,
   }) async {
@@ -150,14 +157,12 @@ class ErrorReporter {
       'Promotor reportou: $descricao',
     );
 
-    // Anti-duplo-toque: com o enfileiramento instantâneo o promotor pode
-    // tocar 2x e gerar 2 relatos iguais (caso Caline+Paula, build 176).
-    // Janela curta de dedup — não bloqueia relatos legítimos espaçados.
+    // Anti-duplo-toque SÓ pro envio ao GitHub (evita 2 issues iguais,
+    // caso Caline+Paula build 176). O arquivo é gerado SEMPRE — re-tocar
+    // só reabre a folha de compartilhamento, sem duplicar issue.
     final agora = DateTime.now();
-    if (_ultimoRelatoManual != null &&
-        agora.difference(_ultimoRelatoManual!) < const Duration(seconds: 10)) {
-      return true; // já registrado há instantes — trata como sucesso
-    }
+    final recente = _ultimoRelatoManual != null &&
+        agora.difference(_ultimoRelatoManual!) < const Duration(seconds: 10);
     _ultimoRelatoManual = agora;
 
     try {
@@ -210,37 +215,56 @@ class ErrorReporter {
       b.writeln();
       b.writeln('_Issue criado pelo promotor via menu Reportar problema._');
 
-      // ENFILEIRA na fila persistente (NÃO posta direto): sobrevive offline
-      // e a restart; o AnomaliaQueueProcessor drena quando houver rede, com
-      // partição de body e backoff. Antes, o POST direto falhava sem rede e
-      // o relato SE PERDIA — caso Thamara 15/06, cujo relato das 08:34 nunca
-      // chegou ao GitHub porque o aparelho estava sem rede no momento.
-      final ok = await AnomaliaReporter.enfileirarIssuePronta(
-        db: db,
-        tipo: 'manual',
-        titulo: title,
-        bodyMd: b.toString(),
-        labels: [
-          'bug',
-          'user-report',
-          'screen:$tela',
-          'build:${AppConstants.buildNumber}',
-        ],
-      );
-      await PersistentLogger.append(
-          'user-report:$tela',
-          ok
-              ? 'Relato enfileirado (drena quando houver rede)'
-              : 'Falha ao enfileirar relato',
-          erro: !ok);
-      return ok;
+      final labels = [
+        'bug',
+        'user-report',
+        'screen:$tela',
+        'build:${AppConstants.buildNumber}',
+      ];
+
+      // ENFILEIRA pro GitHub (drena quando houver rede). Só se não for um
+      // duplo-toque recente, pra não gerar 2 issues iguais.
+      if (!recente) {
+        // ignore: discarded_futures
+        AnomaliaReporter.enfileirarIssuePronta(
+          db: db,
+          tipo: 'manual',
+          titulo: title,
+          bodyMd: b.toString(),
+          labels: labels,
+        );
+      }
+
+      // ESCREVE o issue completo num ARQUIVO .json — o caminho volta pra UI
+      // compartilhar via WhatsApp. É o que garante que o relato chega ao
+      // suporte mesmo se o aparelho não alcança o servidor.
+      final prom = (ctx['promotor'] as Map?) ?? {};
+      final nomeSan = ((prom['nome'] as String?) ?? 'promotor')
+          .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+      final ts = DateTime.now()
+          .toIso8601String()
+          .replaceAll(RegExp(r'[:.]'), '-')
+          .substring(0, 19);
+      final dir = await getTemporaryDirectory();
+      final arquivo = File('${dir.path}/relato_${nomeSan}_$ts.json');
+      await arquivo.writeAsString(jsonEncode({
+        'title': title,
+        'labels': labels,
+        'promotor': ctx['promotor'],
+        'device': ctx['device'],
+        'app': ctx['app'],
+        'body': b.toString(),
+      }));
+      await PersistentLogger.append('user-report:$tela',
+          'Relato gerado em arquivo (${arquivo.path}) + enfileirado=${!recente}');
+      return arquivo.path;
     } catch (e) {
       await PersistentLogger.append(
         'user-report:$tela',
-        'Exceção ao enfileirar relato: $e',
+        'Exceção ao gerar relato: $e',
         erro: true,
       );
-      return false;
+      return null;
     }
   }
 

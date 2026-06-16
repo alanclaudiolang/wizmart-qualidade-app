@@ -12,6 +12,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/apk_updater_service.dart';
 import '../../../core/utils/auth_session_expired.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/logout_service.dart';
@@ -359,36 +360,44 @@ class _HomeContent extends ConsumerWidget {
     );
 
     final db = ref.read(appDatabaseProvider);
-    final ok = await ErrorReporter.reportarUsuario(
+    final arquivo = await ErrorReporter.reportarUsuario(
       db: db,
       descricao: '(relato sem descrição — log+sondas no body)',
     );
-    // Dispara o sync pra DRENAR o relato agora se houver rede; offline,
-    // ele fica na fila persistente e drena depois — não se perde mais
-    // (antes o POST direto falhava sem rede e o log sumia).
-    if (ok) {
-      // ignore: discarded_futures
-      ref.read(syncEngineProvider).processOutbox();
-    }
+    // Dispara o sync pra DRENAR o relato pro GitHub agora se houver rede;
+    // offline, fica na fila e drena depois.
+    // ignore: discarded_futures
+    ref.read(syncEngineProvider).processOutbox();
     if (!context.mounted) return;
     messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          ok
-              ? 'Relato registrado! Será enviado assim que houver internet. Obrigado!'
-              : 'Não consegui registrar o relato agora. Tente de novo.',
-        ),
-        backgroundColor: ok ? AppColors.primary : AppColors.danger,
-        duration: const Duration(seconds: 4),
-      ),
-    );
 
-    // Abre WhatsApp do desenvolvedor com mensagem pré-preenchida —
-    // promotor já tem o canal direto sem precisar digitar nada. Falha
-    // silenciosa: se o WhatsApp não estiver instalado ou der erro,
-    // o relato já foi enviado (issue acima).
-    await _abrirWhatsAppSuporte();
+    // COMPARTILHA o arquivo do relato (folha do WhatsApp). Garante que o
+    // log chega ao suporte MESMO sem rede — o promotor escolhe WhatsApp e
+    // encaminha o arquivo. (Pedido do Alan, 16/06.)
+    if (arquivo != null) {
+      try {
+        final session = await SessionService.getSession();
+        final nome = session?.nome.trim() ?? '';
+        await Share.shareXFiles(
+          [XFile(arquivo)],
+          text: 'Relato de problema — app WizMart'
+              '${nome.isEmpty ? '' : ' ($nome)'}. '
+              'Encaminhe este arquivo para o suporte.',
+        );
+      } catch (_) {
+        // Se o compartilhamento falhar, cai no WhatsApp por texto (canal
+        // direto), e o relato ainda foi enfileirado pro GitHub acima.
+        await _abrirWhatsAppSuporte();
+      }
+    } else {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Não consegui gerar o relato agora. Tente de novo.'),
+          backgroundColor: AppColors.danger,
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   Future<void> _abrirWhatsAppSuporte() async {
