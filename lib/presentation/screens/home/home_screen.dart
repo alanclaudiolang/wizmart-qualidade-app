@@ -1,4 +1,5 @@
 // lib/presentation/screens/home/home_screen.dart
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -162,6 +163,17 @@ class _HomeContent extends ConsumerWidget {
 
   Future<void> _abrirDownloadAPK(
       BuildContext context, WidgetRef ref, AppVersionInfo info) async {
+    // iOS: não existe APK — abre a página do app na App Store. O promotor
+    // toca em "Atualizar" lá; o iOS substitui o app (Apple não permite
+    // instalar por fora da loja).
+    if (Platform.isIOS) {
+      final storeUrl = info.appStoreUrl;
+      if (storeUrl != null) {
+        await launchUrl(Uri.parse(storeUrl),
+            mode: LaunchMode.externalApplication);
+      }
+      return;
+    }
     final url = info.apkDownloadUrl;
     if (url == null) return;
 
@@ -213,6 +225,60 @@ class _HomeContent extends ConsumerWidget {
 
   Future<void> _mostrarBloqueioObrigatorio(
       BuildContext context, WidgetRef ref, AppVersionInfo info) async {
+    // iOS: bloqueio obrigatório quando a versão instalada difere da
+    // publicada na App Store. Mantém as MESMAS pré-condições de segurança
+    // da home (só na home, sem processamento/sync ativo) para não
+    // interromper trabalho em andamento. O botão abre a App Store e a
+    // tela permanece bloqueada até o promotor atualizar pela loja.
+    if (Platform.isIOS) {
+      final storeUrl = info.appStoreUrl;
+      if (storeUrl == null) {
+        _bloqueioObrigatorioTratado = false;
+        return;
+      }
+      if (CurrentScreen.nome != 'home') {
+        _bloqueioObrigatorioTratado = false;
+        return;
+      }
+      final syncEngine = ref.read(syncEngineProvider);
+      if (ProcessingTracker.total > 0 || syncEngine.isSyncing) {
+        _bloqueioObrigatorioTratado = false;
+        return;
+      }
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogCtx) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            backgroundColor: AppColors.card,
+            title: const Text(
+              'Atualização obrigatória',
+              style: TextStyle(color: AppColors.textPrimary),
+            ),
+            content: Text(
+              'Há uma nova versão do app na App Store e a atualização é '
+              'obrigatória. Versão nova: ${info.latestBuild ?? '?'}.',
+              style: const TextStyle(color: AppColors.textSecondary),
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () async {
+                  await _abrirDownloadAPK(context, ref, info);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.onPrimary,
+                ),
+                child: const Text('Atualizar na App Store'),
+              ),
+            ],
+          ),
+        ),
+      );
+      return;
+    }
     final url = info.apkDownloadUrl;
     if (url == null) {
       _bloqueioObrigatorioTratado = false;

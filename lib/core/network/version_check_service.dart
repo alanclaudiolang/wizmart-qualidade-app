@@ -32,12 +32,17 @@ class AppVersionInfo {
   /// incluir `[FORCE-UPDATE]` em qualquer lugar da descrição.
   final bool forceUpdate;
 
+  /// URL da página do app na App Store (preenchida só no iOS). Quando
+  /// presente, o botão de atualizar abre a loja em vez de baixar APK.
+  final String? appStoreUrl;
+
   const AppVersionInfo({
     required this.outdated,
     this.latestBuild,
     this.apkDownloadUrl,
     this.publishedAt,
     this.forceUpdate = false,
+    this.appStoreUrl,
   });
 
   static const upToDate = AppVersionInfo(outdated: false);
@@ -161,16 +166,96 @@ class VersionCheckService {
       return AppVersionInfo.upToDate;
     }
   }
+
+  // ---- iOS: comparação com a versão publicada na App Store ----
+  //
+  // A Apple proíbe instalar IPA por fora da loja, então não há
+  // auto-update OTA como no Android. Aqui consultamos a API pública de
+  // lookup da Apple (sem login, sem Supabase) para descobrir qual versão
+  // está PUBLICADA na App Store e comparamos com a versão instalada.
+
+  static const _appStoreId = '6774250898';
+  static const _iosLookupApi =
+      'https://itunes.apple.com/lookup?id=$_appStoreId&country=br';
+  static const _appStorePage =
+      'https://apps.apple.com/br/app/id$_appStoreId';
+
+  /// Consulta a versão publicada na App Store e marca atualização
+  /// obrigatória se a versão instalada ([AppConstants.appVersion]) for
+  /// MENOR que a da loja. Fail-open: qualquer falha (offline, app ainda
+  /// não indexado na loja, parsing, versão não-numérica como 'dev') →
+  /// [AppVersionInfo.upToDate], NUNCA bloqueia.
+  static Future<AppVersionInfo> checkIOS() async {
+    try {
+      final res = await http
+          .get(Uri.parse(_iosLookupApi),
+              headers: {'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 6));
+      if (res.statusCode != 200) return AppVersionInfo.upToDate;
+
+      final json = jsonDecode(res.body) as Map<String, dynamic>;
+      final results = (json['results'] as List?) ?? const [];
+      if (results.isEmpty) return AppVersionInfo.upToDate;
+
+      final storeVersion =
+          (results.first as Map<String, dynamic>)['version'] as String?;
+      if (storeVersion == null) return AppVersionInfo.upToDate;
+
+      final installed = AppConstants.appVersion;
+      if (!_versionIsOlder(installed, storeVersion)) {
+        return AppVersionInfo.upToDate;
+      }
+
+      return AppVersionInfo(
+        outdated: true,
+        latestBuild: storeVersion,
+        forceUpdate: true,
+        appStoreUrl: _appStorePage,
+      );
+    } catch (_) {
+      return AppVersionInfo.upToDate;
+    }
+  }
+
+  /// `true` se [installed] é estritamente menor que [store], comparando
+  /// versões no formato "x.y.z" numericamente, segmento a segmento.
+  /// Se qualquer um não for parseável (ex.: 'dev'), retorna `false`
+  /// (fail-open: não bloqueia).
+  static bool _versionIsOlder(String installed, String store) {
+    final a = _parseVersion(installed);
+    final b = _parseVersion(store);
+    if (a == null || b == null) return false;
+    final len = a.length > b.length ? a.length : b.length;
+    for (var i = 0; i < len; i++) {
+      final ai = i < a.length ? a[i] : 0;
+      final bi = i < b.length ? b[i] : 0;
+      if (ai != bi) return ai < bi;
+    }
+    return false;
+  }
+
+  static List<int>? _parseVersion(String v) {
+    final parts = v.trim().split('.');
+    final out = <int>[];
+    for (final p in parts) {
+      final n = int.tryParse(p.trim());
+      if (n == null) return null;
+      out.add(n);
+    }
+    return out.isEmpty ? null : out;
+  }
 }
 
 /// Provider — checa uma vez ao montar e expõe o resultado. Usar
 /// `ref.invalidate(appVersionProvider)` para forçar nova checagem.
 ///
-/// iOS não tem auto-update OTA (Apple proíbe). Lá o app é distribuído
-/// via TestFlight e atualizações chegam pelo próprio TestFlight, então
-/// retornamos `upToDate` sempre — sem badge "atualizar" e sem dialog de
-/// bloqueio obrigatório.
+/// Android: consulta o release `v-latest` no GitHub (auto-update por APK).
+/// iOS: consulta a versão PUBLICADA na App Store (API pública da Apple,
+/// sem Supabase) e força atualização se a instalada for menor — o botão
+/// de atualizar abre a App Store, pois a Apple não permite instalar
+/// IPA/APK por fora da loja.
 final appVersionProvider = FutureProvider<AppVersionInfo>((ref) async {
-  if (!Platform.isAndroid) return AppVersionInfo.upToDate;
-  return VersionCheckService.check();
+  if (Platform.isAndroid) return VersionCheckService.check();
+  if (Platform.isIOS) return VersionCheckService.checkIOS();
+  return AppVersionInfo.upToDate;
 });

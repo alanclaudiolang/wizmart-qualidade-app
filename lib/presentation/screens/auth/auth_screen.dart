@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/network/sync_engine.dart' show appDatabaseProvider;
 import '../../../core/utils/session_service.dart';
@@ -421,6 +423,49 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   /// aqui NÃO espera D+1 — promotor ainda não tem dados locais, então
   /// pode/deve atualizar imediatamente.
   Future<void> _mostrarForceUpdateDeslogado(AppVersionInfo info) async {
+    // iOS: não há APK. Bloqueia o login e o botão abre a App Store; a
+    // tela permanece bloqueada até o promotor atualizar pela loja.
+    if (Platform.isIOS) {
+      final storeUrl = info.appStoreUrl;
+      if (storeUrl == null) {
+        _bloqueioForceUpdateAberto = false;
+        return;
+      }
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogCtx) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            backgroundColor: Colors.white,
+            title: const Text(
+              'Atualização obrigatória',
+              style: TextStyle(color: AppColors.textPrimary),
+            ),
+            content: Text(
+              'Há uma nova versão do app na App Store. Atualize antes de '
+              'entrar. Versão nova: ${info.latestBuild ?? '?'}.',
+              style: const TextStyle(color: AppColors.textSecondary),
+            ),
+            actions: [
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF38A169),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () async {
+                  await launchUrl(Uri.parse(storeUrl),
+                      mode: LaunchMode.externalApplication);
+                },
+                child: const Text('Atualizar na App Store'),
+              ),
+            ],
+          ),
+        ),
+      );
+      return;
+    }
     final url = info.apkDownloadUrl;
     if (url == null) {
       _bloqueioForceUpdateAberto = false;
