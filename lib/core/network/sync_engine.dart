@@ -48,6 +48,25 @@ int _hashDeterministico(int gabaritoId, int pdvId, String turno) {
       0x7FFFFFFF;
 }
 
+/// Resultado da decisão de reconciliação por DIA (visitas de D-1 pra trás
+/// presas no outbox). Ou reconcilia com 1 visita do servidor, ou ESTACIONA
+/// (não fica em loop, não chuta) quando há 0 ou 2+ candidatos.
+enum TipoReconcile { reconciliar, estacionar }
+
+class ResultadoReconcile {
+  final TipoReconcile tipo;
+  final int? serverId;
+  final int statusFinal; // 1 (Concluída) ou 5 (Incompleta) já com a trava
+  final String motivo;
+  const ResultadoReconcile.reconciliar(
+      this.serverId, this.statusFinal, this.motivo)
+      : tipo = TipoReconcile.reconciliar;
+  const ResultadoReconcile.estacionar(this.motivo)
+      : tipo = TipoReconcile.estacionar,
+        serverId = null,
+        statusFinal = 0;
+}
+
 class SyncEngine {
   final AppDatabase _db;
   final SupabaseClient _supabase;
@@ -210,6 +229,72 @@ class SyncEngine {
     return m.contains('pgrst116') ||
         m.contains('cannot coerce') ||
         m.contains('contains 0 rows');
+  }
+
+  /// True se a visita é de D-1 PRA TRÁS (ontem ou mais antiga), pelo dia
+  /// civil local. Hoje (e futuro) retorna false — o escopo da reconciliação
+  /// por dia é só o passado, pra NUNCA tocar o trabalho corrente. Pura e
+  /// testável (recebe `agora` opcional). Sem data → false (não aplica, por
+  /// segurança).
+  static bool visitaEhDeDiaAnterior(String? diaHoraAgendado,
+      {DateTime? agora}) {
+    final dt = DateTime.tryParse(diaHoraAgendado ?? '');
+    if (dt == null) return false;
+    final hoje = (agora ?? DateTime.now()).toLocal();
+    final hojeMeiaNoite = DateTime(hoje.year, hoje.month, hoje.day);
+    final ag = dt.toLocal();
+    final agMeiaNoite = DateTime(ag.year, ag.month, ag.day);
+    return agMeiaNoite.isBefore(hojeMeiaNoite);
+  }
+
+  /// Limites [início, fim) do DIA CIVIL da visita, em UTC ISO — pra buscar
+  /// no servidor por dia (timestamptz), não pela hora exata.
+  static List<String> boundsDiaCivilUtc(String diaHoraAgendado) {
+    final ag = DateTime.parse(diaHoraAgendado).toLocal();
+    final inicio = DateTime(ag.year, ag.month, ag.day);
+    final fim = inicio.add(const Duration(days: 1));
+    return [inicio.toUtc().toIso8601String(), fim.toUtc().toIso8601String()];
+  }
+
+  /// Decide o reconcile de uma visita de D-1 pra trás quando o INSERT bateu
+  /// em conflito (servidor já tem a visita do dia). PURA e testável.
+  ///   - [candidatos]: visitas do servidor já filtradas por
+  ///     promotor+gabarito+pdv+turno+DIA. Cada uma: {id, status_visita,
+  ///     fotos_antes, fotos_depois}.
+  ///   - EXATAMENTE 1 → reconcilia. 0 ou 2+ → ESTACIONA (não loop, não chuta).
+  ///   - Trava de status: Concluída (1) só se, no estado FINAL (envio ∪
+  ///     servidor), houver foto antes E depois. Senão, Incompleta (5).
+  static ResultadoReconcile decidirReconcileDiaAnterior({
+    required List<Map<String, dynamic>> candidatos,
+    required int statusEnvio,
+    required int fotosAntesEnvio,
+    required int fotosDepoisEnvio,
+  }) {
+    if (candidatos.length != 1) {
+      final motivo = candidatos.isEmpty
+          ? 'servidor recusou como duplicada, mas a busca por dia não achou '
+              '(contradição) — não insiste pra não travar o sync'
+          : 'busca por dia achou ${candidatos.length} visitas (duplicata no '
+              'servidor) — não escolhe pra não arriscar gravar na errada';
+      return ResultadoReconcile.estacionar(motivo);
+    }
+    final c = candidatos.first;
+    final serverId = c['id'] as int;
+    final servAntes = (c['fotos_antes'] as List?)?.length ?? 0;
+    final servDepois = (c['fotos_depois'] as List?)?.length ?? 0;
+    // O UPDATE só envia o array de fotos quando tem foto (>0); então o
+    // estado final = envio se enviou, senão o que o servidor já tinha.
+    final finalAntes = fotosAntesEnvio > 0 ? fotosAntesEnvio : servAntes;
+    final finalDepois = fotosDepoisEnvio > 0 ? fotosDepoisEnvio : servDepois;
+    var statusFinal = statusEnvio;
+    if (statusFinal == 1 && !(finalAntes > 0 && finalDepois > 0)) {
+      statusFinal = 5; // Concluída só com antes E depois; senão Incompleta.
+    }
+    return ResultadoReconcile.reconciliar(
+        serverId,
+        statusFinal,
+        'reconciliado por dia (serverId=$serverId, final antes=$finalAntes '
+        'depois=$finalDepois, status=$statusFinal)');
   }
 
   /// Executa [action] sob exclusão mútua: re-entrância no mesmo isolate
@@ -1363,13 +1448,14 @@ class SyncEngine {
         int novoServerId;
         if (res != null) {
           novoServerId = res['id'] as int;
-        } else {
-          // INSERT virou no-op (conflict). Busca a row existente pela
-          // chave natural e faz UPDATE em vez disso.
+        } else if (!visitaEhDeDiaAnterior(visita.diaHoraAgendado)) {
+          // HOJE / futuro: comportamento INALTERADO (busca pela hora exata).
+          // O escopo da correção por-dia é só D-1 pra trás — o fluxo de hoje
+          // (trabalho corrente) não é tocado.
           _logger.log(
               'outbox',
               'INSERT 0 rows (conflict) — buscando row existente '
-              'por chave natural pra fazer UPDATE');
+              'por chave natural (hora exata) pra fazer UPDATE');
           final existentes = await _supabase
               .from('visitas')
               .select('id')
@@ -1405,6 +1491,84 @@ class SyncEngine {
               'UPSERT-merge: row existente serverId=$novoServerId '
               'recebeu UPDATE com ${payloadMinimo.length} campos (payload mínimo, '
               'preserva status do servidor)');
+        } else {
+          // ── RECONCILIAÇÃO POR DIA (visita de D-1 pra trás presa) ──────────
+          // A hora local e a do servidor podem divergir pra MESMA visita
+          // (caso Thamara: local 09:00 vs servidor 05:00). Casar por hora
+          // exata nunca achava → item em loop eterno, sufocando o sync e
+          // travando a agenda do dia. A unicidade do servidor é por DIA,
+          // então casamos por dia — e só agimos se houver EXATAMENTE 1.
+          final bounds = boundsDiaCivilUtc(visita.diaHoraAgendado!);
+          _logger.log(
+              'outbox',
+              'INSERT 0 rows (conflict, D-1↓) — reconciliando por DIA '
+              '(${bounds[0]}..${bounds[1]})');
+          final candidatos = await _supabase
+              .from('visitas')
+              .select('id, status_visita, fotos_antes, fotos_depois')
+              .eq('id_promotor_associado', visita.idPromotorAssociado as Object)
+              .eq('id_gabarito_associado', visita.idGabaritoAssociado as Object)
+              .eq('id_pdv_associado', visita.idPdvAssociado as Object)
+              .eq('previsao_turno_realizada',
+                  visita.previsaoTurnoRealizada ?? '')
+              .gte('dia_hora_agendado', bounds[0])
+              .lt('dia_hora_agendado', bounds[1]);
+          final fotosAntesEnvio = (payload['fotos_antes'] as List?)?.length ?? 0;
+          final fotosDepoisEnvio =
+              (payload['fotos_depois'] as List?)?.length ?? 0;
+          final dec = decidirReconcileDiaAnterior(
+            candidatos: List<Map<String, dynamic>>.from(candidatos),
+            statusEnvio: payload['status_visita'] as int,
+            fotosAntesEnvio: fotosAntesEnvio,
+            fotosDepoisEnvio: fotosDepoisEnvio,
+          );
+          if (dec.tipo == TipoReconcile.estacionar) {
+            // NÃO fica em loop: estaciona (status='error') e abre alerta.
+            // Não consolida e não apaga o item — fica parado e visível.
+            _logger.log('outbox',
+                'RECONCILE estaciona entityId=$entityId (D-1↓): ${dec.motivo}',
+                erro: true);
+            try {
+              // ignore: discarded_futures
+              AnomaliaReporter.enfileirar(
+                db: _db,
+                tipo: 'reconcile-ambiguo',
+                entidadeId: entityId.toString(),
+                resumo: dec.motivo,
+                contextoExtra: {
+                  'visitaId': entityId,
+                  'gabarito': visita.idGabaritoAssociado,
+                  'pdv': visita.idPdvAssociado,
+                  'turno': visita.previsaoTurnoRealizada,
+                  'dia': visita.diaHoraAgendado,
+                  'candidatos': candidatos.length,
+                },
+                erro: Exception(dec.motivo),
+                stack: StackTrace.current,
+              );
+            } catch (_) {/* alerta é best-effort */}
+            await _db.updateOutboxItem(OutboxItemsCompanion(
+              id: Value(item.id),
+              status: const Value('error'),
+              lastError: Value('reconcile D-1↓: ${dec.motivo}'),
+            ));
+            return;
+          }
+          novoServerId = dec.serverId!;
+          // Trava de status (reforço do Alan): Concluída só com antes E
+          // depois no estado final — dec.statusFinal já aplicou a regra.
+          payload['status_visita'] = dec.statusFinal;
+          final payloadMinimo = _filtrarPayloadMinimo(payload);
+          if (payloadMinimo.isNotEmpty) {
+            await _supabase
+                .from('visitas')
+                .update(payloadMinimo)
+                .eq('id', novoServerId);
+          }
+          _logger.log(
+              'outbox',
+              'RECONCILE por dia OK entityId=$entityId serverId=$novoServerId '
+              'status=${dec.statusFinal} (${payloadMinimo.length} campos)');
         }
         // Consolida a PK local em serverId E re-vincula fotos+outbox na
         // mesma transação. Sem isso, idTemp e serverId divergiam e as
