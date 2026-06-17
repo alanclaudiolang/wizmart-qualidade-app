@@ -469,19 +469,25 @@ class SyncEngine {
   }
 
   /// Ciclo completo de sincronização usado por todos os gatilhos:
-  ///   1) PUSH: envia tudo que está pendente local pro servidor
-  ///   2) PULL: apaga local sincronizado e re-baixa do servidor
-  /// Push e pull rodam sob o MESMO lock — são uma unidade atômica, sem
-  /// outro processo entrando entre o push e o pull. Push antes de pull
-  /// pra não perder dados locais que ainda não foram enviados.
+  ///   1) PULL: baixa do servidor (PDVs, gabaritos, AGENDA DE HOJE) e
+  ///      re-baixa o que está sincronizado.
+  ///   2) PUSH: envia o histórico pendente local pro servidor.
+  /// Pull e push rodam sob o MESMO lock — unidade atômica, em série, sem
+  /// concorrência. ORDEM "hoje primeiro" (definida pelo Alan, 17/06): o app
+  /// é pro trabalho de HOJE; baixa a agenda primeiro e SÓ DEPOIS envia o
+  /// histórico — senão um backlog grande sufoca a agenda (caso Adonias #256:
+  /// 61 visitas pendentes seguravam o envio e a agenda nunca baixava).
+  /// SEGURANÇA verificada: rodar o pull primeiro NÃO perde histórico não
+  /// enviado — a recriação do pull pula visita `syncStatus='pending'`
+  /// (`_pullVisitasDia`) e visita com trabalho (`visitaTemTrabalho`).
   Future<void> fullSync(int promotorId) async {
     if (await SyncPause.isPaused()) {
       _logger.log('sync', 'fullSync pausado (captura ativa).');
       return;
     }
     await _runExclusive('fullSync', () async {
-      await _processOutboxImpl();
-      await _pullAllImpl(promotorId);
+      await _pullAllImpl(promotorId); // 1º: hoje (agenda)
+      await _processOutboxImpl(); // 2º: histórico
     });
   }
 
