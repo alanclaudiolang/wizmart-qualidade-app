@@ -257,7 +257,7 @@ Quando `outdated` mas sem bloqueio: badge "atualizar" sublinhado no AppBar (toca
 
 ⚠️ Os status **locais** diferem dos do servidor: localmente 1=Agendada, 2=Em Andamento, 3=Realizada, 5=Falta (`app_constants.dart:28-32`); no servidor 1=Concluída, 3=Não Realizada, 5=Incompleta (conversão no push via `_toServerStatus` da `visita_screen.dart` — fora do escopo deste doc, mas essencial pra não confundir os filtros abaixo).
 
-**Gatilhos de sync que a home dispara** (todos `fullSync` = push **antes** de pull — pull deleta visitas synced sem pendência; rodar antes do push perderia trabalho ainda não enfileirado no outbox, `home_screen.dart:122-127, 653-656`):
+**Gatilhos de sync que a home dispara** (todos `fullSync` = **PULL (agenda de hoje) antes do PUSH (histórico)** desde 17/06 — "hoje primeiro"; o pull é blindado por guards e não apaga trabalho não enviado, `home_screen.dart:122-127, 653-656`):
 - `initState` (`home_screen.dart:76`, `_triggerSync` `home_screen.dart:118-139` — invalida `contadores/pdvs/visitasHoje/appVersion` após).
 - `AppLifecycleState.resumed` (`home_screen.dart:107-116` — WorkManager pode ter mexido no DB em outro isolate; Stream do Drift pode não notificar).
 - Rede offline→online com a home aberta (`home_screen.dart:411-427`).
@@ -340,7 +340,7 @@ Primeira abertura pós-instalação/login: pede as 3 permissões em sequência f
 | **"Realizadas viram em andamento"** | A consolidação antiga deletava a row PK=serverId (dados frescos) e preservava a row idTemp (dados velhos) — casos Jessica/Felipe/Thamara 09-10/06. Agora preserva os campos da row do servidor e migra só o trabalho novo. | `app_database.dart:458-491` |
 | **Pull apagando visita antes da watermark queue terminar** | `deleteVisitasSincronizadasSemPendencias` precisa considerar `watermark_pending` (não só pending/uploading); sem isso o pull apagava a row idTemp no meio do processamento e o UPDATE `photos_antes` era descartado — array vazio no servidor (Cleiton/Edilson 2026-05-19/20). | `app_database.dart:386-400` |
 | **Órfãs do hash não-determinístico (pré-build 202)** | Pending_photos/outbox apontando pra visitas inexistentes geravam "Posterga infinito" — limpas na migração v4. | `app_database.dart:257-270` |
-| **PUSH antes de PULL** | Pull deleta visitas synced sem pendência local; rodar antes do push pode apagar trabalho recém-criado num gap entre `updateVisita` e `insertOutboxItem`. Ordem fixa em todos os gatilhos. | `home_screen.dart:122-127, 653-656` |
+| **PULL antes de PUSH (HOJE PRIMEIRO, Alan 17/06)** | Era push-antes-de-pull (medo do pull apagar trabalho recém-criado). **Invertido**: o app é pro trabalho de HOJE — baixa a agenda antes de enviar o histórico, senão backlog grande sufoca a trava (upload de foto roda dentro dela; caso Adonias #256) e a agenda nunca aparece. O medo antigo é coberto pelos guards do `_pullVisitasDia` (pula `pending` e `visitaTemTrabalho`), os mesmos que já protegiam a corrida `updateVisita`↔`insertOutboxItem`. | `sync_engine.dart` (fullSync) |
 | **`ref` usado após dispose** | `ref.invalidate` depois de um `await` sem guard `context.mounted` crashava o app na próxima abertura ("Bad state: Cannot use ref after disposed") — caso Cleiton, 2026-05-21. | `home_screen.dart:416-421` |
 | **Guards fora do Navigator** | `PermissionsGuard`/`GpsGuard` no builder do `MaterialApp.router` quebravam dialogs ("Null check on null Navigator", issues #14/#15) — movidos pra ShellRoute. | `main.dart:247-254` |
 | **`appVersionProvider` cacheado pra sempre** | Sem `ref.invalidate` nos gatilhos de sync, o promotor instalava a versão N e nunca via o badge da N+1. | `main.dart:199-202` |
@@ -616,7 +616,7 @@ Documento técnico do subsistema de sync (pull + push/outbox + upload de fotos),
 | Método | O que faz | Onde |
 |---|---|---|
 | `pullAll(promotorId)` | Só PULL (PDVs + gabaritos + visitas do dia) | `sync_engine.dart:108-118` |
-| `fullSync(promotorId)` | PUSH (`_processOutboxImpl`) **e depois** PULL (`_pullAllImpl`), sob o **mesmo lock** — unidade atômica; push antes do pull para não perder dados locais não enviados | `sync_engine.dart:126-135` |
+| `fullSync(promotorId)` | **PULL (`_pullAllImpl`) e DEPOIS PUSH (`_processOutboxImpl`)**, sob o **mesmo lock** — em série, unidade atômica. **Ordem "HOJE PRIMEIRO" (Alan 17/06, caso Adonias #256):** baixa a agenda de hoje antes de enviar o histórico, senão um backlog grande sufoca a trava (o upload de foto roda dentro dela) e a agenda nunca baixa. Seguro: rodar o pull antes NÃO perde histórico não enviado — a recriação do `_pullVisitasDia` pula visita `pending` e visita com trabalho (`visitaTemTrabalho`). Teste: `fullsync_hoje_primeiro_test` | `sync_engine.dart` |
 | `processOutbox()` | Só PUSH | `sync_engine.dart:525-534` |
 | `isSyncing` | Flag consultada por consumidores que evitam ações destrutivas durante sync (force-update) | `sync_engine.dart:66` |
 
