@@ -5,6 +5,41 @@
 > feitas em 11/06 (API pública da Apple, codemagic.yaml). Substitui o
 > contexto que estava preso no Codespace.
 
+## 🆕 ATUALIZAÇÃO 17/06/2026 ~19:21 UTC — VERSÃO 1.0.1 (FORCE-UPDATE iOS) SUBMETIDA
+
+Implementado o **force-update do iPhone** (sem Supabase): o app consulta a
+versão publicada na App Store pela API pública da Apple
+(`itunes.apple.com/lookup?id=6774250898&country=br`), compara com a versão
+instalada (`AppConstants.appVersion`) e, se a instalada for MENOR, bloqueia
+a tela (login e home, mesmos gatilhos do Android) com botão que abre a App
+Store. Código iOS-only (`Platform.isIOS`), fail-open. Arquivos:
+`version_check_service.dart` (checkIOS/_versionIsOlder/appStoreUrl),
+`auth_screen.dart`, `home_screen.dart`. Commit `36c075d`.
+
+**Pré-requisito de processo:** a comparação é pela STRING de versão (a API
+da Apple não expõe build number). Por isso o `pubspec` foi bumpado
+`1.0.0 → 1.0.1` (commit `5031e5f`) — **todo release iOS futuro precisa subir
+esse número** (1.0.2, 1.0.3…), senão o bloqueio não dispara. Android NÃO é
+afetado pelo bump: versionCode vem de `github.run_number` e versionName é
+hardcoded no `build_apk.yml`.
+
+**Como o recurso "pega":** a 1.0.1 é a 1ª versão com o force-update; ela
+mesma não bloqueia (não há versão mais nova). O bloqueio passa a valer
+quando sair a **1.0.2** — aí quem está na 1.0.1 é forçado a atualizar.
+
+**Release:**
+- Build **#21** (Codemagic, a partir da `main`; compilou OK = validou o
+  código novo) processado VALID na Apple.
+- Versão **1.0.1** criada (metadados + 3 screenshots copiados da 1.0
+  automaticamente); whatsNew preenchido (obrigatório em updates — foi o que
+  causou 409 STATE_ERROR até preencher); `releaseType=AFTER_APPROVAL`.
+- **Submetida 17/06 19:21 UTC — WAITING_FOR_REVIEW.**
+
+**Observação:** a aparição na loja continua dependendo da Apple (caso
+102916582924 segue aberto sobre a 1.0). Ganho: quando o app aparecer, já
+nasce com o force-update. A 1.0 (build 20, sem o recurso) segue
+READY_FOR_DISTRIBUTION em paralelo.
+
 ## ⚠️ ATUALIZAÇÃO 16/06/2026 ~00:15 UTC — APROVADO MAS NÃO APARECE NA LOJA; CHAMADO ABERTO
 
 Apesar de aprovado/liberado (estado `READY_FOR_DISTRIBUTION`,
