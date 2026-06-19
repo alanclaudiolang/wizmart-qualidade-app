@@ -5,6 +5,27 @@
 > feitas em 11/06 (API pública da Apple, codemagic.yaml). Substitui o
 > contexto que estava preso no Codespace.
 
+## 🔁 ATUALIZAÇÃO 18/06/2026 — 1.0.1 APROVADA, MAS APP CONTINUA INVISÍVEL NA LOJA
+
+A versão **1.0.1 (build 21, com o force-update) foi APROVADA** pela Apple e
+está **READY_FOR_DISTRIBUTION** (liberação automática). Porém o app
+**continua não aparecendo na App Store pública** (lookup e busca vazios em
+br/us). Agora há DUAS versões aprovadas e liberadas (1.0 e 1.0.1) e nenhuma
+aparece.
+
+**Diagnóstico reforçado:** o problema NÃO é do build nem da versão (uma
+versão nova, recém-aprovada, também não aparece). É falha de disponibilidade
+do lado da Apple, no nível da conta/app. Reforça o chamado 102916582924.
+
+**ID do app reconfirmado (a pedido do Alan):** listando todos os apps da
+conta — `6774250898` = "Promotor Wizmart" / bundle `com.wizmart.promotor`
+EXISTE e é o nosso (bate com os builds do Codemagic). NÃO é ID inexistente.
+(Há outros 2 apps na conta, diferentes: 6748234582 "WizMart Uso Interno" /
+com.qualidade.wizmart.com.br, e 1540679710 "WizMart" / amlabs.smart247.)
+
+**Follow-up enviado ao chamado 102916582924** com esse novo fato (1.0.1
+também aprovada e invisível) para fortalecer o caso.
+
 ## 🆕 ATUALIZAÇÃO 17/06/2026 ~19:21 UTC — VERSÃO 1.0.1 (FORCE-UPDATE iOS) SUBMETIDA
 
 Implementado o **force-update do iPhone** (sem Supabase): o app consulta a
