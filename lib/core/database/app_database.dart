@@ -682,6 +682,37 @@ class AppDatabase extends _$AppDatabase {
     return q.watchSingle().map((row) => row.read<int>('c'));
   }
 
+  /// Visitas com pendência de sincronismo PRONTA pra rodar agora — foto já
+  /// processada esperando upload (`pending`) OU registro pendente no outbox —
+  /// em ORDEM DECRESCENTE por data: `dia_hora_realizado`; se nulo,
+  /// `dia_hora_agendado` (regra do Alan, 23/06). Usado pelo sync engine pra
+  /// processar UMA visita por vez, da mais recente pra mais antiga.
+  ///
+  /// Visita cujas fotos ainda estão em watermark (`watermark_pending`) NÃO
+  /// aparece aqui — entra só quando a foto vira `pending` (pronta). Assim a
+  /// regra "pular visita em processamento" é respeitada SEM lógica nova: a
+  /// visita simplesmente não é selecionada enquanto a watermark não termina.
+  /// `next_retry_at <= agora` respeita o backoff existente.
+  Future<List<int>> getVisitasPendentesOrdenadasDesc() async {
+    final agora = DateTime.now().toIso8601String();
+    final rows = await customSelect(
+      "SELECT v.id AS id FROM visitas v "
+      "WHERE EXISTS (SELECT 1 FROM pending_photos pp "
+      "              WHERE pp.visita_id = v.id "
+      "                AND pp.status = 'pending' "
+      "                AND pp.next_retry_at <= ?) "
+      "   OR EXISTS (SELECT 1 FROM outbox_items oi "
+      "              WHERE oi.entity_id = v.id "
+      "                AND oi.entity_type = 'visita' "
+      "                AND oi.status = 'pending' "
+      "                AND oi.next_retry_at <= ?) "
+      "ORDER BY COALESCE(v.dia_hora_realizado, v.dia_hora_agendado) DESC",
+      variables: [Variable<String>(agora), Variable<String>(agora)],
+      readsFrom: {visitas, pendingPhotos, outboxItems},
+    ).get();
+    return rows.map((r) => r.read<int>('id')).toList();
+  }
+
   // ── Pending Photos ─────────────────────────────────────────────────────────
 
   Future<List<PendingPhoto>> getPendingPhotos() {
