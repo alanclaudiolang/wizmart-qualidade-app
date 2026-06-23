@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/network/sync_engine.dart' show appDatabaseProvider;
 import '../../../core/utils/session_service.dart';
+import '../../../core/utils/login_flow.dart';
 import '../../../core/utils/device_info_service.dart';
 import '../../../core/utils/promotor_estado_reporter.dart';
 import '../../../core/utils/apk_updater_service.dart';
@@ -121,7 +122,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           ultimoEmail != email) {
         final db = ref.read(appDatabaseProvider);
         final pend = await db.countPendentesParaSync();
-        if (pend > 0) {
+        // Decisão central (compartilhada com a ponte do magic link e
+        // coberta por teste): só limpa se conta diferente E há pendências.
+        if (precisaConfirmarTrocaConta(
+            ultimoEmail: ultimoEmail, emailNovo: email, pendencias: pend)) {
           if (!mounted) return;
           final ok = await showDialog<bool>(
             context: context,
@@ -179,26 +183,20 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           .select('id,nome,email,ativo,tipo_user')
           .eq('uid', authResponse.user!.id)
           .maybeSingle();
-      if (userData == null) {
+      // Validação central (compartilhada com a ponte do magic link e
+      // coberta por teste): null→não encontrado, ativo==false→desativada,
+      // tipo_user!=3→não promotor.
+      final val = validarUsuario(userData);
+      if (!val.ok) {
         await Supabase.instance.client.auth.signOut();
-        setState(() { _error = 'Usuário não encontrado no banco de dados.'; _loading = false; });
+        setState(() { _error = mensagemValidacao(val.status); _loading = false; });
         return;
       }
-      if (userData['ativo'] == false) {
-        await Supabase.instance.client.auth.signOut();
-        setState(() { _error = 'Sua conta está desativada. Contate seu supervisor.'; _loading = false; });
-        return;
-      }
-      if (userData['tipo_user'] != 3) {
-        await Supabase.instance.client.auth.signOut();
-        setState(() { _error = 'Acesso apenas para Promotores.'; _loading = false; });
-        return;
-      }
-      final userId = userData['id'] as int;
+      final userId = val.userId!;
       await SessionService.saveSession(
         userId: userId,
         email: email,
-        nome: userData['nome'] as String? ?? '',
+        nome: val.nome ?? '',
         senhaHash: _lembrarMe ? senha : '',
       );
       // Marca o e-mail desta sessão pra próximo logout/login decidir
@@ -221,7 +219,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       // ignore: discarded_futures
       PromotorEstadoReporter.registrar(
         email: email,
-        nome: userData['nome'] as String? ?? '',
+        nome: val.nome ?? '',
       );
       // Se ainda não passou pelo onboarding de permissões (primeira
       // instalação), abre essa tela antes da home. Senão, vai direto.
@@ -539,7 +537,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               if (email.isEmpty) return;
               Navigator.pop(ctx);
               try {
-                await Supabase.instance.client.auth.resetPasswordForEmail(email);
+                await Supabase.instance.client.auth.resetPasswordForEmail(
+                  email,
+                  redirectTo: AppConstants.deepLinkRecoverUrl,
+                );
                 if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Email de recuperação enviado!'), backgroundColor: Color(0xFF38A169)));
               } catch (_) {
                 if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erro ao enviar email.'), backgroundColor: Colors.red));

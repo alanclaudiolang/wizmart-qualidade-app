@@ -39,9 +39,24 @@
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
             <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme"/>
+            <!-- Faz o deep link (abaixo) ser roteado pelo go_router via
+                 caminho da URL (ex.: /loginautomatico, /recoverpassword). -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="true"/>
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- Deep link: esquema customizado wizmartapp:// (login
+                 automático / magic link e redefinição de senha). Mesmo
+                 esquema/host do app FlutterFlow antigo, comprovado em
+                 campo. O Supabase devolve os tokens no fragmento da URL e
+                 o SDK estabelece a sessão; o caminho roteia pra tela
+                 correta. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="wizmartapp" android:host="wizmartapp.com"/>
             </intent-filter>
         </activity>
         <meta-data android:name="flutterEmbedding" android:value="2"/>

@@ -1,6 +1,21 @@
 // lib/core/constants/app_constants.dart
 
 class AppConstants {
+  // Deep link (login automático / magic link + recuperação de senha).
+  // Mesmo esquema/host do app FlutterFlow antigo (comprovado em campo) e
+  // já liberado na allowlist de Redirect URLs do Supabase deste projeto.
+  // O registro do esquema no SO está em AndroidManifest.xml (intent-filter)
+  // e ios/Runner/Info.plist (CFBundleURLTypes).
+  static const String deepLinkScheme = 'wizmartapp';
+  static const String deepLinkHost = 'wizmartapp.com';
+  // Caminho que o magic link de login abre.
+  static const String deepLinkLoginPath = '/loginautomatico';
+  // Caminho que o link de recuperação de senha abre.
+  static const String deepLinkRecoverPath = '/recoverpassword';
+  // URL completa passada no redirectTo do resetPasswordForEmail.
+  static const String deepLinkRecoverUrl =
+      '$deepLinkScheme://$deepLinkHost$deepLinkRecoverPath';
+
   // Supabase
   static const String supabaseUrl = 'https://czvrbntewaisegvjdzyj.supabase.co';
   static const String supabaseAnonKey =

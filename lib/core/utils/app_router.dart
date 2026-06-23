@@ -3,6 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../presentation/screens/auth/auth_screen.dart';
+import '../../presentation/screens/auth/login_automatico_screen.dart';
+import '../../presentation/screens/auth/recuperar_senha_screen.dart';
 import '../../presentation/screens/auth/onboarding_permissoes_screen.dart';
 import '../../presentation/screens/faltas/faltas_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
@@ -45,6 +47,18 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/auth',
           builder: (_, __) => const AuthScreen(),
+        ),
+        // Deep link de login automático (magic link). O SDK do Supabase
+        // já estabeleceu a sessão pelo fragmento do link; a tela faz a
+        // ponte pro SessionService local.
+        GoRoute(
+          path: '/loginautomatico',
+          builder: (_, __) => const LoginAutomaticoScreen(),
+        ),
+        // Deep link de redefinição de senha.
+        GoRoute(
+          path: '/recoverpassword',
+          builder: (_, __) => const RecuperarSenhaScreen(),
         ),
         GoRoute(
           path: '/home',

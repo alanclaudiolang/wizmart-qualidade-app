@@ -24,6 +24,25 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<!-- Deep link: esquema customizado wizmartapp:// (login automático /
+	     magic link e redefinição de senha). Mesmo esquema/host do app
+	     FlutterFlow antigo. FlutterDeepLinkingEnabled faz o go_router
+	     rotear pelo caminho da URL. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>wizmartapp.com</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>wizmartapp</string>
+			</array>
+		</dict>
+	</array>
+	<key>FlutterDeepLinkingEnabled</key>
+	<true/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

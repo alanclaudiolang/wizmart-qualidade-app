@@ -60,6 +60,13 @@ void callbackDispatcher() {
         await Supabase.initialize(
           url: AppConstants.supabaseUrl,
           anonKey: AppConstants.supabaseAnonKey,
+          // Mesmo fluxo do app FlutterFlow antigo (comprovado): magic link
+          // e recuperação voltam com os tokens no fragmento da URL e o SDK
+          // estabelece a sessão sozinho. Mantém consistência entre o
+          // isolate de background e o principal.
+          authOptions: const FlutterAuthClientOptions(
+            authFlowType: AuthFlowType.implicit,
+          ),
         );
         final db = AppDatabase();
         final logger = SyncLoggerNotifier();
@@ -120,6 +127,12 @@ void main() async {
       await Supabase.initialize(
         url: AppConstants.supabaseUrl,
         anonKey: AppConstants.supabaseAnonKey,
+        // Fluxo implícito (igual ao app antigo): o SDK detecta o deep link
+        // de auth (magic link / recuperação) e estabelece a sessão sozinho.
+        // O login por senha NÃO usa flow type, então não é afetado.
+        authOptions: const FlutterAuthClientOptions(
+          authFlowType: AuthFlowType.implicit,
+        ),
       );
     } catch (e) {
       _initError = 'Supabase.initialize falhou:\n$e';

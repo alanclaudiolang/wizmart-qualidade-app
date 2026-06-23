@@ -85,14 +85,25 @@ class LogoutService {
   /// Limpeza COMPLETA — apaga qualquer vestígio do promotor anterior.
   /// Usar SÓ quando o AuthScreen detectar troca de conta (e o usuário
   /// confirmar) ou em casos especiais explícitos.
-  static Future<void> logoutCompletely(AppDatabase db) async {
+  ///
+  /// [signOutSupabase]: por padrão encerra também a sessão Supabase Auth
+  /// (caso do login por senha, onde a limpeza roda ANTES de autenticar).
+  /// A ponte do magic link passa `false`: lá a sessão do promotor NOVO já
+  /// foi estabelecida pelo deep link e é necessária para o sync autenticado
+  /// — só os DADOS LOCAIS do promotor anterior devem ser apagados.
+  static Future<void> logoutCompletely(
+    AppDatabase db, {
+    bool signOutSupabase = true,
+  }) async {
     // 1) Supabase auth — invalida token no servidor. Timeout pra não
     //    travar offline; ignora erro (continuamos a limpeza local).
-    try {
-      await Supabase.instance.client.auth
-          .signOut()
-          .timeout(const Duration(seconds: 5));
-    } catch (_) {}
+    if (signOutSupabase) {
+      try {
+        await Supabase.instance.client.auth
+            .signOut()
+            .timeout(const Duration(seconds: 5));
+      } catch (_) {}
+    }
 
     // 2) SecureStorage — credenciais persistidas (lembrar senha).
     try {
