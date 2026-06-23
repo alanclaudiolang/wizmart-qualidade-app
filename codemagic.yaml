@@ -110,11 +110,10 @@ workflows:
     publishing:
       app_store_connect:
         auth: integration
-        # `false` na primeira execução — sobe o build pro App Store
-        # Connect mas não envia pro TestFlight. Útil pra revisar antes
-        # de distribuir. Quando o fluxo estiver estável, mudar pra true.
-        submit_to_testflight: false
-        # Quando ativar submit_to_testflight, descomente e ajuste com
-        # o nome do grupo de teste criado no App Store Connect:
-        # beta_groups:
-        #   - Promotores Teste
+        # TestFlight sempre atualizado (app de teste iOS) a cada build.
+        submit_to_testflight: true
+        # Produção: submete pra revisão da Apple e libera assim que
+        # aprovado. iOS só "publica" após a revisão (não é instantâneo
+        # como o APK Android).
+        submit_to_app_store: true
+        release_type: AFTER_APPROVAL
