@@ -34,12 +34,16 @@ workflows:
     triggering:
       events:
         - push
+      # iOS PAUSADO a pedido do Alan (24/06): publicar a mudança de
+      # sincronismo no Android primeiro e aguardar o retorno dos usuários
+      # antes de subir o iOS. Pra REATIVAR o iOS automático: trocar os
+      # `include: false` abaixo de volta pra `true`.
       branch_patterns:
         - pattern: main
-          include: true
+          include: false
           source: true
         - pattern: dev
-          include: true
+          include: false
           source: true
 
     scripts:
