@@ -562,15 +562,28 @@ class AppDatabase extends _$AppDatabase {
 
   // ── Outbox ─────────────────────────────────────────────────────────────────
 
-  Future<List<OutboxItem>> getPendingOutboxItems() {
+  Future<List<OutboxItem>> getPendingOutboxItems() async {
     final agora = DateTime.now().toIso8601String();
-    return (select(outboxItems)
-          ..where((o) =>
-              o.status.equals('pending') &
-              o.nextRetryAt.isSmallerOrEqualValue(agora))
-          ..orderBy([(o) => OrderingTerm.asc(o.createdAt)])
+    // Ordena pela data da VISITA — mais recente primeiro (regra do Alan,
+    // 23/06: priorizar sincronizar as visitas em ordem decrescente). Data:
+    // dia_hora_realizado; se nulo, dia_hora_agendado. O 2º critério
+    // (created_at ASC) PRESERVA a ordem interna da visita (open→fotos→close),
+    // antes garantida pela ordenação global por created_at. Visita órfã
+    // (sem row) → coalesce nulo → vai pro fim no DESC.
+    final dataVisita =
+        coalesce([visitas.diaHoraRealizado, visitas.diaHoraAgendado]);
+    final rows = await (select(outboxItems).join([
+      leftOuterJoin(visitas, visitas.id.equalsExp(outboxItems.entityId)),
+    ])
+          ..where(outboxItems.status.equals('pending') &
+              outboxItems.nextRetryAt.isSmallerOrEqualValue(agora))
+          ..orderBy([
+            OrderingTerm.desc(dataVisita),
+            OrderingTerm.asc(outboxItems.createdAt),
+          ])
           ..limit(10))
         .get();
+    return rows.map((r) => r.readTable(outboxItems)).toList();
   }
 
   Future<void> insertOutboxItem(OutboxItemsCompanion item) =>
@@ -684,15 +697,25 @@ class AppDatabase extends _$AppDatabase {
 
   // ── Pending Photos ─────────────────────────────────────────────────────────
 
-  Future<List<PendingPhoto>> getPendingPhotos() {
+  Future<List<PendingPhoto>> getPendingPhotos() async {
     final agora = DateTime.now().toIso8601String();
-    return (select(pendingPhotos)
-          ..where((p) =>
-              p.status.equals('pending') &
-              p.nextRetryAt.isSmallerOrEqualValue(agora))
-          ..orderBy([(p) => OrderingTerm.asc(p.createdAt)])
+    // Mesma ordenação decrescente por data da VISITA do getPendingOutboxItems
+    // (mais recente primeiro). 2º critério created_at ASC = ordem de captura
+    // dentro da visita.
+    final dataVisita =
+        coalesce([visitas.diaHoraRealizado, visitas.diaHoraAgendado]);
+    final rows = await (select(pendingPhotos).join([
+      leftOuterJoin(visitas, visitas.id.equalsExp(pendingPhotos.visitaId)),
+    ])
+          ..where(pendingPhotos.status.equals('pending') &
+              pendingPhotos.nextRetryAt.isSmallerOrEqualValue(agora))
+          ..orderBy([
+            OrderingTerm.desc(dataVisita),
+            OrderingTerm.asc(pendingPhotos.createdAt),
+          ])
           ..limit(5))
         .get();
+    return rows.map((r) => r.readTable(pendingPhotos)).toList();
   }
 
   Future<void> insertPendingPhoto(PendingPhotosCompanion photo) =>
