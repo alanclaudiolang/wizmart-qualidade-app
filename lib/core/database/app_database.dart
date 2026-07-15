@@ -564,13 +564,25 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<OutboxItem>> getPendingOutboxItems() {
     final agora = DateTime.now().toIso8601String();
-    return (select(outboxItems)
-          ..where((o) =>
-              o.status.equals('pending') &
-              o.nextRetryAt.isSmallerOrEqualValue(agora))
-          ..orderBy([(o) => OrderingTerm.asc(o.createdAt)])
-          ..limit(10))
-        .get();
+    // Ordem por VISITA mais recente primeiro (build 262): COALESCE(
+    // dia_hora_realizado, dia_hora_agendado) DESC. 2º critério
+    // created_at ASC preserva a sequência interna da visita
+    // (open → photos_antes → photos_depois → close). Visita ausente
+    // (left join nulo) vai pro fim da fila.
+    final q = select(outboxItems).join([
+      leftOuterJoin(visitas, visitas.id.equalsExp(outboxItems.entityId)),
+    ])
+      ..where(outboxItems.status.equals('pending') &
+          outboxItems.nextRetryAt.isSmallerOrEqualValue(agora))
+      ..orderBy([
+        OrderingTerm.desc(
+            coalesce([visitas.diaHoraRealizado, visitas.diaHoraAgendado])),
+        OrderingTerm.asc(outboxItems.createdAt),
+      ])
+      ..limit(10);
+    return q
+        .get()
+        .then((rows) => rows.map((r) => r.readTable(outboxItems)).toList());
   }
 
   Future<void> insertOutboxItem(OutboxItemsCompanion item) =>
@@ -686,13 +698,23 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<PendingPhoto>> getPendingPhotos() {
     final agora = DateTime.now().toIso8601String();
-    return (select(pendingPhotos)
-          ..where((p) =>
-              p.status.equals('pending') &
-              p.nextRetryAt.isSmallerOrEqualValue(agora))
-          ..orderBy([(p) => OrderingTerm.asc(p.createdAt)])
-          ..limit(5))
-        .get();
+    // Mesma ordem do outbox (build 262): visita mais recente primeiro
+    // (COALESCE(dia_hora_realizado, dia_hora_agendado) DESC), fotos da
+    // mesma visita na ordem de captura (created_at ASC).
+    final q = select(pendingPhotos).join([
+      leftOuterJoin(visitas, visitas.id.equalsExp(pendingPhotos.visitaId)),
+    ])
+      ..where(pendingPhotos.status.equals('pending') &
+          pendingPhotos.nextRetryAt.isSmallerOrEqualValue(agora))
+      ..orderBy([
+        OrderingTerm.desc(
+            coalesce([visitas.diaHoraRealizado, visitas.diaHoraAgendado])),
+        OrderingTerm.asc(pendingPhotos.createdAt),
+      ])
+      ..limit(5);
+    return q
+        .get()
+        .then((rows) => rows.map((r) => r.readTable(pendingPhotos)).toList());
   }
 
   Future<void> insertPendingPhoto(PendingPhotosCompanion photo) =>

@@ -38,24 +38,32 @@ GitHub suspenso.
 
 ## Estado do app em campo (15/07)
 
-- **Build 260 (v1.0.2)** é o que está nos celulares — deep link (login
-  automático + reset de senha). Publicado 23/06, ANTES da suspensão.
-- Build 262 (reordenação do sync) **nunca publicou** — ninguém tem.
-  Decisão do Alan (15/07): NÃO recriar por ora (não testado o suficiente).
+- **Build 262 (v1.0.2)** é o que está nos celulares — **CONFIRMADO em
+  15/07 extraindo o BUILD_TIME do binário de um aparelho: 24/06/2026
+  09:25**. Contém o deep link (build 260) + a reordenação do sincronismo
+  (visita mais recente primeiro). A release publicou e os promotores
+  atualizaram ANTES da suspensão derrubar o link. (Registro de erro: a
+  sessão de 15/07 chegou a afirmar "o 262 nunca publicou" com base na
+  leitura do histórico — o relato do Alan estava certo e o binário
+  provou; a reordenação está testada em campo desde 24/06.)
 - Promotores com o app instalado **seguem trabalhando** (o app sincroniza
   com o Supabase). O que está quebrado: download de novas instalações e
   auto-update (apontavam pro GitHub) e o botão de download do site
   (FlutterFlow web → `qualidade.wizmart.com.br`).
 
-## Reconstrução do build 260 (concluída em 15/07)
+## Reconstrução do build 262 (concluída em 15/07)
 
 Ver **`docs/reconstrucao-build-260-2026-07-15.md`** (fontes, fidelidade,
-riscos, cobertura de leitura 7a). Resumo: deep link
-`wizmartapp://wizmartapp.com` + rotas `/loginautomatico` e
+riscos, cobertura de leitura 7a — o doc nasceu mirando o 260; o campo
+provou ser 262 e a reordenação foi incluída em seguida). Resumo: deep
+link `wizmartapp://wizmartapp.com` + rotas `/loginautomatico` e
 `/recoverpassword` + `login_flow.dart` (proteção de troca de conta) +
-supabase_flutter 2.12.4 (versões idênticas às do binário 260, conferidas).
-Commit `679752e` na branch de trabalho. flutter analyze 0 erros; suíte
-47/47 verde. Fontes da reconstrução: APK real do 260 (extraído de celular)
+supabase_flutter 2.12.4 (versões idênticas às do binário, conferidas) +
+**reordenação do sincronismo** (getPendingPhotos/getPendingOutboxItems:
+`COALESCE(dia_hora_realizado, dia_hora_agendado) DESC` + `created_at`
+ASC — espec. exata no histórico exportado). Commits `679752e` e
+seguintes na branch de trabalho. flutter analyze 0 erros; suíte
+**49/49 verde** (mesmo placar do 262 original). Fontes da reconstrução: APK real do 260 (extraído de celular)
 + histórico exportado (`docs/contexto/historico-sessao-2026-06-19a26.md`).
 Pontos de interpretação a validar listados no doc de reconstrução; o
 export da sessão de 23/06 (deep link original), se aparecer, é a
@@ -108,20 +116,21 @@ possível). A correção de dados de 20/06 (136 visitas sem
 
 ## Pendências (ordem de prioridade)
 
-1. ~~Subir APK no Supabase Storage~~ FEITO (15/07): **build 264**
-   (v1.0.2, reconstrução do deep link) publicado em
-   `https://czvrbntewaisegvjdzyj.supabase.co/storage/v1/object/public/Arquivos/versoes-apk/promotor-wizmart-build264.apk`
-   — SHA-256 do arquivo
-   `5adf242995e0bf6295233115a9b8d03fd9d13c25ea668bf7c5e29b55213a72c8`.
-   Assinado com a keystore `wizmart-upload-2026.jks` (fingerprint do cert
-   SHA-256 `09b18e7a5b3c0aa8544366a94a3541bba51853d4e13bf453cb706a342169f850`;
+1. APK no Supabase Storage — versão VÁLIDA (15/07): **build 263**
+   (v1.0.2 = conteúdo do 262 de campo: deep link + reordenação do sync),
+   arquivo `versoes-apk/promotor-wizmart-v1.0.2-build263.apk` (link e
+   SHA-256 registrados abaixo quando publicado). Assinado com a keystore
+   `wizmart-upload-2026.jks` (fingerprint do cert SHA-256
+   `09b18e7a5b3c0aa8544366a94a3541bba51853d4e13bf453cb706a342169f850`;
    cópia de recuperação COM O ALAN + Secure Files; senhas no variable
    group `android-signing`). ⚠️ Secure Files NÃO permite exportar o
    arquivo de volta (só pipelines usam) — a cópia do Alan é o único
-   backup exportável. O arquivo `versoes-apk/promotor-wizmart-build263.apk`
-   no Storage é ÓRFÃO (chave descartada, nunca divulgado) — Alan pode
-   apagar pelo painel. FALTA: Alan atualizar o botão do site
-   (FlutterFlow → ação Launch URL) para o link acima.
+   backup exportável. ⚠️ ARQUIVOS ÓRFÃOS no Storage para o Alan apagar
+   pelo painel (anônimo não deleta): `versoes-apk/promotor-wizmart-build263.apk`
+   (chave descartada), `versoes-apk/promotor-wizmart-build264.apk`
+   (SEM a reordenação do sync — substituído pelo 263 definitivo) e
+   `versoes-apk/teste-upload.txt`. FALTA: Alan atualizar o botão do site
+   (FlutterFlow → ação Launch URL) para o link do build 263.
 2. Validar deep link em aparelho real (link do e-mail abre o app?).
 3. Pipeline de build no Azure Pipelines (usar Secure Files + variable
    group `android-signing`).
