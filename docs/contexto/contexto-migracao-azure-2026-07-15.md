@@ -135,12 +135,15 @@ possível). A correção de dados de 20/06 (136 visitas sem
    pipeline com a service_role key (variable group `supabase-distribution`,
    id 4, autorizado pro pipeline 3; a chave também está na env da sessão
    como SUPABASE_SERVICE_KEY). FALTA: Alan atualizar o botão do site
-   (FlutterFlow → ação Launch URL) para a URL FIXA acima; reenviar o zip
-   do APK 262 de campo para arquivar como
-   `versoes-apk/promotor-wizmart-v1.0.2-build262-campo.apk` (build
-   anterior — único assinado com a keystore original); e OK pendente para
-   o build 264 (auto-update reapontado do GitHub para latest.json no
-   Supabase — proposta feita, aguardando aprovação).
+   (FlutterFlow → ação Launch URL) para a URL FIXA acima; BUILD ANTERIOR ARQUIVADO
+   (15/07): APK 262 de campo em
+   `versoes-apk/promotor-wizmart-v1.0.2-build262-campo.apk` (SHA-256
+   `bdfcca5c1ab95ca0c5da3b7da4ddabaefb6ed2a7af3fa11fef3c3ec90e455d8a`,
+   BUILD_TIME 24/06/2026 09:25 conferido no binário — único assinado com
+   a keystore ORIGINAL; se ela voltar via GitHub, é este que atualiza por
+   cima dos aparelhos de campo). OK ainda pendente para o build 264
+   (auto-update reapontado do GitHub para latest.json no Supabase —
+   proposta feita, aguardando aprovação).
 2. Validar deep link em aparelho real (link do e-mail abre o app?).
 3. Pipeline de build no Azure Pipelines (usar Secure Files + variable
    group `android-signing`).
@@ -149,6 +152,12 @@ possível). A correção de dados de 20/06 (136 visitas sem
 5. Bugs ADIADOS documentados: `dia_hora_realizado` sumindo na consolidação
    (causa mapeada, não reproduzida); câmera do Diego (`retrieveLostData`
    ausente); reordenação do sync (build 262, não testada).
-6. Telemetria de issues (substituto do GitHub Issues) — decidir destino
-   (Azure Boards? Supabase?).
+6. Telemetria de erros — DECIDIDO pelo Alan (15/07): issues automáticas
+   ficam DESATIVADAS (a guarda de token vazio em error_reporter.dart:97 /
+   anomalia_queue_processor.dart:123 já desliga tudo de forma limpa nos
+   builds novos); o canal oficial é o RELATO MANUAL via WhatsApp
+   (home_screen.dart:447, Share.shareXFiles do relato_*.json — não
+   depende de GitHub e continua funcionando). NÃO remover o código morto
+   do GitHub por ora (inofensivo e mantém fidelidade ao 262). Opção
+   futura, sem compromisso: telemetria automática em tabela do Supabase.
 7. Apelação do GitHub em curso — conferir e-mail periodicamente.
