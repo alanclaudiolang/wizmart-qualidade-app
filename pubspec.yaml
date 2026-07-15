@@ -1,7 +1,7 @@
 name: wizmart_app
 description: WizMart App - Promotores de campo
 publish_to: 'none'
-version: 1.0.1+1
+version: 1.0.2+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -10,8 +10,10 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Supabase
-  supabase_flutter: ^2.5.0
+  # Supabase — >=2.9 traz o observador de deep link (getSessionFromUrl
+  # automático via app_links) usado pelo login automático e pelo reset
+  # de senha; era a versão do build 260.
+  supabase_flutter: ^2.9.0
 
   # Banco local (SQLite reativo)
   drift: ^2.18.0

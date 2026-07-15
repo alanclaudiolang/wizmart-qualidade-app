@@ -539,7 +539,13 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               if (email.isEmpty) return;
               Navigator.pop(ctx);
               try {
-                await Supabase.instance.client.auth.resetPasswordForEmail(email);
+                // redirectTo: o link do e-mail volta pro app via deep
+                // link, na tela de definir nova senha. Precisa estar na
+                // allowlist de Redirect URLs do painel do Supabase.
+                await Supabase.instance.client.auth.resetPasswordForEmail(
+                  email,
+                  redirectTo: AppConstants.deepLinkRecoverPassword,
+                );
                 if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Email de recuperação enviado!'), backgroundColor: Color(0xFF38A169)));
               } catch (_) {
                 if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erro ao enviar email.'), backgroundColor: Colors.red));

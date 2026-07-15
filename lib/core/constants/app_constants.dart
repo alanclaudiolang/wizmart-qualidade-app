@@ -6,6 +6,15 @@ class AppConstants {
   static const String supabaseAnonKey =
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN6dnJibnRld2Fpc2VndmpkenlqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjE3NjYxMTYsImV4cCI6MjAzNzM0MjExNn0.drNMrjTZ9Dye7D6g1twyUSlR_XtKCJUGoUlKLGQM-oU';
 
+  // Deep links dos e-mails do Supabase. Precisam estar na allowlist de
+  // Redirect URLs do painel (Authentication → URL Configuration) e casar
+  // com o intent-filter do AndroidManifest (scheme wizmartapp,
+  // host wizmartapp.com).
+  static const String deepLinkLoginAutomatico =
+      'wizmartapp://wizmartapp.com/loginautomatico';
+  static const String deepLinkRecoverPassword =
+      'wizmartapp://wizmartapp.com/recoverpassword';
+
   // Chave de sessão no secure storage
   static const String sessionUserIdKey = 'wizmart_user_id';
   static const String sessionUserPhoneKey = 'wizmart_user_phone';

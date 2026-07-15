@@ -43,6 +43,18 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Deep link dos e-mails do Supabase (magic link / reset de
+                 senha): wizmartapp://wizmartapp.com/loginautomatico e
+                 wizmartapp://wizmartapp.com/recoverpassword. O esquema
+                 precisa casar com os Redirect URLs cadastrados no painel
+                 do Supabase (Authentication → URL Configuration). -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="true" />
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="wizmartapp" android:host="wizmartapp.com" />
+            </intent-filter>
         </activity>
         <meta-data android:name="flutterEmbedding" android:value="2"/>
 

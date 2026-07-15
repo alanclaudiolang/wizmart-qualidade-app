@@ -18,6 +18,21 @@
 	<string>wizmart_app</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
+	<!-- Deep link dos e-mails do Supabase (magic link / reset de senha).
+	     Mesmo esquema registrado no AndroidManifest. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.wizmart.promotor.deeplink</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>wizmartapp</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleShortVersionString</key>
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>

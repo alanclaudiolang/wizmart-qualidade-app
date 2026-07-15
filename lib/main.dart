@@ -173,14 +173,31 @@ class WizMartApp extends ConsumerStatefulWidget {
 
 class _WizMartAppState extends ConsumerState<WizMartApp>
     with WidgetsBindingObserver {
+  StreamSubscription<AuthState>? _authSub;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Evento de recuperação de senha vindo do deep link do e-mail
+    // (wizmartapp://wizmartapp.com/recoverpassword). O supabase_flutter
+    // valida o token do link e emite passwordRecovery — daqui navegamos
+    // pra tela de definir a senha nova, de qualquer ponto do app.
+    // (Se o Supabase.initialize falhou no boot, instance lança — o
+    // try protege; nesse caso o app já está na tela de erro.)
+    try {
+      _authSub = Supabase.instance.client.auth.onAuthStateChange
+          .listen((data) {
+        if (data.event == AuthChangeEvent.passwordRecovery) {
+          appRouter.go('/recoverpassword');
+        }
+      });
+    } catch (_) {}
   }
 
   @override
   void dispose() {
+    _authSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

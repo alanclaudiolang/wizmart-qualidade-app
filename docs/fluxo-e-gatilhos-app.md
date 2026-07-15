@@ -193,6 +193,60 @@ Roda **só** quando a AuthScreen detecta troca de conta confirmada (ou caso espe
 
 `_handleAuthExpired` na home (`home_screen.dart:86-105`): faz **soft** logout (dados locais intactos), mostra snackbar "Sua sessão expirou... suas visitas e fotos continuam salvas" e navega pra `/auth`. O flag é limpo no próximo login bem-sucedido (`auth_screen.dart:208-210`).
 
+### 2.6. Deep link — login automático e redefinição de senha (v1.0.2; recriado em 15/07/2026)
+
+Reconstrução do build 260 (o código original ficou inacessível com a suspensão
+da conta GitHub; recriado a partir do mapa extraído do APK 260 + histórico das
+sessões — ver `docs/reconstrucao-build-260-2026-07-15.md`).
+
+**Registro do esquema.** `wizmartapp://wizmartapp.com` registrado no
+`AndroidManifest.xml` (intent-filter VIEW+BROWSABLE + meta-data
+`flutter_deeplinking_enabled=true`, que entrega o path do link direto ao
+GoRouter) e no `ios/Runner/Info.plist` (`CFBundleURLTypes`). Os destinos
+precisam estar na allowlist de Redirect URLs do painel do Supabase
+(Authentication → URL Configuration) — configuração feita pelo Alan em
+junho/2026, preservada no servidor.
+
+**Quem valida o token do link é o supabase_flutter** (>=2.9): o observador
+interno de deep link chama `getSessionFromUrl`/`exchangeCodeForSession` e
+emite os eventos de auth. O app não parseia token nenhum.
+
+**Rotas novas** (`app_router.dart`, dentro do mesmo ShellRoute/PermissionsGuard
+— rotas fora do shell quebram dialogs, bug histórico "Null check on null
+Navigator", issues #14/#15):
+
+- **`/loginautomatico`** (`login_automatico_screen.dart`) — destino do magic
+  link. Espera a sessão Supabase aparecer (já existente no cold start, ou via
+  evento `signedIn`; timeout de 12 s → "O link expirou. Solicite um novo no
+  login."). Com sessão, chama `LoginFlow.concluirLoginComSessao`
+  (`core/utils/login_flow.dart`): mesmas validações do login manual (tabela
+  `users` por `uid`, `ativo`, `tipo_user==3`), popula o `SessionService`
+  (sessão LOCAL — o boot decide por ela, não pela sessão Supabase), grava
+  `last_logged_email`, `AuthSessionExpired.reset()`, device info/estado.
+  **Proteção de troca de conta:** se `last_logged_email` difere do e-mail da
+  sessão do link E `countPendentesParaSync() > 0`, o login é CANCELADO
+  (signOut + mensagem) — clique em link não é confirmação para apagar
+  pendências de outro promotor; o guard com diálogo só existe no login manual.
+  No sucesso navega para **`/splash`** (não direto pra home): o splash roda a
+  recuperação de boot (fotos travadas) e a restauração da última visita.
+- **`/recoverpassword`** (`recuperar_senha_screen.dart`) — destino do e-mail
+  "Reset de Senha" e do evento `passwordRecovery` (listener global no
+  `_WizMartAppState`, `main.dart` initState — primeiro `onAuthStateChange`
+  do app). Form nova senha + confirmação (mín. 6, `AuthWeakPasswordException`
+  tratada); `auth.updateUser(password)`; no sucesso faz signOut e volta pro
+  `/auth` ("Senha alterada! Entre com a nova senha.") — o promotor entra pelo
+  fluxo normal, que popula a sessão local. Aberta sem link → orientação +
+  botão pro login (timeout 12 s).
+
+**Disparo do e-mail de reset**: `auth_screen.dart` `_mostrarRecuperarSenha`
+agora passa `redirectTo: AppConstants.deepLinkRecoverPassword`
+(`wizmartapp://wizmartapp.com/recoverpassword`).
+
+**Upgrade acoplado:** `supabase_flutter ^2.5.0 → ^2.9.0` (o observador de
+deep link vem da lib). Pontos sensíveis a versão re-testados pela suíte
+(PGRST116/`ehErroZeroRows`; exceções `AuthException`/`PostgrestException`/
+`StorageException` seguem lidas só por `.message`/`.statusCode`).
+
 ---
 
 ## 3. Checagem de versão e atualização (Android apenas)

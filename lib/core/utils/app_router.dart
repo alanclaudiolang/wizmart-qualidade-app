@@ -3,7 +3,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../presentation/screens/auth/auth_screen.dart';
+import '../../presentation/screens/auth/login_automatico_screen.dart';
 import '../../presentation/screens/auth/onboarding_permissoes_screen.dart';
+import '../../presentation/screens/auth/recuperar_senha_screen.dart';
 import '../../presentation/screens/faltas/faltas_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/programado/programado_screen.dart';
@@ -45,6 +47,17 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/auth',
           builder: (_, __) => const AuthScreen(),
+        ),
+        // Destinos dos deep links dos e-mails do Supabase
+        // (wizmartapp://wizmartapp.com/...). O flutter_deeplinking_enabled
+        // do AndroidManifest entrega o path do link direto ao GoRouter.
+        GoRoute(
+          path: '/loginautomatico',
+          builder: (_, __) => const LoginAutomaticoScreen(),
+        ),
+        GoRoute(
+          path: '/recoverpassword',
+          builder: (_, __) => const RecuperarSenhaScreen(),
         ),
         GoRoute(
           path: '/home',
