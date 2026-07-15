@@ -127,12 +127,20 @@ possível). A correção de dados de 20/06 (136 visitas sem
    cópia de recuperação COM O ALAN + Secure Files; senhas no variable
    group `android-signing`). ⚠️ Secure Files NÃO permite exportar o
    arquivo de volta (só pipelines usam) — a cópia do Alan é o único
-   backup exportável. ⚠️ ARQUIVOS ÓRFÃOS no Storage para o Alan apagar
-   pelo painel (anônimo não deleta): `versoes-apk/promotor-wizmart-build263.apk`
-   (chave descartada), `versoes-apk/promotor-wizmart-build264.apk`
-   (SEM a reordenação do sync — substituído pelo 263 definitivo) e
-   `versoes-apk/teste-upload.txt`. FALTA: Alan atualizar o botão do site
-   (FlutterFlow → ação Launch URL) para o link do build 263.
+   backup exportável. Órfãos do Storage APAGADOS em 15/07 (via
+   service_role). **URL FIXA no ar** (Alan decidiu manter link imutável;
+   Google Play DESCARTADA em 15/07):
+   `https://czvrbntewaisegvjdzyj.supabase.co/storage/v1/object/public/Arquivos/versoes-apk/promotor-wizmart.apk`
+   — hoje serve o build 263; builds futuros SOBRESCREVEM esse nome via
+   pipeline com a service_role key (variable group `supabase-distribution`,
+   id 4, autorizado pro pipeline 3; a chave também está na env da sessão
+   como SUPABASE_SERVICE_KEY). FALTA: Alan atualizar o botão do site
+   (FlutterFlow → ação Launch URL) para a URL FIXA acima; reenviar o zip
+   do APK 262 de campo para arquivar como
+   `versoes-apk/promotor-wizmart-v1.0.2-build262-campo.apk` (build
+   anterior — único assinado com a keystore original); e OK pendente para
+   o build 264 (auto-update reapontado do GitHub para latest.json no
+   Supabase — proposta feita, aguardando aprovação).
 2. Validar deep link em aparelho real (link do e-mail abre o app?).
 3. Pipeline de build no Azure Pipelines (usar Secure Files + variable
    group `android-signing`).
