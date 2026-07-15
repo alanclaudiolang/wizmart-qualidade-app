@@ -118,8 +118,10 @@ possível). A correção de dados de 20/06 (136 visitas sem
 
 1. APK no Supabase Storage — versão VÁLIDA (15/07): **build 263**
    (v1.0.2 = conteúdo do 262 de campo: deep link + reordenação do sync),
-   arquivo `versoes-apk/promotor-wizmart-v1.0.2-build263.apk` (link e
-   SHA-256 registrados abaixo quando publicado). Assinado com a keystore
+   PUBLICADO em 15/07 pelo pipeline `build-apk-android` (run 21):
+   `https://czvrbntewaisegvjdzyj.supabase.co/storage/v1/object/public/Arquivos/versoes-apk/promotor-wizmart-v1.0.2-build263.apk`
+   — SHA-256 `85cedef41b0b98e784faab04d415d93bdaca0c98eef4474e2b7b407fbd410eae`,
+   BUILD_TIME embutido 15/07/2026 15:15. Assinado com a keystore
    `wizmart-upload-2026.jks` (fingerprint do cert SHA-256
    `09b18e7a5b3c0aa8544366a94a3541bba51853d4e13bf453cb706a342169f850`;
    cópia de recuperação COM O ALAN + Secure Files; senhas no variable
