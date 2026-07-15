@@ -1,5 +1,17 @@
 # Contexto do projeto — WizMart Qualidade App
 
+## 🚚 MIGRADO PARA O AZURE DEVOPS (15/07/2026) — LEIA PRIMEIRO
+
+A conta GitHub `alanclaudiolang` foi SUSPENSA (~24/06/2026) e o projeto
+migrou para **`dev.azure.com/smartcafe/wizmart`** (repos, keystore em
+Secure Files, senhas no variable group `android-signing`). Estado
+completo, decisões e pendências em
+**`docs/contexto/contexto-migracao-azure-2026-07-15.md`** — ler antes de
+qualquer trabalho. Referências a GitHub neste arquivo (repo público,
+releases `v-latest`, issues de telemetria, GITHUB_BUG_TOKEN) descrevem o
+mundo ANTES da suspensão e não valem mais até segunda ordem. Distribuição
+do APK: Supabase Storage (imediato) → Google Play (definitivo).
+
 ## ⭐ Regra principal: NÃO SUPOR NADA (definida pelo Alan em 11/06/2026)
 
 Toda afirmação deve se basear em **fatos verificados** — no código, nos
@@ -218,6 +230,9 @@ limitação real, dizer o que foi verificado para chegar nela.
   no Codemagic (nunca confirmamos se algum build iOS passou desde 28/05).
 
 ## ⏳ Retomada de trabalho em andamento
+
+**Fonte atual: `docs/contexto/contexto-migracao-azure-2026-07-15.md`**
+(pós-migração). Os ponteiros abaixo são anteriores à suspensão do GitHub:
 
 **Leia `docs/pendencias-2026-06-12.md`** — checklist atualizado (build 245
 em campo, limpeza D-1, verificações do job noturno e casos em aberto).
