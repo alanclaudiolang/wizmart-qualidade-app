@@ -1,0 +1,64 @@
+# Build Android assinado (APK) — WizMart Promotor
+#
+# Usa a keystore do Secure Files (wizmart-upload-2026.jks) e as senhas do
+# variable group `android-signing`. Disparo MANUAL somente (trigger: none)
+# — regra do projeto: publicar exige OK explícito do Alan a cada vez.
+#
+# Parâmetros do build (versão/numeração) ficam nas variáveis abaixo.
+
+trigger: none
+pr: none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: android-signing
+  - name: APP_VERSION
+    value: '1.0.2'
+  - name: BUILD_NUMBER
+    value: '263'
+  - name: FLUTTER_URL
+    value: 'https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.44.6-stable.tar.xz'
+
+steps:
+  - task: DownloadSecureFile@1
+    name: keystore
+    displayName: 'Keystore do Secure Files'
+    inputs:
+      secureFile: 'wizmart-upload-2026.jks'
+
+  - script: |
+      set -e
+      curl -sSL -o /tmp/flutter.tar.xz "$(FLUTTER_URL)"
+      tar xf /tmp/flutter.tar.xz -C $(Agent.ToolsDirectory)
+      echo "##vso[task.prependpath]$(Agent.ToolsDirectory)/flutter/bin"
+    displayName: 'Instalar Flutter'
+
+  - script: |
+      set -e
+      flutter --version
+      BUILD_TIME=`date -u -d '-3 hours' +'%d/%m/%Y %H:%M'`
+      echo "APP_VERSION=$(APP_VERSION) BUILD_NUMBER=$(BUILD_NUMBER) BUILD_TIME=$BUILD_TIME (BRT)"
+      flutter build apk --release \
+        --dart-define=APP_VERSION="$(APP_VERSION)" \
+        --dart-define=BUILD_TIME="$BUILD_TIME" \
+        --dart-define=BUILD_NUMBER="$(BUILD_NUMBER)"
+    displayName: 'Build APK release assinado'
+    env:
+      UPLOAD_KEYSTORE_PATH: $(keystore.secureFilePath)
+      UPLOAD_KEY_ALIAS: $(UPLOAD_KEY_ALIAS)
+      UPLOAD_KEYSTORE_PASSWORD: $(UPLOAD_KEYSTORE_PASSWORD)
+      UPLOAD_KEY_PASSWORD: $(UPLOAD_KEY_PASSWORD)
+
+  - script: |
+      set -e
+      APK=build/app/outputs/flutter-apk/app-release.apk
+      ls -la $APK
+      $ANDROID_HOME/build-tools/34.0.0/apksigner verify --print-certs $APK | head -4 || true
+      sha256sum $APK
+    displayName: 'Verificar assinatura e hash'
+
+  - publish: build/app/outputs/flutter-apk/app-release.apk
+    artifact: apk
+    displayName: 'Publicar artefato'
