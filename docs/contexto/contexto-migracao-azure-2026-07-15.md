@@ -108,8 +108,20 @@ possível). A correção de dados de 20/06 (136 visitas sem
 
 ## Pendências (ordem de prioridade)
 
-1. Subir APK build 263 no Supabase Storage + atualizar botão do site
-   (FlutterFlow) — EM ANDAMENTO na sessão de 15/07.
+1. ~~Subir APK no Supabase Storage~~ FEITO (15/07): **build 264**
+   (v1.0.2, reconstrução do deep link) publicado em
+   `https://czvrbntewaisegvjdzyj.supabase.co/storage/v1/object/public/Arquivos/versoes-apk/promotor-wizmart-build264.apk`
+   — SHA-256 do arquivo
+   `5adf242995e0bf6295233115a9b8d03fd9d13c25ea668bf7c5e29b55213a72c8`.
+   Assinado com a keystore `wizmart-upload-2026.jks` (fingerprint do cert
+   SHA-256 `09b18e7a5b3c0aa8544366a94a3541bba51853d4e13bf453cb706a342169f850`;
+   cópia de recuperação COM O ALAN + Secure Files; senhas no variable
+   group `android-signing`). ⚠️ Secure Files NÃO permite exportar o
+   arquivo de volta (só pipelines usam) — a cópia do Alan é o único
+   backup exportável. O arquivo `versoes-apk/promotor-wizmart-build263.apk`
+   no Storage é ÓRFÃO (chave descartada, nunca divulgado) — Alan pode
+   apagar pelo painel. FALTA: Alan atualizar o botão do site
+   (FlutterFlow → ação Launch URL) para o link acima.
 2. Validar deep link em aparelho real (link do e-mail abre o app?).
 3. Pipeline de build no Azure Pipelines (usar Secure Files + variable
    group `android-signing`).
