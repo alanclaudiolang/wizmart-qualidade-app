@@ -153,9 +153,19 @@ possível). A correção de dados de 20/06 (136 visitas sem
    do Storage, publicado pelo pipeline junto com o APK da URL fixa
    (FORCE_UPDATE=false → obrigatória D+1). Suíte 53/53 verde. NOTA: a
    frota está MISTA (Jorge no 257!) e builds ≤263 têm auto-update
-   inerte — só convergem baixando pela URL fixa/site. Causa-raiz de a
-   visita sumir do banco na janela do pull (família Causa A) SEGUE
-   PENDENTE. Novas contaminações podem ocorrer até a frota adotar o 264
+   inerte — só convergem baixando pela URL fixa/site. BUILD 265 (27/07, aprovado pelo Alan):
+   purga ATÔMICA (NOT EXISTS dentro do DELETE — fecha a corrida que
+   criava a situação 2: visita de dia anterior purgada com foto
+   pendente) + gatilho pós-pull (fotos adiadas por visita ausente
+   destravam quando o caderno é reescrito, marcador
+   `visita_ausente_adiado`; timer 30s vira rede de segurança).
+   Teste-espelho garante conjunto protegido idêntico
+   (test/purga_atomica_test.dart). Sem migração de schema. Situação 3
+   (idTemp morto pós-pivô) e a causa-raiz da família Causa A SEGUEM
+   PENDENTES — correção definitiva planejada: etiqueta autossuficiente
+   (gravar chave combinada gabarito+PDV+turno+data+promotor em colunas
+   novas de pending_photos na captura; requisito do Alan 27/07: usar
+   os MESMOS campos-chave da Edge Function). Novas contaminações podem ocorrer até a frota adotar o 264
    — re-rodar a varredura '1612573840' periodicamente.
 2. Validar deep link em aparelho real (link do e-mail abre o app?).
 3. Pipeline de build no Azure Pipelines (usar Secure Files + variable

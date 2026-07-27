@@ -391,51 +391,59 @@ class AppDatabase extends _$AppDatabase {
   /// idênticos. Visitas pending/em upload são preservadas pra serem
   /// enviadas no próximo push.
   Future<void> deleteVisitasSincronizadasSemPendencias(int promotorId) async {
-    // IDs de visitas com outbox items ainda não finalizados.
-    final outboxRows = await (select(outboxItems)
-          ..where((o) =>
-              o.status.equals('pending') | o.status.equals('processing')))
-        .get();
-    final naoApagar = <int>{};
-    for (final o in outboxRows) {
-      naoApagar.add(o.entityId);
-    }
+    // ATÔMICA (build 265): a checagem "tem pendência?" roda DENTRO do
+    // próprio DELETE (NOT EXISTS correlacionado), num único comando.
+    // Antes eram 2 passos — ler os ids protegidos e depois apagar — e
+    // uma foto inserida entre os dois escapava da proteção: a row da
+    // visita era purgada com foto pendente apontando pra ela; se fosse
+    // de dia anterior, o pull (que só reescreve HOJE) nunca a recriava
+    // e o upload não achava a visita (origem da situação 2 do
+    // caminho-fantasma, relato Jorge/582 21/07). O conjunto protegido é
+    // O MESMO de antes (teste-espelho em purga_atomica_test.dart):
+    //  - outbox pending/processing apontando pra visita;
+    //  - foto watermark_pending/pending/uploading — inclui
+    //    'watermark_pending' (caso Cleiton/Edilson 2026-05-19/20: sem
+    //    isso, INSERT 'open' processado antes da watermark terminar
+    //    fazia o pull apagar a row idTemp e as fotos viravam órfãs);
+    //  - PROTEÇÃO A2 (item 14 / regra do Alan): NUNCA purgar visita em
+    //    execução — status 2 (Em Andamento) ou localState fora de
+    //    idle/finalizada (caso Felipe 122556, 13/06; perda real no
+    //    Thiago 121455);
+    //  - só as `synced` do promotor.
+    await (delete(visitas)
+          ..where((v) =>
+              v.idPromotorAssociado.equals(promotorId) &
+              v.syncStatus.equals('synced') &
+              v.statusVisita.equals(AppConstants.statusEmAndamento).not() &
+              v.localState.isIn(const ['idle', 'finalizada']) &
+              notExistsQuery(select(outboxItems)
+                ..where((o) =>
+                    o.entityId.equalsExp(v.id) &
+                    (o.status.equals('pending') |
+                        o.status.equals('processing')))) &
+              notExistsQuery(select(pendingPhotos)
+                ..where((p) =>
+                    p.visitaId.equalsExp(v.id) &
+                    (p.status.equals('watermark_pending') |
+                        p.status.equals('pending') |
+                        p.status.equals('uploading'))))))
+        .go();
+  }
 
-    // IDs de visitas com fotos ainda em fila — inclui 'watermark_pending'
-    // (não só pending/uploading). Sem isso, se o INSERT 'open' fosse
-    // processado por um _triggerSync da home ANTES da watermark queue
-    // terminar, o pull subsequente apagava a row id=idTemp e recriava
-    // com id=serverId. As pending_photos órfãs com visitaId=idTemp
-    // depois tentavam enfileirar 'photos_antes' UPDATE que era
-    // descartado por "visita não encontrada" — fotos subiam pro
-    // Storage mas o array fotos_antes na tabela ficava vazio.
-    // (Cleiton/Edilson 2026-05-19/20.)
-    final photoRows = await (select(pendingPhotos)
+  /// Gatilho pós-pull (build 265): destrava AGORA as fotos adiadas por
+  /// "visita ausente" (marcador `visita_ausente_adiado` em lastError) —
+  /// o caderno local acabou de ser reescrito pelo pull, então a visita
+  /// pode ter voltado. Só toca nessas fotos: o backoff de erros de
+  /// rede/upload usa lastError com a mensagem da exceção e NÃO é
+  /// resetado. Retorna quantas foram destravadas.
+  Future<int> destravarFotosAdiadasPorVisitaAusente() {
+    return (update(pendingPhotos)
           ..where((p) =>
-              p.status.equals('watermark_pending') |
-              p.status.equals('pending') |
-              p.status.equals('uploading')))
-        .get();
-    for (final p in photoRows) {
-      naoApagar.add(p.visitaId);
-    }
-
-    final query = delete(visitas)
-      ..where((v) =>
-          v.idPromotorAssociado.equals(promotorId) &
-          v.syncStatus.equals('synced') &
-          // PROTEÇÃO A2 (item 14 / regra do Alan): NUNCA purgar visita em
-          // execução. Status 2 = Em Andamento; localState fora de
-          // idle/finalizada = etapa em curso. Sem isso, depois que o
-          // `open` sobe (visita vira synced) o pull apagava e recriava a
-          // visita como "agendada" → promotor via "Iniciar" e perdia o
-          // "antes" (caso Felipe 122556, 13/06; perda real no Thiago 121455).
-          v.statusVisita.equals(AppConstants.statusEmAndamento).not() &
-          v.localState.isIn(const ['idle', 'finalizada']));
-    if (naoApagar.isNotEmpty) {
-      query.where((v) => v.id.isNotIn(naoApagar.toList()));
-    }
-    await query.go();
+              p.status.equals('pending') &
+              p.lastError.equals('visita_ausente_adiado')))
+        .write(PendingPhotosCompanion(
+      nextRetryAt: Value(DateTime.now().toIso8601String()),
+    ));
   }
 
   Future<void> upsertVisita(VisitasCompanion visita) =>

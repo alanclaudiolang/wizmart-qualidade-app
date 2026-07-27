@@ -337,6 +337,20 @@ class SyncEngine {
     } catch (e) {
       _logger.log('limpeza-d1', 'Limpeza falhou (ignorado): $e');
     }
+    // Gatilho (build 265): o caderno de visitas acabou de ser reescrito —
+    // fotos adiadas por "visita ausente" ficam elegíveis JÁ (o
+    // processOutbox roda logo em seguida no mesmo fullSync). try/catch
+    // próprio: o gatilho nunca pode quebrar o sync.
+    try {
+      final destravadas = await _db.destravarFotosAdiadasPorVisitaAusente();
+      if (destravadas > 0) {
+        _logger.log('photo',
+            '$destravadas foto(s) adiada(s) por visita ausente '
+            'destravada(s) pós-pull');
+      }
+    } catch (e) {
+      _logger.log('photo', 'Gatilho pós-pull falhou (ignorado): $e');
+    }
     _logger.log('fim', 'Sincronização concluída');
   }
 
@@ -1795,6 +1809,11 @@ class SyncEngine {
         await _db.updatePendingPhoto(PendingPhotosCompanion(
           id: Value(photo.id),
           status: const Value('pending'),
+          // Marcador lido pelo gatilho pós-pull
+          // (destravarFotosAdiadasPorVisitaAusente): quando o caderno é
+          // reescrito, essas fotos tentam de novo NA HORA. Os 30s são só
+          // rede de segurança se nenhum pull rodar.
+          lastError: const Value('visita_ausente_adiado'),
           nextRetryAt: Value(DateTime.now()
               .add(const Duration(seconds: 30))
               .toIso8601String()),
