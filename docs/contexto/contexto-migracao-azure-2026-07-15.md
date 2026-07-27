@@ -141,9 +141,22 @@ possível). A correção de dados de 20/06 (136 visitas sem
    `bdfcca5c1ab95ca0c5da3b7da4ddabaefb6ed2a7af3fa11fef3c3ec90e455d8a`,
    BUILD_TIME 24/06/2026 09:25 conferido no binário — único assinado com
    a keystore ORIGINAL; se ela voltar via GitHub, é este que atualiza por
-   cima dos aparelhos de campo). OK ainda pendente para o build 264
-   (auto-update reapontado do GitHub para latest.json no Supabase —
-   proposta feita, aguardando aprovação).
+   cima dos aparelhos de campo). BUILD 264 APROVADO e executado em
+   21/07 (caso Jorge/582 — fotos de outro PDV): (i) LIMPEZA de dados:
+   80 visitas de 32 promotores tinham URLs do caminho-fantasma
+   `abastecimentos/<uid>//visita-1612573840-…` nos arrays (03/06→21/07)
+   — todas limpas via service_role, backup dos arrays originais em
+   `docs/contexto/backup-urls-fantasma-2026-07-21.json`; (ii) CÓDIGO:
+   upload com visita ausente no banco local agora é ADIADO (+30s) em vez
+   de subir pro caminho-fantasma (sync_engine `_processPhotoUpload`);
+   (iii) auto-update reapontado do GitHub (morto) para o `latest.json`
+   do Storage, publicado pelo pipeline junto com o APK da URL fixa
+   (FORCE_UPDATE=false → obrigatória D+1). Suíte 53/53 verde. NOTA: a
+   frota está MISTA (Jorge no 257!) e builds ≤263 têm auto-update
+   inerte — só convergem baixando pela URL fixa/site. Causa-raiz de a
+   visita sumir do banco na janela do pull (família Causa A) SEGUE
+   PENDENTE. Novas contaminações podem ocorrer até a frota adotar o 264
+   — re-rodar a varredura '1612573840' periodicamente.
 2. Validar deep link em aparelho real (link do e-mail abre o app?).
 3. Pipeline de build no Azure Pipelines (usar Secure Files + variable
    group `android-signing`).

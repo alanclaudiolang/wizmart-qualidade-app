@@ -1777,6 +1777,30 @@ class SyncEngine {
       // currentUserUid = auth.users.id (UUID) — necessário pra passar policies
       // do bucket que comparam com auth.uid().
       final visita = await _db.getVisitaById(photo.visitaId);
+      if (visita == null) {
+        // Sem a visita local não há como montar o path (data/PDV/hash).
+        // O fallback antigo subia para
+        // `abastecimentos/<uid>//visita-1612573840-<slot>-<n>.jpg` — UM
+        // caminho por promotor, SOBRESCRITO a cada episódio — e a URL
+        // entrava no array da visita do dia: semanas depois a visita
+        // "exibia" foto de outro PDV (caso Jorge/582 em 21/07; 80
+        // visitas de 32 promotores contaminadas desde 03/06). A visita
+        // costuma reaparecer segundos depois (janela do pull que
+        // apaga/recria rows): ADIA o upload pra próxima rodada em vez
+        // de subir pra um endereço mentiroso.
+        _logger.log(
+            'photo',
+            'Visita ${photo.visitaId} ausente no banco local — upload '
+            'ADIADO (foto=${photo.id} slot=${photo.slot} n=${photo.numero})');
+        await _db.updatePendingPhoto(PendingPhotosCompanion(
+          id: Value(photo.id),
+          status: const Value('pending'),
+          nextRetryAt: Value(DateTime.now()
+              .add(const Duration(seconds: 30))
+              .toIso8601String()),
+        ));
+        return;
+      }
       // Sessão Supabase Auth pode expirar enquanto o app está aberto.
       // Sem authUid, o path do storage fica `abastecimentos//…/` e o
       // RLS rejeita com 403, travando o sync. Antes de tentar upload,
@@ -1815,24 +1839,24 @@ class SyncEngine {
       String dataAgendadoBr;
       try {
         final dtUtc =
-            DateTime.parse(visita?.diaHoraAgendado ?? '').toUtc();
+            DateTime.parse(visita.diaHoraAgendado ?? '').toUtc();
         final dtBr = dtUtc.subtract(const Duration(hours: 3));
         dataAgendadoBr =
             '${dtBr.year.toString().padLeft(4, '0')}-${dtBr.month.toString().padLeft(2, '0')}-${dtBr.day.toString().padLeft(2, '0')} '
             '${dtBr.hour.toString().padLeft(2, '0')}:${dtBr.minute.toString().padLeft(2, '0')}:${dtBr.second.toString().padLeft(2, '0')}';
       } catch (_) {
-        dataAgendadoBr = visita?.diaHoraAgendado ?? '';
+        dataAgendadoBr = visita.diaHoraAgendado ?? '';
       }
-      final nomeBase = _limparNomeArquivo(visita?.titulo ?? 'visita');
+      final nomeBase = _limparNomeArquivo(visita.titulo ?? 'visita');
       final ext = photo.localPath.split('.').last.toLowerCase();
       // Hash DETERMINÍSTICO da chave natural — mesma foto física gera
       // mesmo nome de arquivo entre runs. Antes, Object.hash com String
       // gerava nomes diferentes a cada relançamento, poluindo o bucket
       // com N cópias da mesma foto e dificultando recuperação de dados.
       final visitaHash = _hashDeterministico(
-        visita?.idGabaritoAssociado ?? 0,
-        visita?.idPdvAssociado ?? 0,
-        visita?.previsaoTurnoRealizada ?? '',
+        visita.idGabaritoAssociado ?? 0,
+        visita.idPdvAssociado ?? 0,
+        visita.previsaoTurnoRealizada ?? '',
       );
       // Sanitiza cada segmento — Supabase Storage rejeita :, espaços e acentos
       final dataSeg = _sanitizePathSegment(dataAgendadoBr);

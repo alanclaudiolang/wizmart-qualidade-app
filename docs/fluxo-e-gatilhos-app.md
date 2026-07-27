@@ -251,21 +251,23 @@ deep link vem da lib). Pontos sensíveis a versão re-testados pela suíte
 
 ## 3. Checagem de versão e atualização (Android apenas)
 
-### 3.1. Consulta ao release `v-latest`
+### 3.1. Consulta ao `latest.json` do Supabase (build 264+; era o release `v-latest` do GitHub até o 263)
 
-`VersionCheckService.check()` (`lib/core/network/version_check_service.dart:95-163`):
+`VersionCheckService.check()` (`lib/core/network/version_check_service.dart`):
 
-- GET em `https://api.github.com/repos/alanclaudiolang/wizmart-qualidade-app/releases/tags/v-latest`, timeout 6 s (`version_check_service.dart:89-99`). **Qualquer falha retorna `upToDate`** — usuário não pode ser alarmado por instabilidade da API (`version_check_service.dart:92-94, 160-162`).
-- Extrai o build do asset variável `wizmart-app-v<version>-build<NN>-<timestamp>.apk` via regex `build(\d+)` (`version_check_service.dart:109-119`).
-- **URL de download = asset de nome fixo `promotor-wizmart.apk`** (URL estável entre releases); cai pro asset variável se o fixo não existir (`version_check_service.dart:121-129`).
-- `outdated` = build remoto numérico > build local (`AppConstants.buildNumber`, dart-define); local não-numérico ("dev") conta como desatualizado (`version_check_service.dart:131-139`).
-- `forceUpdate` = body do release contém `[FORCE-UPDATE]` (case-insensitive) (`version_check_service.dart:147-151`). Pra ativar: editar a descrição do release no GitHub (`version_check_service.dart:29-33`).
+- GET em `{AppConstants.supabaseUrl}/storage/v1/object/public/Arquivos/versoes-apk/latest.json?cb=<epoch>` (query única fura o cache do CDN), timeout 6 s. **Qualquer falha retorna `upToDate`** — usuário não pode ser alarmado por instabilidade de rede.
+- O `latest.json` é publicado pelo pipeline `build-apk-android` (Azure) a cada build, com `x-upsert`: `{"buildNumber","apkUrl","forceUpdate","publishedAt"}`.
+- Parsing/decisão em `parseLatestJson` (estático, coberto por `test/version_check_latest_json_test.dart`): fail-open — campo ausente/inválido → `upToDate`.
+- **URL de download = `apkUrl` do JSON** (a URL FIXA `.../versoes-apk/promotor-wizmart.apk`, sobrescrita a cada build pelo pipeline).
+- `outdated` = buildNumber remoto numérico > build local (`AppConstants.buildNumber`, dart-define); local não-numérico ("dev"/"0") conta como desatualizado.
+- `forceUpdate` = campo `"forceUpdate": true` do JSON. Pra ativar: rodar o pipeline com a variável `FORCE_UPDATE=true` (ou editar o latest.json no bucket).
+- **Histórico**: até o build 263 a fonte era `api.github.com/.../releases/tags/v-latest` — morto desde a suspensão da conta (24/06). Builds ≤263 em campo têm auto-update INERTE (falha silenciosa) — só convergem instalando pela URL fixa/site.
 - `appVersionProvider`: `FutureProvider` que checa uma vez e cacheia; re-checagem só via `ref.invalidate` (feito em `_kickSync` `main.dart:202`, `_triggerSync` da home `home_screen.dart:137`, volta da rede `home_screen.dart:425`). **iOS sempre retorna `upToDate`** (TestFlight cuida das atualizações; Apple proíbe OTA) (`version_check_service.dart:166-176`).
 
 ### 3.2. Regra de obrigatoriedade (`atualizacaoObrigatoria`, `version_check_service.dart:54-67`)
 
 Obrigatória quando `outdated` **e** (um dos dois):
-1. `forceUpdate` (marker `[FORCE-UPDATE]`) → imediato;
+1. `forceUpdate` (campo do latest.json; era o marker `[FORCE-UPDATE]` na era GitHub) → imediato;
 2. **D+1**: hoje é dia **posterior** à data de compilação do APK **instalado** (`AppConstants.buildTime`, formato `dd/MM/yyyy HH:mm`, parseado em `version_check_service.dart:72-83`). Em dev (`BUILD_TIME='local'`) o D+1 nunca dispara. Bug histórico documentado: antes usava `published_at` do `v-latest`, mas o workflow apaga/recria o release a cada push e o timestamp resetava — promotor 2+ dias atrasado nunca era forçado (`version_check_service.dart:46-53`).
 
 ### 3.3. Bloqueio na Home (logado)
@@ -859,8 +861,9 @@ No engine, a migração é registrada em `_idsMigradosNaRodada[entityId]=novoSer
 
 1. Marca a foto `uploading` (`sync_engine.dart:1150-1153`).
 2. Arquivo local não existe → status `error` e retorna (irrecuperável; não bloqueia mais o outbox — ver `countFotosEmProgresso`, `app_database.dart:703-708`) — `sync_engine.dart:1155-1164`.
-3. **Auth**: precisa de `auth.uid` no path (policies do bucket comparam com `auth.uid()`). Se `currentUser==null`, tenta `refreshSession` (timeout 6 s); falhou → `AuthSessionExpired.set()`, foto volta a `pending` **sem consumir tentativa**, UI força relogin (`sync_engine.dart:1170-1204`).
-4. **Path no Storage** (padrão do app FlutterFlow antigo, `sync_engine.dart:1166-1233`):
+3. **Visita ausente no banco local → upload ADIADO (build 264, 21/07)**: se `getVisitaById(photo.visitaId)` retorna null, a foto volta a `pending` com `nextRetryAt=+30s` e NADA é enviado. Antes, os fallbacks (`titulo→'visita'`, data vazia, `hash(0,0,'')=1612573840`) produziam o **caminho-fantasma** `abastecimentos/<uid>//visita-1612573840-<slot>-<n>.jpg` — um único endereço por promotor, sobrescrito a cada episódio, cuja URL entrava no array da visita do dia (caso Jorge/582 21/07: 80 visitas de 32 promotores com fotos "de outro PDV"; limpeza dos arrays executada em 21/07, backup em `docs/contexto/backup-urls-fantasma-2026-07-21.json`). A visita reaparece via pull segundos depois e o upload sai com o path correto. Causa-raiz de a row sumir (janela do pull/limpeza) segue em investigação (família Causa A).
+4. **Auth**: precisa de `auth.uid` no path (policies do bucket comparam com `auth.uid()`). Se `currentUser==null`, tenta `refreshSession` (timeout 6 s); falhou → `AuthSessionExpired.set()`, foto volta a `pending` **sem consumir tentativa**, UI força relogin (`sync_engine.dart:1170-1204`).
+5. **Path no Storage** (padrão do app FlutterFlow antigo, `sync_engine.dart:1166-1233`):
 
 ```
 abastecimentos/{authUid}/{dataAgendadoBrasil sanitizada}/{nomePDV}-{visitaHash}-{slot}-{numero}.{ext}
@@ -869,10 +872,10 @@ abastecimentos/{authUid}/{dataAgendadoBrasil sanitizada}/{nomePDV}-{visitaHash}-
    - `nomePDV` = título da visita limpo (`_limparNomeArquivo`: remove acentos/especiais, máx. 6 palavras — `sync_engine.dart:1097-1122`);
    - `visitaHash` = **`_hashDeterministico(gabarito, pdv, turno)`** — mesmo nome de arquivo entre runs (antes `Object.hash` poluía o bucket com N cópias — `sync_engine.dart:1219-1227`);
    - cada segmento passa por `_sanitizePathSegment` (`:`→`-`, espaço→`_`, sem acentos — `sync_engine.dart:1124-1147`).
-5. **Upload** no bucket `Arquivos` via `uploadBinary` com `upsert: true` (idempotente: retry sobrescreve o mesmo arquivo — coerente com `resetUploadingNoBoot`, `app_database.dart:562-574`) e content-type por extensão (`sync_engine.dart:1238-1246`, `_contentTypeFromExt` `sync_engine.dart:1357-1372`).
-6. **Vínculo da URL**: `getPublicUrl` → grava em `pending_photos.storageUrl` com status `uploaded` (`sync_engine.dart:1247-1260`). **Não toca** em `fotosAntesJson/fotosDepoisJson` — aquele JSON é fonte de verdade dos paths locais do grid; as URLs vivem só em `pending_photos` e são lidas por `getUploadedPhotoUrls` na montagem do payload (`sync_engine.dart:1251-1255`).
-7. **Marca a visita `syncStatus='pending'`** (`sync_engine.dart:1262-1266`) e **enfileira** um outbox item `photos_antes`/`photos_depois` com `payloadJson='{}'` (`sync_engine.dart:1268-1282`) — o array chega ao servidor no mesmo ciclo (o outbox é relido depois das fotos, `sync_engine.dart:551-553`).
-8. **Falha** (`sync_engine.dart:1283-1342`): classifica com `ErrorClassifier` (+ `_extrairHttpStatus`, `sync_engine.dart:1345-1355`):
+6. **Upload** no bucket `Arquivos` via `uploadBinary` com `upsert: true` (idempotente: retry sobrescreve o mesmo arquivo — coerente com `resetUploadingNoBoot`, `app_database.dart:562-574`) e content-type por extensão (`sync_engine.dart:1238-1246`, `_contentTypeFromExt` `sync_engine.dart:1357-1372`).
+7. **Vínculo da URL**: `getPublicUrl` → grava em `pending_photos.storageUrl` com status `uploaded` (`sync_engine.dart:1247-1260`). **Não toca** em `fotosAntesJson/fotosDepoisJson` — aquele JSON é fonte de verdade dos paths locais do grid; as URLs vivem só em `pending_photos` e são lidas por `getUploadedPhotoUrls` na montagem do payload (`sync_engine.dart:1251-1255`).
+8. **Marca a visita `syncStatus='pending'`** (`sync_engine.dart:1262-1266`) e **enfileira** um outbox item `photos_antes`/`photos_depois` com `payloadJson='{}'` (`sync_engine.dart:1268-1282`) — o array chega ao servidor no mesmo ciclo (o outbox é relido depois das fotos, `sync_engine.dart:551-553`).
+9. **Falha** (`sync_engine.dart:1283-1342`): classifica com `ErrorClassifier` (+ `_extrairHttpStatus`, `sync_engine.dart:1345-1355`):
    - **erro real** → status `error` (destrava o outbox da visita), anomalia `D1-upload-erro-real` + upload da foto pro bucket de bug-report (`sync_engine.dart:1292-1328`);
    - **rede/desconhecido** → volta a `pending` com backoff `min(2^attempts × 30s, 1800s)` (`sync_engine.dart:1330-1341`).
 

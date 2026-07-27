@@ -1,12 +1,19 @@
 // lib/core/network/version_check_service.dart
 //
-// Consulta o release "v-latest" no GitHub para descobrir se há um build
-// mais novo que o local. O CI publica a APK em
-//   github.com/alanclaudiolang/wizmart-qualidade-app/releases/tag/v-latest
-// com nome de asset no formato:
-//   wizmart-app-v<version>-build<NN>-<timestamp>.apk
+// Android: consulta o `latest.json` publicado no Supabase Storage pelo
+// pipeline `build-apk-android` (Azure DevOps) para descobrir se há um
+// build mais novo que o local:
+//   {versoes-apk}/latest.json =
+//     { "buildNumber": "264", "apkUrl": "<URL fixa do APK>",
+//       "forceUpdate": false, "publishedAt": "<ISO-8601>" }
 //
-// Comparamos o build number do asset com o build number local
+// Até o build 263 a fonte era o release `v-latest` no GitHub — morto
+// desde a suspensão da conta (24/06/2026); ver
+// docs/contexto/contexto-migracao-azure-2026-07-15.md. A lógica de
+// obrigatoriedade (D+1 pelo BUILD_TIME local, forceUpdate imediato) é a
+// MESMA de antes — só mudou a fonte consultada.
+//
+// Comparamos o buildNumber do JSON com o build number local
 // (vindo do dart-define BUILD_NUMBER). Falha silenciosa offline.
 
 import 'dart:async';
@@ -26,10 +33,10 @@ class AppVersionInfo {
   /// telemetria/log — não é usado pra decidir D+1 (a referência é o
   /// BUILD_TIME local, que viaja com o APK e não reseta a cada CI run).
   final DateTime? publishedAt;
-  /// `true` quando o body do release contém o marker `[FORCE-UPDATE]`.
-  /// Faz a atualização ser obrigatória IMEDIATAMENTE (sem esperar
-  /// o dia seguinte). Pra ativar: editar o release no GitHub e
-  /// incluir `[FORCE-UPDATE]` em qualquer lugar da descrição.
+  /// `true` quando o `latest.json` traz `"forceUpdate": true`. Faz a
+  /// atualização ser obrigatória IMEDIATAMENTE (sem esperar o dia
+  /// seguinte). Pra ativar: rodar o pipeline com FORCE_UPDATE=true (ou
+  /// editar o latest.json no bucket).
   final bool forceUpdate;
 
   /// URL da página do app na App Store (preenchida só no iOS). Quando
@@ -91,80 +98,58 @@ class AppVersionInfo {
 class VersionCheckService {
   VersionCheckService._();
 
-  static const _releaseApi =
-      'https://api.github.com/repos/alanclaudiolang/wizmart-qualidade-app/releases/tags/v-latest';
+  /// Arquivo de controle publicado pelo pipeline a cada build (com
+  /// `x-upsert`, sempre no mesmo endereço).
+  static const latestJsonUrl =
+      '${AppConstants.supabaseUrl}/storage/v1/object/public/Arquivos/versoes-apk/latest.json';
 
-  /// Retorna [AppVersionInfo.upToDate] em qualquer falha (offline, rate
-  /// limit, parsing). O usuário não pode ser alarmado por instabilidade
-  /// da API do GitHub.
+  /// Retorna [AppVersionInfo.upToDate] em qualquer falha (offline,
+  /// arquivo ausente, parsing). O usuário não pode ser alarmado por
+  /// instabilidade de rede/CDN.
   static Future<AppVersionInfo> check() async {
     try {
+      // Query única a cada chamada fura o cache do CDN do Storage —
+      // sem isso o promotor poderia ficar até 1h vendo o JSON antigo.
+      final cb = DateTime.now().millisecondsSinceEpoch;
       final res = await http
-          .get(Uri.parse(_releaseApi), headers: {'Accept': 'application/json'})
+          .get(Uri.parse('$latestJsonUrl?cb=$cb'),
+              headers: {'Accept': 'application/json'})
           .timeout(const Duration(seconds: 6));
       if (res.statusCode != 200) return AppVersionInfo.upToDate;
 
-      final json = jsonDecode(res.body) as Map<String, dynamic>;
-      final assets = (json['assets'] as List?) ?? const [];
-      if (assets.isEmpty) return AppVersionInfo.upToDate;
-
-      final assetList = assets.cast<Map<String, dynamic>>();
-
-      // Extrai o build number do asset variável (nome contém "buildNN").
-      final assetComBuild = assetList.firstWhere(
-        (a) {
-          final n = (a['name'] as String?) ?? '';
-          return n.contains(RegExp(r'build\d+')) && n.endsWith('.apk');
-        },
-        orElse: () => const {},
-      );
-      if (assetComBuild.isEmpty) return AppVersionInfo.upToDate;
-      final nameVar = assetComBuild['name'] as String? ?? '';
-      final match = RegExp(r'build(\d+)').firstMatch(nameVar);
-      if (match == null) return AppVersionInfo.upToDate;
-
-      // Pra download usamos o asset com nome fixo (promotor-wizmart.apk)
-      // — URL estável que serve qualquer release. Cai pro asset variável
-      // se por algum motivo o fixo não existir.
-      final assetFixo = assetList.firstWhere(
-        (a) => (a['name'] as String?) == 'promotor-wizmart.apk',
-        orElse: () => assetComBuild,
-      );
-      final url = assetFixo['browser_download_url'] as String?;
-      if (url == null) return AppVersionInfo.upToDate;
-
-      final latestBuild = match.group(1)!;
-      final localBuild = AppConstants.buildNumber;
-
-      // Builds numéricos: compara como int. Se local for 'dev' ou similar,
-      // considera desatualizado.
-      final latestNum = int.tryParse(latestBuild);
-      final localNum = int.tryParse(localBuild);
-      final outdated = (latestNum != null &&
-          (localNum == null || latestNum > localNum));
-
-      DateTime? publishedAt;
-      final pubRaw = json['published_at'] as String?;
-      if (pubRaw != null) {
-        publishedAt = DateTime.tryParse(pubRaw);
-      }
-
-      // Marker `[FORCE-UPDATE]` no body do release dispara atualização
-      // obrigatória imediata (sem aguardar regra "dia seguinte").
-      final body = (json['body'] as String?) ?? '';
-      final forceUpdate =
-          body.toUpperCase().contains('[FORCE-UPDATE]');
-
-      return AppVersionInfo(
-        outdated: outdated,
-        latestBuild: latestBuild,
-        apkDownloadUrl: url,
-        publishedAt: publishedAt,
-        forceUpdate: forceUpdate,
-      );
+      final json = jsonDecode(res.body);
+      if (json is! Map<String, dynamic>) return AppVersionInfo.upToDate;
+      return parseLatestJson(json);
     } catch (_) {
       return AppVersionInfo.upToDate;
     }
+  }
+
+  /// Transforma o conteúdo do `latest.json` em [AppVersionInfo].
+  /// Separado do fetch para ser testável. Campos ausentes/inválidos →
+  /// [AppVersionInfo.upToDate] (fail-open, nunca bloqueia por engano).
+  static AppVersionInfo parseLatestJson(Map<String, dynamic> json) {
+    final latestBuild = (json['buildNumber'] ?? '').toString().trim();
+    final url = (json['apkUrl'] as String?)?.trim();
+    if (latestBuild.isEmpty || url == null || url.isEmpty) {
+      return AppVersionInfo.upToDate;
+    }
+
+    // Builds numéricos: compara como int. Se local for 'dev' ou similar,
+    // considera desatualizado (mesma regra da era GitHub).
+    final latestNum = int.tryParse(latestBuild);
+    final localNum = int.tryParse(AppConstants.buildNumber);
+    final outdated =
+        latestNum != null && (localNum == null || latestNum > localNum);
+
+    return AppVersionInfo(
+      outdated: outdated,
+      latestBuild: latestBuild,
+      apkDownloadUrl: url,
+      publishedAt:
+          DateTime.tryParse((json['publishedAt'] ?? '').toString()),
+      forceUpdate: json['forceUpdate'] == true,
+    );
   }
 
   // ---- iOS: comparação com a versão publicada na App Store ----
@@ -249,7 +234,8 @@ class VersionCheckService {
 /// Provider — checa uma vez ao montar e expõe o resultado. Usar
 /// `ref.invalidate(appVersionProvider)` para forçar nova checagem.
 ///
-/// Android: consulta o release `v-latest` no GitHub (auto-update por APK).
+/// Android: consulta o `latest.json` no Supabase Storage (auto-update
+/// por APK hospedado na URL fixa do bucket).
 /// iOS: consulta a versão PUBLICADA na App Store (API pública da Apple,
 /// sem Supabase) e força atualização se a instalada for menor — o botão
 /// de atualizar abre a App Store, pois a Apple não permite instalar

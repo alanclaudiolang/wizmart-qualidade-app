@@ -14,10 +14,15 @@ pool:
 
 variables:
   - group: android-signing
+  - group: supabase-distribution
   - name: APP_VERSION
     value: '1.0.2'
   - name: BUILD_NUMBER
-    value: '263'
+    value: '264'
+  # true → atualização obrigatória IMEDIATA nos apps (latest.json).
+  # false → obrigatória só no dia seguinte (regra D+1 do app).
+  - name: FORCE_UPDATE
+    value: 'false'
   - name: FLUTTER_URL
     value: 'https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.44.6-stable.tar.xz'
 
@@ -62,3 +67,35 @@ steps:
   - publish: build/app/outputs/flutter-apk/app-release.apk
     artifact: apk
     displayName: 'Publicar artefato'
+
+  # Publica no Supabase Storage (bucket Arquivos/versoes-apk):
+  #   1. APK versionado (histórico, imutável por convenção)
+  #   2. APK na URL FIXA (o link do site — sobrescrito a cada build)
+  #   3. latest.json (dispara o auto-update dentro do app, build 264+)
+  - script: |
+      set -e
+      APK=build/app/outputs/flutter-apk/app-release.apk
+      BASE="$SUPABASE_URL/storage/v1/object/Arquivos/versoes-apk"
+      up() {
+        curl -sS -f -X POST "$BASE/$1" \
+          -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+          -H "apikey: $SUPABASE_SERVICE_KEY" \
+          -H "x-upsert: true" -H "Content-Type: $2" \
+          --data-binary @"$3" > /dev/null
+        echo "OK: $1"
+      }
+      up "promotor-wizmart-v$(APP_VERSION)-build$(BUILD_NUMBER).apk" \
+         "application/vnd.android.package-archive" "$APK"
+      up "promotor-wizmart.apk" \
+         "application/vnd.android.package-archive" "$APK"
+      PUBAT=`date -u +%Y-%m-%dT%H:%M:%SZ`
+      printf '{"buildNumber":"%s","apkUrl":"%s","forceUpdate":%s,"publishedAt":"%s"}' \
+        "$(BUILD_NUMBER)" \
+        "$SUPABASE_URL/storage/v1/object/public/Arquivos/versoes-apk/promotor-wizmart.apk" \
+        "$(FORCE_UPDATE)" "$PUBAT" > /tmp/latest.json
+      cat /tmp/latest.json; echo ""
+      up "latest.json" "application/json" /tmp/latest.json
+    displayName: 'Publicar no Supabase (APK fixo + latest.json)'
+    env:
+      SUPABASE_URL: $(SUPABASE_URL)
+      SUPABASE_SERVICE_KEY: $(SUPABASE_SERVICE_KEY)
