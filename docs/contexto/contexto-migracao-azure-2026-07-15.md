@@ -142,11 +142,11 @@ possível). A correção de dados de 20/06 (136 visitas sem
    BUILD_TIME 24/06/2026 09:25 conferido no binário — único assinado com
    a keystore ORIGINAL; se ela voltar via GitHub, é este que atualiza por
    cima dos aparelhos de campo). BUILD 264 APROVADO e executado em
-   21/07 (caso Jorge/582 — fotos de outro PDV): (i) LIMPEZA de dados:
+   27/07 (relato do Jorge/582 de 21/07 — fotos de outro PDV): (i) LIMPEZA de dados:
    80 visitas de 32 promotores tinham URLs do caminho-fantasma
    `abastecimentos/<uid>//visita-1612573840-…` nos arrays (03/06→21/07)
-   — todas limpas via service_role, backup dos arrays originais em
-   `docs/contexto/backup-urls-fantasma-2026-07-21.json`; (ii) CÓDIGO:
+   — todas limpas em 27/07 via service_role, backup dos arrays originais em
+   `docs/contexto/backup-urls-fantasma-2026-07-27.json`; (ii) CÓDIGO:
    upload com visita ausente no banco local agora é ADIADO (+30s) em vez
    de subir pro caminho-fantasma (sync_engine `_processPhotoUpload`);
    (iii) auto-update reapontado do GitHub (morto) para o `latest.json`

@@ -1783,7 +1783,7 @@ class SyncEngine {
         // `abastecimentos/<uid>//visita-1612573840-<slot>-<n>.jpg` — UM
         // caminho por promotor, SOBRESCRITO a cada episódio — e a URL
         // entrava no array da visita do dia: semanas depois a visita
-        // "exibia" foto de outro PDV (caso Jorge/582 em 21/07; 80
+        // "exibia" foto de outro PDV (relato Jorge/582 de 21/07; 80
         // visitas de 32 promotores contaminadas desde 03/06). A visita
         // costuma reaparecer segundos depois (janela do pull que
         // apaga/recria rows): ADIA o upload pra próxima rodada em vez
