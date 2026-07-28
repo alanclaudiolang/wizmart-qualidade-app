@@ -76,11 +76,13 @@ conferência final.
    upload anônimo é PERMITIDO pelas policies atuais; delete/overwrite NÃO,
    então cada versão tem nome próprio, ex. `promotor-wizmart-build263.apk`).
    Atualizar o botão do site (FlutterFlow → Launch URL) para o link novo.
-2. **Definitivo**: **Google Play** (conta `plataformawizmart@gmail.com`,
-   pessoa jurídica, antiga → sem exigência de teste fechado de 14 dias;
-   review de produção ~1–7 dias). App será publicado DO ZERO (novo pacote
-   na loja). Pendências: ficha da loja, política de privacidade (URL),
-   declaração de dados, AAB assinado.
+2. **Definitivo**: **Google Play** — descartada em 15/07, RETOMADA pelo
+   Alan em 27/07 (Play Protect passou a bloquear o APK avulso:
+   "desenvolvedor desconhecido"). Conta org **Smart Café**
+   (7062012092761442057). Plano/checklist/textos:
+   **`docs/play-store-publicacao.md`**. Decisão-chave: usar a NOSSA
+   keystore como chave de assinatura (PEPK) p/ a frota do link atualizar
+   por cima. Política de privacidade no ar (URL no doc).
 3. **Consequência da keystore nova**: quem tem o build 260 instalado NÃO
    consegue atualizar por cima (assinatura diferente) — precisa
    desinstalar/reinstalar UMA vez, e desinstalar apaga o banco local.

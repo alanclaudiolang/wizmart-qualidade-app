@@ -45,7 +45,17 @@ steps:
       flutter --version
       BUILD_TIME=`date -u -d '-3 hours' +'%d/%m/%Y %H:%M'`
       echo "APP_VERSION=$(APP_VERSION) BUILD_NUMBER=$(BUILD_NUMBER) BUILD_TIME=$BUILD_TIME (BRT)"
+      # --build-number grava o BUILD_NUMBER como versionCode do Android
+      # (exigência da Play Store: cada envio precisa de versionCode maior;
+      # também deixa o update por cima do sideload sempre "para frente").
       flutter build apk --release \
+        --build-name="$(APP_VERSION)" --build-number="$(BUILD_NUMBER)" \
+        --dart-define=APP_VERSION="$(APP_VERSION)" \
+        --dart-define=BUILD_TIME="$BUILD_TIME" \
+        --dart-define=BUILD_NUMBER="$(BUILD_NUMBER)"
+      # AAB para a Play Store (mesma assinatura/dart-defines)
+      flutter build appbundle --release \
+        --build-name="$(APP_VERSION)" --build-number="$(BUILD_NUMBER)" \
         --dart-define=APP_VERSION="$(APP_VERSION)" \
         --dart-define=BUILD_TIME="$BUILD_TIME" \
         --dart-define=BUILD_NUMBER="$(BUILD_NUMBER)"
@@ -67,6 +77,10 @@ steps:
   - publish: build/app/outputs/flutter-apk/app-release.apk
     artifact: apk
     displayName: 'Publicar artefato'
+
+  - publish: build/app/outputs/bundle/release/app-release.aab
+    artifact: aab
+    displayName: 'Publicar artefato AAB (Play Store)'
 
   # Publica no Supabase Storage (bucket Arquivos/versoes-apk):
   #   1. APK versionado (histórico, imutável por convenção)
