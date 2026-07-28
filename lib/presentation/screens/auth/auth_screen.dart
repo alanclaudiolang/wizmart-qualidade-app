@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,13 +11,11 @@ import '../../../core/network/sync_engine.dart' show appDatabaseProvider;
 import '../../../core/utils/session_service.dart';
 import '../../../core/utils/device_info_service.dart';
 import '../../../core/utils/promotor_estado_reporter.dart';
-import '../../../core/utils/apk_updater_service.dart';
 import '../../../core/utils/app_colors.dart';
 import '../../../core/utils/auth_session_expired.dart';
 import '../../../core/utils/logout_service.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/network/version_check_service.dart';
-import '../../widgets/apk_download_dialog.dart';
 import 'onboarding_permissoes_screen.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
@@ -467,61 +464,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       );
       return;
     }
-    final url = info.apkDownloadUrl;
-    if (url == null) {
-      _bloqueioForceUpdateAberto = false;
-      return;
-    }
-    final apkOk = await ApkUpdaterService.apkAcessivel(url);
-    if (!apkOk) {
-      _bloqueioForceUpdateAberto = false;
-      return;
-    }
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          backgroundColor: Colors.white,
-          title: const Text(
-            'Atualização obrigatória',
-            style: TextStyle(color: AppColors.textPrimary),
-          ),
-          content: Text(
-            'Há uma nova versão do app. Atualize antes de entrar.\n\n'
-            'Build novo: ${info.latestBuild ?? '?'}.',
-            style: const TextStyle(color: AppColors.textSecondary),
-          ),
-          actions: [
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF38A169),
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () async {
-                Navigator.of(dialogCtx).pop();
-                if (mounted) {
-                  final cancelToken = CancelToken();
-                  await showDialog<void>(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (_) => ApkDownloadDialog(
-                      url: url,
-                      cancelToken: cancelToken,
-                    ),
-                  );
-                }
-                _bloqueioForceUpdateAberto = false;
-                if (mounted) ref.invalidate(appVersionProvider);
-              },
-              child: const Text('Atualizar agora'),
-            ),
-          ],
-        ),
-      ),
-    );
+    // Sem loja disponível (build de dev fora de qualquer store): não há
+    // como forçar atualização — libera o login. O download/instalação
+    // direta de APK foi removido no build 268 (proibido pela política do
+    // Google Play para apps distribuídos pela loja).
+    _bloqueioForceUpdateAberto = false;
   }
 
   void _mostrarRecuperarSenha() {

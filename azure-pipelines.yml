@@ -18,7 +18,7 @@ variables:
   - name: APP_VERSION
     value: '1.0.2'
   - name: BUILD_NUMBER
-    value: '267'
+    value: '268'
   # true → atualização obrigatória IMEDIATA nos apps (latest.json).
   # false → obrigatória só no dia seguinte (regra D+1 do app).
   - name: FORCE_UPDATE

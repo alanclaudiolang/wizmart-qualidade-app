@@ -3,14 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/network/connectivity_service.dart';
 import '../../../core/network/sync_engine.dart';
 import '../../../core/network/version_check_service.dart';
 import '../../../core/constants/app_constants.dart';
-import '../../../core/utils/apk_updater_service.dart';
 import '../../../core/utils/auth_session_expired.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
@@ -21,7 +19,6 @@ import '../../../core/utils/app_colors.dart';
 import '../../../core/utils/current_screen.dart';
 import '../../../core/utils/error_reporter.dart';
 import '../../../core/utils/processing_tracker.dart';
-import '../../widgets/apk_download_dialog.dart';
 import '../../widgets/processing_indicator.dart';
 import '../../widgets/syncing_indicator.dart';
 
@@ -163,65 +160,16 @@ class _HomeContent extends ConsumerWidget {
 
   Future<void> _abrirDownloadAPK(
       BuildContext context, WidgetRef ref, AppVersionInfo info) async {
-    // Loja: iOS sempre (Apple não permite instalar por fora); Android
-    // quando o latest.json traz playStoreUrl (app publicado na Play —
-    // política do Google proíbe app da loja se auto-atualizar baixando
-    // APK por fora). Abre a página da loja e o sistema cuida do update.
+    // Atualização SEMPRE pela loja de apps (Play/App Store). O app é
+    // distribuído pela loja; instalar APK por fora é proibido pela
+    // política do Google Play — o download/instalação direta de APK foi
+    // removido no build 268. `appStoreUrl` vem do check() (Play no
+    // Android via in_app_update; App Store no iOS).
     final storeUrl = info.appStoreUrl;
-    if (Platform.isIOS || storeUrl != null) {
-      if (storeUrl != null) {
-        await launchUrl(Uri.parse(storeUrl),
-            mode: LaunchMode.externalApplication);
-      }
-      return;
+    if (storeUrl != null) {
+      await launchUrl(Uri.parse(storeUrl),
+          mode: LaunchMode.externalApplication);
     }
-    final url = info.apkDownloadUrl;
-    if (url == null) return;
-
-    // Só bloqueia se há processamento ATIVO neste momento (upload em
-    // curso, watermark gerando) ou sync em andamento. Pendente
-    // acumulado em pending_photos sobrevive ao restart do app — não
-    // precisa bloquear update por causa dele.
-    final syncEngine = ref.read(syncEngineProvider);
-    if (ProcessingTracker.total > 0 || syncEngine.isSyncing) {
-      if (!context.mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (dialogCtx) => AlertDialog(
-          backgroundColor: AppColors.card,
-          title: const Text(
-            'Aguarde o envio em andamento',
-            style: TextStyle(color: AppColors.textPrimary),
-          ),
-          content: const Text(
-            'Tem foto sendo enviada agora. Aguarde terminar e tente '
-            'atualizar de novo.',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogCtx).pop(),
-              child: const Text('Entendi',
-                  style: TextStyle(color: AppColors.primary)),
-            ),
-          ],
-        ),
-      );
-      return;
-    }
-
-    if (!context.mounted) return;
-    // Dialog modal com barra de progresso. O download roda em
-    // background e o usuário pode cancelar a qualquer momento.
-    final cancelToken = CancelToken();
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => ApkDownloadDialog(
-        url: url,
-        cancelToken: cancelToken,
-      ),
-    );
   }
 
   Future<void> _mostrarBloqueioObrigatorio(
@@ -281,80 +229,9 @@ class _HomeContent extends ConsumerWidget {
       );
       return;
     }
-    final url = info.apkDownloadUrl;
-    if (url == null) {
-      _bloqueioObrigatorioTratado = false;
-      return;
-    }
-
-    // Pré-condição 0: só dispara o modal quando o promotor está NA
-    // tela Home. Se estiver em qualquer tela de visita (captura,
-    // checklist, etc), pode ter foto não persistida no grid — uma
-    // atualização agora derruba esse trabalho. Quando ele voltar
-    // pra home, o re-trigger do appVersionProvider tenta de novo.
-    if (CurrentScreen.nome != 'home') {
-      _bloqueioObrigatorioTratado = false;
-      return;
-    }
-
-    // Pré-condição 1: zero processamento ativo (watermark gerando ou
-    // upload em curso AGORA) E sync engine parado. Pendente acumulado
-    // em pending_photos NÃO bloqueia — sobrevive ao restart e retoma
-    // no build novo. Bloquear por pendente trava promotores com órfãs
-    // eternas ("Posterga infinito") em builds velhos sem nunca receber
-    // o force-update.
-    final syncEngine = ref.read(syncEngineProvider);
-    if (ProcessingTracker.total > 0 || syncEngine.isSyncing) {
-      _bloqueioObrigatorioTratado = false;
-      return;
-    }
-
-    // Pré-condição 2: APK realmente alcançável (HEAD com timeout 4s).
-    // Sem isso, o dialog mostraria mas o download falharia — promotor
-    // ficaria preso. Em wifi de hotel/captive portal/DNS quebrado,
-    // melhor deixar passar e tentar de novo no próximo gatilho.
-    final apkOk = await ApkUpdaterService.apkAcessivel(url);
-    if (!apkOk) {
-      _bloqueioObrigatorioTratado = false;
-      return;
-    }
-
-    if (!context.mounted) return;
-
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          backgroundColor: AppColors.card,
-          title: const Text(
-            'Atualização obrigatória',
-            style: TextStyle(color: AppColors.textPrimary),
-          ),
-          content: Text(
-            'Há uma nova versão do app e a atualização é obrigatória. '
-            'Build novo: ${info.latestBuild ?? '?'}.',
-            style: const TextStyle(color: AppColors.textSecondary),
-          ),
-          actions: [
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.of(dialogCtx).pop();
-                if (context.mounted) {
-                  await _abrirDownloadAPK(context, ref, info);
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
-              ),
-              child: const Text('Atualizar agora'),
-            ),
-          ],
-        ),
-      ),
-    );
+    // Sem loja disponível (ex.: build de dev fora de qualquer store) não
+    // há como forçar atualização — não bloqueia o promotor.
+    _bloqueioObrigatorioTratado = false;
   }
 
   Future<void> _confirmarLogout(BuildContext context, WidgetRef ref) async {
