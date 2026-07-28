@@ -127,7 +127,13 @@ possível). A correção de dados de 20/06 (136 visitas sem
    `wizmart-upload-2026.jks` (fingerprint do cert SHA-256
    `09b18e7a5b3c0aa8544366a94a3541bba51853d4e13bf453cb706a342169f850`;
    cópia de recuperação COM O ALAN + Secure Files; senhas no variable
-   group `android-signing`). ⚠️ Secure Files NÃO permite exportar o
+   group `android-signing`). DECISÃO 28/07 (Alan): o link avulso NUNCA
+   foi divulgado a ninguém → distribuição migra 100% para a Google
+   Play. Build 267: Android consulta a PRÓPRIA Play (API oficial de
+   in-app updates, pacote `in_app_update`) — latest.json/APK no Supabase
+   viram legado (pipeline ainda publica, app 267+ não lê; aposentar após
+   aprovação). Página fixa da loja gravada no app
+   (`VersionCheckService.playStorePage`). ⚠️ Secure Files NÃO permite exportar o
    arquivo de volta (só pipelines usam) — a cópia do Alan é o único
    backup exportável. Órfãos do Storage APAGADOS em 15/07 (via
    service_role). **URL FIXA no ar** (Alan decidiu manter link imutável;

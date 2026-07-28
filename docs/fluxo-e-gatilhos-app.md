@@ -251,7 +251,9 @@ deep link vem da lib). Pontos sensíveis a versão re-testados pela suíte
 
 ## 3. Checagem de versão e atualização (Android apenas)
 
-### 3.1. Consulta ao `latest.json` do Supabase (build 264+; era o release `v-latest` do GitHub até o 263)
+### 3.1. Consulta DIRETA ao Google Play (build 267+; 264-266 usavam latest.json no Supabase; até o 263, release do GitHub)
+
+**Build 267 (28/07)**: `check()` usa a API oficial de in-app updates (`InAppUpdate.checkForUpdate()`, pacote `in_app_update`) — pergunta ao próprio Play se há versionCode maior; `appStoreUrl` = página fixa da loja (`playStorePage`, derivada do pacote). Fail-open (fora da loja/timeout → upToDate). D+1 inalterado. Sem alavanca de força remota (forceUpdate só no iOS); obrigatoriedade = D+1. O bloco abaixo descreve a era 264-266 (HISTÓRICO — latest.json ainda é publicado pelo pipeline mas o app 267+ não o lê):
 
 `VersionCheckService.check()` (`lib/core/network/version_check_service.dart`):
 

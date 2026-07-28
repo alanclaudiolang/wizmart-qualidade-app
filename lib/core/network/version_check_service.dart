@@ -22,6 +22,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:in_app_update/in_app_update.dart';
 
 import '../constants/app_constants.dart';
 
@@ -98,66 +99,42 @@ class AppVersionInfo {
 class VersionCheckService {
   VersionCheckService._();
 
-  /// Arquivo de controle publicado pelo pipeline a cada build (com
-  /// `x-upsert`, sempre no mesmo endereço).
-  static const latestJsonUrl =
-      '${AppConstants.supabaseUrl}/storage/v1/object/public/Arquivos/versoes-apk/latest.json';
+  /// Página do app na Play Store — derivada do nome do pacote, fixa e
+  /// conhecida desde antes da publicação. É para cá que o botão
+  /// "Atualizar" aponta no Android.
+  static const playStorePage =
+      'https://play.google.com/store/apps/details?id=com.wizmart.wizmart_app';
 
-  /// Retorna [AppVersionInfo.upToDate] em qualquer falha (offline,
-  /// arquivo ausente, parsing). O usuário não pode ser alarmado por
-  /// instabilidade de rede/CDN.
+  /// Android (build 267+): pergunta DIRETAMENTE ao Google Play se há
+  /// versão mais nova (API oficial de in-app updates — mesma dinâmica do
+  /// iOS com a App Store, sem nenhum backend nosso). O Play responde com
+  /// o versionCode disponível na loja; a decisão de obrigatoriedade
+  /// (D+1) segue idêntica. Fail-open: instalação fora da loja (aparelho
+  /// de teste), Play indisponível ou timeout → [AppVersionInfo.upToDate],
+  /// nunca alarma nem bloqueia.
+  ///
+  /// História: até o 263 a fonte era o release do GitHub (morto em
+  /// 24/06); 264-266 usaram um latest.json no Supabase — aposentado
+  /// porque o link avulso nunca foi distribuído e a frota migra 100%
+  /// para a Play (decisão do Alan, 28/07).
   static Future<AppVersionInfo> check() async {
     try {
-      // Query única a cada chamada fura o cache do CDN do Storage —
-      // sem isso o promotor poderia ficar até 1h vendo o JSON antigo.
-      final cb = DateTime.now().millisecondsSinceEpoch;
-      final res = await http
-          .get(Uri.parse('$latestJsonUrl?cb=$cb'),
-              headers: {'Accept': 'application/json'})
-          .timeout(const Duration(seconds: 6));
-      if (res.statusCode != 200) return AppVersionInfo.upToDate;
-
-      final json = jsonDecode(res.body);
-      if (json is! Map<String, dynamic>) return AppVersionInfo.upToDate;
-      return parseLatestJson(json);
+      final info = await InAppUpdate.checkForUpdate()
+          .timeout(const Duration(seconds: 8));
+      if (info.updateAvailability != UpdateAvailability.updateAvailable) {
+        return AppVersionInfo.upToDate;
+      }
+      return AppVersionInfo(
+        outdated: true,
+        latestBuild: info.availableVersionCode?.toString(),
+        appStoreUrl: playStorePage,
+        // Sem alavanca remota de força imediata na Play — a
+        // obrigatoriedade continua vindo da regra D+1 (BUILD_TIME local).
+        forceUpdate: false,
+      );
     } catch (_) {
       return AppVersionInfo.upToDate;
     }
-  }
-
-  /// Transforma o conteúdo do `latest.json` em [AppVersionInfo].
-  /// Separado do fetch para ser testável. Campos ausentes/inválidos →
-  /// [AppVersionInfo.upToDate] (fail-open, nunca bloqueia por engano).
-  static AppVersionInfo parseLatestJson(Map<String, dynamic> json) {
-    final latestBuild = (json['buildNumber'] ?? '').toString().trim();
-    final url = (json['apkUrl'] as String?)?.trim();
-    if (latestBuild.isEmpty || url == null || url.isEmpty) {
-      return AppVersionInfo.upToDate;
-    }
-
-    // Builds numéricos: compara como int. Se local for 'dev' ou similar,
-    // considera desatualizado (mesma regra da era GitHub).
-    final latestNum = int.tryParse(latestBuild);
-    final localNum = int.tryParse(AppConstants.buildNumber);
-    final outdated =
-        latestNum != null && (localNum == null || latestNum > localNum);
-
-    // Interruptor remoto da Play Store (build 266): quando o latest.json
-    // traz `playStoreUrl` (ligado no pipeline após o app ser aprovado na
-    // loja), o botão de atualizar passa a ABRIR A LOJA em vez de baixar
-    // APK — mesma dinâmica do iOS. Obrigatório pela política do Google
-    // Play (app da loja não pode se auto-atualizar por fora dela).
-    final playUrl = (json['playStoreUrl'] as String?)?.trim();
-
-    return AppVersionInfo(
-      outdated: outdated,
-      latestBuild: latestBuild,
-      apkDownloadUrl: url,
-      publishedAt:
-          DateTime.tryParse((json['publishedAt'] ?? '').toString()),
-      forceUpdate: json['forceUpdate'] == true,
-      appStoreUrl: (playUrl == null || playUrl.isEmpty) ? null : playUrl,
-    );
   }
 
   // ---- iOS: comparação com a versão publicada na App Store ----
