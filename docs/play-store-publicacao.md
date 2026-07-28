@@ -76,7 +76,40 @@ todas as respostas "não" (sem violência, apostas, etc.).
 credencial de teste para o revisor do Google (criar um usuário promotor
 de teste no Supabase; NÃO usar conta de promotor real).
 
-## Checklist no Console (ações do Alan, na ordem)
+## 🤖 ROTEIRO DA PRÓXIMA SESSÃO — publicação AUTOMATIZADA (28/07)
+
+Decisão do Alan: ele NÃO fará ações manuais. Credenciais
+`GOOGLE_PLAY_EMAIL`/`GOOGLE_PLAY_PASSWORD` salvas no ambiente Claude
+(aparecem em sessão nova). A sessão nova deve:
+
+1. Verificar `env | grep GOOGLE_PLAY` (existem? senão, avisar o Alan).
+2. **Playwright + Chromium** (pré-instalado): login em
+   https://play.google.com/console (conta org Smart Café, id
+   7062012092761442057). ⚠️ o 2FA vai pedir aprovação no CELULAR do
+   Alan — AVISÁ-LO no chat antes de disparar o login e aguardar.
+   Google pode bloquear login automatizado → plano B: ditar cliques.
+3. Criar app: nome `Promotor Wizmart`, pt-BR, App, gratuito.
+4. Integridade do app → "Usar a mesma chave de assinatura" → "Exportar
+   chave de um Java Keystore" → copiar a CHAVE DE CRIPTOGRAFIA (hex) →
+   rodar PEPK. A keystore está no Secure Files (pipeline baixa; pepk.jar
+   em https://www.gstatic.com/play-apps-publisher-rest/pepk.jar) — criar
+   step temporário no pipeline que gera o output.zip como artefato, e
+   subir no Console via navegador.
+5. AAB: artefato `aab` do run 50+ (build 267 — o que consulta a Play
+   direto). Subir em Teste interno primeiro.
+6. Ficha: textos deste doc; ícone/banner:
+   `{SUPABASE}/storage/v1/object/public/Arquivos/site/play-icone-512.png`
+   e `.../play-banner-1024x500.png`. Capturas de tela: pedir ao Alan
+   (mín. 2) se ainda não enviou.
+7. Usuário de teste do revisor: criar via service_role
+   (auth.admin.createUser + linha na tabela users) — e-mail fictício
+   claramente de teste; anotar credencial no campo "App access".
+8. Formulários (Data safety/classificação/público): respostas abaixo.
+9. Enviar para produção; monitorar aprovação; quando aprovado: atualizar
+   botão do site (FlutterFlow → Launch URL → página da loja) e orientar
+   migração da frota 257/262 (desinstalar com trabalho sincronizado).
+
+## Checklist no Console (referência manual — plano B)
 
 1. **Criar app**: Página inicial → "Criar app" → nome `Promotor Wizmart`,
    idioma pt-BR, tipo App, gratuito.
