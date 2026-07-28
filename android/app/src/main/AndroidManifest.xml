@@ -6,9 +6,19 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Storage só para SALVAR na galeria em Android antigo (gal.putImage):
+         Android <=9 usa WRITE (runtime); Android 10-12 usa READ como
+         fallback do gal. Ambas capadas por maxSdkVersion → não valem em
+         Android 13+. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <!-- READ_MEDIA_IMAGES REMOVIDA no build 269: o app NUNCA lê a galeria
+         (única fonte de imagem é ImageSource.camera); só SALVA via
+         Gal.putImage (sem álbum), que não exige permissão de leitura em
+         Android 10+. Declarar READ_MEDIA_IMAGES disparava a política
+         "Fotos e vídeos" da Play sem necessidade. tools:node="remove"
+         bloqueia merge transitivo de plugin. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <!-- Pra abrir APK baixada e chamar o instalador nativo do Android. -->

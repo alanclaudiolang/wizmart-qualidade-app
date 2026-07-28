@@ -10,6 +10,7 @@
 
 import 'dart:io';
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -52,6 +53,27 @@ class PermissionsStatus {
 }
 
 class PermissionsStatusService extends Notifier<PermissionsStatus> {
+  // SDK do Android, cacheado. >=33 (Android 13+) → gal.putImage salva na
+  // galeria SEM permissão de mídia (build 269), então o item "midia" é
+  // considerado OK automaticamente e não bloqueia o onboarding.
+  int? _androidSdk;
+
+  Future<int> _sdkInt() async {
+    if (!Platform.isAndroid) return 0;
+    if (_androidSdk != null) return _androidSdk!;
+    try {
+      final info = await DeviceInfoPlugin().androidInfo;
+      _androidSdk = info.version.sdkInt;
+    } catch (_) {
+      _androidSdk = 0; // não sabe → trata como antigo (pede storage)
+    }
+    return _androidSdk!;
+  }
+
+  /// Android 13+ salva na galeria sem permissão → item mídia dispensado.
+  Future<bool> _midiaDispensada() async =>
+      Platform.isAndroid && (await _sdkInt()) >= 33;
+
   @override
   PermissionsStatus build() {
     _check();
@@ -77,6 +99,11 @@ class PermissionsStatusService extends Notifier<PermissionsStatus> {
   ///      quiser permitir depois, toca de novo no botão (que vai pegar
   ///      o estado permanently denied e abrir Configurações).
   Future<void> pedir(PermissionItem item) async {
+    // Android 13+: mídia já dispensada (gal salva sem permissão) — nada a pedir.
+    if (item == PermissionItem.midia && await _midiaDispensada()) {
+      await _check();
+      return;
+    }
     final perms = _permissoesNativas(item);
     final antesStatus = await _checkCombinado(perms);
     if (antesStatus == PermissionState.permanentlyDenied) {
@@ -109,8 +136,11 @@ class PermissionsStatusService extends Notifier<PermissionsStatus> {
       case PermissionItem.camera:
         return [Permission.camera];
       case PermissionItem.midia:
+        // Build 269: NÃO pede mais Permission.photos (READ_MEDIA_IMAGES,
+        // removida do manifesto). Android <=12 usa storage p/ o gal salvar
+        // em aparelho antigo; Android 13+ é dispensado antes de chegar aqui.
         if (Platform.isAndroid) {
-          return [Permission.photos, Permission.storage];
+          return [Permission.storage];
         }
         return [Permission.photos];
     }
@@ -143,7 +173,10 @@ class PermissionsStatusService extends Notifier<PermissionsStatus> {
 
   Future<void> _check() async {
     final cam = await Permission.camera.status;
-    final midia = await _checkCombinado(_permissoesNativas(PermissionItem.midia));
+    // Android 13+: mídia dispensada (gal salva sem permissão) → granted.
+    final midia = await _midiaDispensada()
+        ? PermissionState.granted
+        : await _checkCombinado(_permissoesNativas(PermissionItem.midia));
     final novo = PermissionsStatus(
       camera: _mapStatus(cam),
       midia: midia,
