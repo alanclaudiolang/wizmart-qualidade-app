@@ -112,7 +112,7 @@ steps:
       PUBAT=`date -u +%Y-%m-%dT%H:%M:%SZ`
       printf '{"buildNumber":"%s","apkUrl":"%s","forceUpdate":%s,"publishedAt":"%s","playStoreUrl":"%s"}' \
         "$(BUILD_NUMBER)" \
-        "$SUPABASE_URL/storage/v1/object/public/Arquivos/versoes-apk/promotor-wizmart.apk" \
+        "$SUPABASE_URL/storage/v1/object/public/Arquivos/versoes-apk/promotor-wizmart.apk?v=$(BUILD_NUMBER)" \
         "$(FORCE_UPDATE)" "$PUBAT" "$(PLAY_STORE_URL)" > /tmp/latest.json
       cat /tmp/latest.json; echo ""
       up "latest.json" "application/json" /tmp/latest.json
