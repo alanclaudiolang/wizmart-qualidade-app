@@ -52,6 +52,28 @@ void main() {
     }
   });
 
+  test('playStoreUrl presente → appStoreUrl setado (abre a loja)', () {
+    final info = VersionCheckService.parseLatestJson({
+      'buildNumber': '266',
+      'apkUrl': 'https://x/a.apk',
+      'playStoreUrl':
+          'https://play.google.com/store/apps/details?id=com.wizmart.wizmart_app',
+    });
+    expect(info.appStoreUrl, contains('play.google.com'));
+    expect(info.apkDownloadUrl, 'https://x/a.apk');
+  });
+
+  test('playStoreUrl ausente/vazio → appStoreUrl null (baixa APK)', () {
+    for (final json in <Map<String, dynamic>>[
+      {'buildNumber': '266', 'apkUrl': 'https://x/a.apk'},
+      {'buildNumber': '266', 'apkUrl': 'https://x/a.apk', 'playStoreUrl': ''},
+      {'buildNumber': '266', 'apkUrl': 'https://x/a.apk', 'playStoreUrl': ' '},
+    ]) {
+      expect(VersionCheckService.parseLatestJson(json).appStoreUrl, isNull,
+          reason: 'json: $json');
+    }
+  });
+
   test('buildNumber numérico igual/menor não marca outdated', () {
     // Local é '0' em teste; simula latest '0' (igual).
     final info = VersionCheckService.parseLatestJson({

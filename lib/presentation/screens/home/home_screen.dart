@@ -163,11 +163,12 @@ class _HomeContent extends ConsumerWidget {
 
   Future<void> _abrirDownloadAPK(
       BuildContext context, WidgetRef ref, AppVersionInfo info) async {
-    // iOS: não existe APK — abre a página do app na App Store. O promotor
-    // toca em "Atualizar" lá; o iOS substitui o app (Apple não permite
-    // instalar por fora da loja).
-    if (Platform.isIOS) {
-      final storeUrl = info.appStoreUrl;
+    // Loja: iOS sempre (Apple não permite instalar por fora); Android
+    // quando o latest.json traz playStoreUrl (app publicado na Play —
+    // política do Google proíbe app da loja se auto-atualizar baixando
+    // APK por fora). Abre a página da loja e o sistema cuida do update.
+    final storeUrl = info.appStoreUrl;
+    if (Platform.isIOS || storeUrl != null) {
       if (storeUrl != null) {
         await launchUrl(Uri.parse(storeUrl),
             mode: LaunchMode.externalApplication);
@@ -225,12 +226,13 @@ class _HomeContent extends ConsumerWidget {
 
   Future<void> _mostrarBloqueioObrigatorio(
       BuildContext context, WidgetRef ref, AppVersionInfo info) async {
-    // iOS: bloqueio obrigatório quando a versão instalada difere da
-    // publicada na App Store. Mantém as MESMAS pré-condições de segurança
-    // da home (só na home, sem processamento/sync ativo) para não
-    // interromper trabalho em andamento. O botão abre a App Store e a
-    // tela permanece bloqueada até o promotor atualizar pela loja.
-    if (Platform.isIOS) {
+    // LOJA: bloqueio obrigatório com botão que abre a loja de apps.
+    // iOS sempre; Android quando o latest.json traz playStoreUrl (app
+    // publicado na Play — build 266). Mantém as MESMAS pré-condições de
+    // segurança da home (só na home, sem processamento/sync ativo) para
+    // não interromper trabalho em andamento. A tela permanece bloqueada
+    // até o promotor atualizar pela loja.
+    if (Platform.isIOS || info.appStoreUrl != null) {
       final storeUrl = info.appStoreUrl;
       if (storeUrl == null) {
         _bloqueioObrigatorioTratado = false;
@@ -258,7 +260,7 @@ class _HomeContent extends ConsumerWidget {
               style: TextStyle(color: AppColors.textPrimary),
             ),
             content: Text(
-              'Há uma nova versão do app na App Store e a atualização é '
+              'Há uma nova versão do app na loja e a atualização é '
               'obrigatória. Versão nova: ${info.latestBuild ?? '?'}.',
               style: const TextStyle(color: AppColors.textSecondary),
             ),
@@ -271,7 +273,7 @@ class _HomeContent extends ConsumerWidget {
                   backgroundColor: AppColors.primary,
                   foregroundColor: AppColors.onPrimary,
                 ),
-                child: const Text('Atualizar na App Store'),
+                child: const Text('Atualizar pela loja'),
               ),
             ],
           ),

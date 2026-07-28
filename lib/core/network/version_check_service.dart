@@ -142,6 +142,13 @@ class VersionCheckService {
     final outdated =
         latestNum != null && (localNum == null || latestNum > localNum);
 
+    // Interruptor remoto da Play Store (build 266): quando o latest.json
+    // traz `playStoreUrl` (ligado no pipeline após o app ser aprovado na
+    // loja), o botão de atualizar passa a ABRIR A LOJA em vez de baixar
+    // APK — mesma dinâmica do iOS. Obrigatório pela política do Google
+    // Play (app da loja não pode se auto-atualizar por fora dela).
+    final playUrl = (json['playStoreUrl'] as String?)?.trim();
+
     return AppVersionInfo(
       outdated: outdated,
       latestBuild: latestBuild,
@@ -149,6 +156,7 @@ class VersionCheckService {
       publishedAt:
           DateTime.tryParse((json['publishedAt'] ?? '').toString()),
       forceUpdate: json['forceUpdate'] == true,
+      appStoreUrl: (playUrl == null || playUrl.isEmpty) ? null : playUrl,
     );
   }
 

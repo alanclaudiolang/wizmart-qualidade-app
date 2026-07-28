@@ -18,11 +18,18 @@ variables:
   - name: APP_VERSION
     value: '1.0.2'
   - name: BUILD_NUMBER
-    value: '265'
+    value: '266'
   # true → atualização obrigatória IMEDIATA nos apps (latest.json).
   # false → obrigatória só no dia seguinte (regra D+1 do app).
   - name: FORCE_UPDATE
     value: 'false'
+  # Preencher com a URL da ficha na Play quando o app for APROVADO
+  # (ex.: https://play.google.com/store/apps/details?id=com.wizmart.wizmart_app)
+  # → o botão Atualizar dos builds 266+ passa a abrir a LOJA em vez de
+  # baixar APK (interruptor remoto via latest.json; exigência de política
+  # do Google Play). Vazio = comportamento atual (baixa APK da URL fixa).
+  - name: PLAY_STORE_URL
+    value: ''
   - name: FLUTTER_URL
     value: 'https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.44.6-stable.tar.xz'
 
@@ -103,10 +110,10 @@ steps:
       up "promotor-wizmart.apk" \
          "application/vnd.android.package-archive" "$APK"
       PUBAT=`date -u +%Y-%m-%dT%H:%M:%SZ`
-      printf '{"buildNumber":"%s","apkUrl":"%s","forceUpdate":%s,"publishedAt":"%s"}' \
+      printf '{"buildNumber":"%s","apkUrl":"%s","forceUpdate":%s,"publishedAt":"%s","playStoreUrl":"%s"}' \
         "$(BUILD_NUMBER)" \
         "$SUPABASE_URL/storage/v1/object/public/Arquivos/versoes-apk/promotor-wizmart.apk" \
-        "$(FORCE_UPDATE)" "$PUBAT" > /tmp/latest.json
+        "$(FORCE_UPDATE)" "$PUBAT" "$(PLAY_STORE_URL)" > /tmp/latest.json
       cat /tmp/latest.json; echo ""
       up "latest.json" "application/json" /tmp/latest.json
     displayName: 'Publicar no Supabase (APK fixo + latest.json)'

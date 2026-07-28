@@ -423,9 +423,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   /// aqui NÃO espera D+1 — promotor ainda não tem dados locais, então
   /// pode/deve atualizar imediatamente.
   Future<void> _mostrarForceUpdateDeslogado(AppVersionInfo info) async {
-    // iOS: não há APK. Bloqueia o login e o botão abre a App Store; a
-    // tela permanece bloqueada até o promotor atualizar pela loja.
-    if (Platform.isIOS) {
+    // LOJA: iOS sempre; Android quando o latest.json traz playStoreUrl
+    // (app publicado na Play — build 266). Bloqueia o login e o botão
+    // abre a loja; a tela permanece bloqueada até atualizar por ela.
+    if (Platform.isIOS || info.appStoreUrl != null) {
       final storeUrl = info.appStoreUrl;
       if (storeUrl == null) {
         _bloqueioForceUpdateAberto = false;
@@ -444,7 +445,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               style: TextStyle(color: AppColors.textPrimary),
             ),
             content: Text(
-              'Há uma nova versão do app na App Store. Atualize antes de '
+              'Há uma nova versão do app na loja. Atualize antes de '
               'entrar. Versão nova: ${info.latestBuild ?? '?'}.',
               style: const TextStyle(color: AppColors.textSecondary),
             ),
@@ -458,7 +459,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   await launchUrl(Uri.parse(storeUrl),
                       mode: LaunchMode.externalApplication);
                 },
-                child: const Text('Atualizar na App Store'),
+                child: const Text('Atualizar pela loja'),
               ),
             ],
           ),
