@@ -1,5 +1,35 @@
 # Publicação na Play Store — Promotor Wizmart
 
+## 🚀 STATUS: EM ANÁLISE NO GOOGLE (enviado em 28/07/2026)
+
+App criado e ENVIADO PARA REVISÃO no Console (conta org Smart Café) em
+28/07, pelo Alan com passo a passo do Claude. Estado:
+- **Versão em produção: build 269 (1.0.2)** — o AAB definitivo:
+  consulta a Play p/ update (in_app_update), SEM auto-instalação de APK
+  (REQUEST_INSTALL_PACKAGES removida no 268) e SEM READ_MEDIA_IMAGES
+  (removida no 269 — app só usa câmera; confirmado por leitura de 100%
+  dos 44 .dart).
+- Países: Brasil + Estados Unidos (EUA inofensivo; remover depois se
+  quiser). Ficha completa (descrição, ícone, banner, 5 capturas fone +
+  tablet 7"/10"). Formulários todos preenchidos (dados/classificação/
+  público 18+/ID publicidade NÃO/financeiro NÃO/saúde NÃO).
+- Conta de teste do revisor (criada no Supabase auth + users):
+  revisor.google.teste@wizmart.com.br / RevoLHC0vFBcs#7 (apagar após
+  estabilizar, se quiser).
+- Página de exclusão de conta (exigência):
+  https://czvrbntewaisegvjdzyj.supabase.co/storage/v1/object/public/Arquivos/site/exclusao-conta.txt
+- Prazo de revisão: 1-7 dias → e-mail no plataformawizmart@gmail.com.
+
+## QUANDO APROVAR (próxima sessão/rodada)
+1. Botão do site (FlutterFlow → Launch URL) → página da loja:
+   https://play.google.com/store/apps/details?id=com.wizmart.wizmart_app
+2. Migração da frota 257/262: desinstalar com trabalho 100% sincronizado
+   → instalar da loja (Claude redige a mensagem de WhatsApp).
+3. Aposentar canal Supabase de APK (fixed URL/latest.json) quando a
+   frota migrar; remover EUA dos países se o Alan quiser.
+4. Se o revisor pedir ajuste: trazer o e-mail ao Claude.
+
+
 Decisão do Alan em 27/07/2026 (revertendo o descarte de 15/07): distribuir
 pela Play Store. Motivo: Google Play Protect passou a BLOQUEAR a
 instalação do APK avulso ("nunca viu um app desse desenvolvedor") —
