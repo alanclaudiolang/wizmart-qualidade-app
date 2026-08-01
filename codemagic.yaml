@@ -1,46 +1,42 @@
-# Codemagic CI — build iOS + publicação automática no TestFlight.
-# First trigger: 2026-05-28 (configs Apple + integration prontos).
+# Codemagic CI — build iOS + upload para o App Store Connect.
 #
-# Espelha o pipeline Android de .github/workflows/build_apk.yml, mas
-# pra iOS: gera .ipa assinado e sobe pro App Store Connect → TestFlight.
+# Pós-migração Azure (07/2026): repo conectado via "Other"
+# (dev.azure.com/smartcafe/wizmart/_git/wizmart-qualidade-app, PAT
+# somente-leitura). App Codemagic: 6a6d4442a9039d6a17c067a2.
 #
-# Pré-requisitos no Codemagic (configurados na UI):
-#   1. Repo conectado: alanclaudiolang/wizmart-qualidade-app
-#   2. Integração "App Store Connect" criada com nome `app_store_connect`:
-#      - Issuer ID, Key ID e Private Key (.p8) gerados em
-#        appstoreconnect.apple.com → Users and Access → Keys.
-#   3. Variável `GITHUB_BUG_TOKEN` no grupo `wizmart-secrets` (PAT
-#      com escopo `repo` pra auto-reportar issues, mesmo do Android).
+# SEM triggers automáticos — regra do projeto: publicação iOS somente
+# mediante solicitação do Alan. Build disparado via API
+# (POST https://api.codemagic.io/builds, workflowId: ios-testflight).
+#
+# Pré-requisitos no Codemagic (conta alanclaudiolang@gmail.com):
+#   1. Integração "App Store Connect" com nome `app_store_connect`
+#      (criada em 05/2026 — Issuer ID + Key .p8 da Apple).
+#   2. Variável secreta CERT_PRIVATE_KEY no grupo `ios-signing`
+#      (chave privada do certificado de distribuição; recriada em
+#      08/2026 — a anterior ficou inacessível no app antigo do GitHub).
 
 workflows:
   ios-testflight:
-    name: iOS TestFlight
+    name: iOS App Store
     instance_type: mac_mini_m2
     max_build_duration: 60
 
     environment:
       groups:
-        - wizmart-secrets
+        - ios-signing
       vars:
         BUNDLE_ID: com.wizmart.promotor
         APP_STORE_APPLE_ID: 6774250898
-      flutter: 3.41.9
+        # CFBundleVersion (precisa ser MAIOR que o último build enviado
+        # ao App Store Connect — histórico foi até 23). Alinhado ao
+        # BUILD_NUMBER do Android (azure-pipelines.yml) por clareza.
+        IOS_BUILD_NUMBER: "269"
+      flutter: 3.44.6
       xcode: latest
       cocoapods: default
 
     integrations:
       app_store_connect: app_store_connect
-
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: main
-          include: true
-          source: true
-        - pattern: dev
-          include: true
-          source: true
 
     scripts:
       - name: Inicializar keychain
@@ -51,8 +47,8 @@ workflows:
         # `--create` cria o cert e o profile via App Store Connect API
         # se ainda não existirem. Requer API key Admin.
         #
-        # A private key vem de CERT_PRIVATE_KEY (env var persistente em
-        # wizmart-secrets) — gerar nova a cada build não funciona porque
+        # A private key vem de CERT_PRIVATE_KEY (env var persistente no
+        # grupo ios-signing) — gerar nova a cada build não funciona porque
         # Apple limita certs DISTRIBUTION por time, e cada cert é casado
         # com UMA private key específica. Persistir a key garante que
         # builds subsequentes encontram o cert existente e reusam.
@@ -86,21 +82,17 @@ workflows:
           BUILD_TIME=$(date +'%d/%m/%Y %H:%M')
           echo "APP_VERSION=$VERSION" >> $CM_ENV
           echo "BUILD_TIME=$BUILD_TIME" >> $CM_ENV
-          echo "Versão: $VERSION | Build: $BUILD_NUMBER | Time: $BUILD_TIME (BRT)"
+          echo "Versão: $VERSION | Build: $IOS_BUILD_NUMBER | Time: $BUILD_TIME (BRT)"
 
       - name: Build IPA
-        # CFBundleVersion (build number iOS) precisa ser estritamente
-        # crescente em cada submission no TestFlight. $BUILD_NUMBER é
-        # injetado pelo Codemagic e incrementa a cada execução.
         script: |
           flutter build ipa --release \
             --build-name=$APP_VERSION \
-            --build-number=$BUILD_NUMBER \
+            --build-number=$IOS_BUILD_NUMBER \
             --export-options-plist=/Users/builder/export_options.plist \
-            --dart-define=GITHUB_BUG_TOKEN="$GITHUB_BUG_TOKEN" \
             --dart-define=APP_VERSION="$APP_VERSION" \
             --dart-define=BUILD_TIME="$BUILD_TIME" \
-            --dart-define=BUILD_NUMBER="$BUILD_NUMBER"
+            --dart-define=BUILD_NUMBER="$IOS_BUILD_NUMBER"
 
     artifacts:
       - build/ios/ipa/*.ipa
@@ -110,11 +102,9 @@ workflows:
     publishing:
       app_store_connect:
         auth: integration
-        # `false` na primeira execução — sobe o build pro App Store
-        # Connect mas não envia pro TestFlight. Útil pra revisar antes
-        # de distribuir. Quando o fluxo estiver estável, mudar pra true.
+        # O upload vai para o App Store Connect; a criação da versão
+        # 1.0.2, anexação do build e envio para análise são feitos via
+        # API (App Store Connect API) — sem TestFlight (decisão do Alan
+        # em 01/08/2026: sem teste no iPhone, direto para produção,
+        # como foi feito no Android).
         submit_to_testflight: false
-        # Quando ativar submit_to_testflight, descomente e ajuste com
-        # o nome do grupo de teste criado no App Store Connect:
-        # beta_groups:
-        #   - Promotores Teste
