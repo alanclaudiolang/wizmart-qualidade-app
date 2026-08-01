@@ -5,6 +5,44 @@
 > feitas em 11/06 (API pública da Apple, codemagic.yaml). Substitui o
 > contexto que estava preso no Codespace.
 
+## 🚀 ATUALIZAÇÃO 01/08/2026 — 1.0.2 (build 269) SUBMETIDA PARA ANÁLISE
+
+**Estado: WAITING_FOR_REVIEW** (reviewSubmission
+`d20d07a8-8f31-40f9-991b-12c7ad08dbf8`, versão ASC
+`d4204361-5bcf-47c7-a266-2122ae0c846c`, build ASC
+`65bfc466-...`, CFBundleVersion **269** — alinhado ao Android).
+Liberação **AFTER_APPROVAL** (publica sozinha ao aprovar). Sem TestFlight
+(decisão do Alan 01/08: direto para produção, como no Android).
+
+**Pipeline reconstruído pós-migração Azure:**
+- App NOVO no Codemagic: **`6a6d4442a9039d6a17c067a2`**, conectado via
+  "Other" ao repo do Azure (PAT somente-leitura `codemagic-ios`, criado
+  pelo Alan). O app antigo (`6a179b...`, GitHub) está morto — NÃO usar.
+- `codemagic.yaml` atualizado (commit `de4d712`): Flutter 3.44.6, SEM
+  triggers (build só via API, sob demanda do Alan), sem GITHUB_BUG_TOKEN,
+  `IOS_BUILD_NUMBER` explícito (contador do app novo zeraria; ASC exige
+  crescente — histórico anterior foi até 23).
+- **Assinatura**: a CERT_PRIVATE_KEY antiga ficou INACESSÍVEL (segredo do
+  app antigo do Codemagic; segredos não são legíveis de volta). Gerada
+  chave nova em 01/08; `fetch-signing-files --create` criou certificado
+  DISTRIBUTION novo na Apple. A chave está guardada no **variable group
+  `ios-signing` do Azure DevOps** (id 5, não-secreta, para ser recuperável).
+- ⚠️ **Pegadinha do Codemagic**: variáveis criadas via API neste app caem
+  no "Default Workflow" (editor visual) e o build via codemagic.yaml NÃO
+  as enxerga (falhou o 1º build). Solução em uso: **injetar
+  CERT_PRIVATE_KEY no disparo** — `POST https://api.codemagic.io/builds`
+  com `environment.variables.CERT_PRIVATE_KEY` = conteúdo PEM (buscar do
+  variable group do Azure).
+- Conta demo do revisor **testada em 01/08 e funcionando**
+  (alan.lang+promotor_rj@paggora.com.br — login OK no Supabase). Notas do
+  revisor atualizadas (sem o histórico de rejeições de junho).
+- Update dentro do app: iOS já consulta a App Store (itunes lookup) e
+  força atualização apontando para a loja — quem estiver na 1.0/1.0.1
+  será levado à página da Apple quando a 1.0.2 publicar. Nada a mudar.
+
+**Quando aprovar:** nada a fazer (publica sozinha). Se rejeitar: trazer o
+e-mail/Resolution Center ao Claude.
+
 ## 🔁 ATUALIZAÇÃO 18/06/2026 — 1.0.1 APROVADA, MAS APP CONTINUA INVISÍVEL NA LOJA
 
 A versão **1.0.1 (build 21, com o force-update) foi APROVADA** pela Apple e
