@@ -11,10 +11,15 @@ do revisor em 05/08 00:11 UTC prova), mas o app busca o usuário por
 `tipo_user=3` — resultado: "Usuário não encontrado no banco de dados"
 e signOut. **Correção:** UPDATE na linha id=638 (`uid` = id do auth,
 `tipo_user` = 3); login simulado de ponta a ponta (auth + consulta por
-uid com token do usuário/RLS) → OK. Credenciais inalteradas
-(revisor.google.teste@wizmart.com.br / RevoLHC0vFBcs#7 — nada a mudar
-no Console). Reenvio: botão "Enviar N mudanças para revisão" na Visão
-geral da publicação.
+uid com token do usuário/RLS) → OK. Correção validada, mas o Alan
+decidiu (05/08) trocar a credencial do revisor pela conta demo já
+aprovada pela Apple: **alan.lang+promotor_rj@paggora.com.br /
+1234567890** (users id 5, tipo_user 3, com gabaritos/rota — revisor vê
+agenda real). Validada de ponta a ponta em 05/08. A conta
+revisor.google.teste@wizmart.com.br também ficou funcional após o
+conserto (pode ser apagada depois). Reenvio: atualizar "Acesso ao app"
+(App access) com a credencial nova + botão "Enviar N mudanças para
+revisão" na Visão geral da publicação.
 
 ## 🚀 STATUS: EM ANÁLISE NO GOOGLE (enviado em 28/07/2026)
 
