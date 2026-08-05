@@ -1,5 +1,21 @@
 # Publicação na Play Store — Promotor Wizmart
 
+## ❌→✅ REJEIÇÃO 04/08 CORRIGIDA em 05/08 — REENVIADO
+
+Google rejeitou em 04/08: "As credenciais de login estão incorretas" —
+o revisor não conseguia entrar. **Causa raiz (erro na criação da conta
+de teste em 28/07):** a linha na tabela `users` ficou com `uid` NULL e
+`tipo_user` NULL. A senha autenticava no Supabase Auth (o last_sign_in
+do revisor em 05/08 00:11 UTC prova), mas o app busca o usuário por
+`uid` (`auth_screen.dart:177` e `login_flow.dart:97`) e exige
+`tipo_user=3` — resultado: "Usuário não encontrado no banco de dados"
+e signOut. **Correção:** UPDATE na linha id=638 (`uid` = id do auth,
+`tipo_user` = 3); login simulado de ponta a ponta (auth + consulta por
+uid com token do usuário/RLS) → OK. Credenciais inalteradas
+(revisor.google.teste@wizmart.com.br / RevoLHC0vFBcs#7 — nada a mudar
+no Console). Reenvio: botão "Enviar N mudanças para revisão" na Visão
+geral da publicação.
+
 ## 🚀 STATUS: EM ANÁLISE NO GOOGLE (enviado em 28/07/2026)
 
 App criado e ENVIADO PARA REVISÃO no Console (conta org Smart Café) em
