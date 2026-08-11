@@ -348,6 +348,19 @@ Quando `outdated` mas sem bloqueio: badge "atualizar" sublinhado no AppBar (toca
 
 Lista **somente leitura** — promotor não interage com os cards (`faltas_screen.dart:4-5`). Pull-to-refresh = `ref.invalidate(faltasProvider)` (`faltas_screen.dart:224`). Sem gatilho de sync. Menu de navegação + soft logout (`faltas_screen.dart:81-111`).
 
+### 4.3-bis. Pendente (`/pendente`, `lib/presentation/screens/pendente/pendente_screen.dart`) — build 270
+
+Item "Pendente" no menu "..." da home (entre Faltas e Reportar problema).
+Lista TODAS as visitas ainda não 100% sincronizadas — incluindo as de
+hoje na home — na ORDEM em que o sync vai enviá-las (mesma do motor,
+build 262: `COALESCE(dia_hora_realizado, dia_hora_agendado) DESC`).
+Fonte 100% local: `getVisitasComPendencia()` (mesmos critérios do badge
+`watchVisitasComPendencia`: row `sync_status='pending'`, foto em
+`watermark_pending/pending/uploading/error` ou outbox
+`pending/processing`) + `countFotosPendentesDaVisita()` por card.
+Somente leitura; cada card mostra posição na fila, PDV, data e o que
+falta ("N fotos para enviar" / "dados da visita para enviar").
+
 ### 4.4. Realizado (`/realizado`, `lib/presentation/screens/realizado/realizado_screen.dart`)
 
 **Fonte: Supabase direto.** `realizadoProvider` (`realizado_screen.dart:38-71`):

@@ -702,6 +702,53 @@ class AppDatabase extends _$AppDatabase {
     return q.watchSingle().map((row) => row.read<int>('c'));
   }
 
+  /// Tela "Pendente" (build 270): visitas ainda não 100% sincronizadas —
+  /// MESMOS critérios do [watchVisitasComPendencia] (row pending, foto
+  /// não-uploaded ou outbox pendente), na MESMA ordem em que o sync vai
+  /// enviá-las (build 262): COALESCE(dia_hora_realizado,
+  /// dia_hora_agendado) DESC. Inclui as visitas de hoje que estão na
+  /// home, se tiverem pendência.
+  Future<List<Visita>> getVisitasComPendencia() {
+    final q = select(visitas)
+      ..where((v) =>
+          v.syncStatus.equals('pending') |
+          existsQuery(select(pendingPhotos)
+            ..where((p) =>
+                p.visitaId.equalsExp(v.id) &
+                p.status.isIn(const [
+                  'watermark_pending',
+                  'pending',
+                  'uploading',
+                  'error'
+                ]))) |
+          existsQuery(select(outboxItems)
+            ..where((o) =>
+                o.entityId.equalsExp(v.id) &
+                o.entityType.equals('visita') &
+                o.status.isIn(const ['pending', 'processing']))))
+      ..orderBy([
+        (v) => OrderingTerm.desc(
+            coalesce([v.diaHoraRealizado, v.diaHoraAgendado])),
+      ]);
+    return q.get();
+  }
+
+  /// Fotos ainda não enviadas de UMA visita (todos os slots) — para a
+  /// tela "Pendente" mostrar o que falta subir de cada card.
+  Future<int> countFotosPendentesDaVisita(int visitaId) async {
+    final rows = await (select(pendingPhotos)
+          ..where((p) =>
+              p.visitaId.equals(visitaId) &
+              p.status.isIn(const [
+                'watermark_pending',
+                'pending',
+                'uploading',
+                'error'
+              ])))
+        .get();
+    return rows.length;
+  }
+
   // ── Pending Photos ─────────────────────────────────────────────────────────
 
   Future<List<PendingPhoto>> getPendingPhotos() {

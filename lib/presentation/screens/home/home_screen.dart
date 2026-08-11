@@ -523,6 +523,9 @@ class _HomeContent extends ConsumerWidget {
                 case 'faltas':
                   if (context.mounted) context.push('/faltas');
                   break;
+                case 'pendente':
+                  if (context.mounted) context.push('/pendente');
+                  break;
                 case 'reportar':
                   if (context.mounted) await _reportarProblema(context, ref);
                   break;
@@ -576,6 +579,18 @@ class _HomeContent extends ConsumerWidget {
                         color: AppColors.danger, size: 20),
                     SizedBox(width: 8),
                     Text('Faltas',
+                        style: TextStyle(color: AppColors.textPrimary)),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'pendente',
+                child: Row(
+                  children: [
+                    Icon(Icons.cloud_upload_outlined,
+                        color: AppColors.warning, size: 20),
+                    SizedBox(width: 8),
+                    Text('Pendente',
                         style: TextStyle(color: AppColors.textPrimary)),
                   ],
                 ),

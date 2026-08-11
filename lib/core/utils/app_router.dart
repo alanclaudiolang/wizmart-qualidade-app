@@ -7,6 +7,7 @@ import '../../presentation/screens/auth/login_automatico_screen.dart';
 import '../../presentation/screens/auth/onboarding_permissoes_screen.dart';
 import '../../presentation/screens/auth/recuperar_senha_screen.dart';
 import '../../presentation/screens/faltas/faltas_screen.dart';
+import '../../presentation/screens/pendente/pendente_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/programado/programado_screen.dart';
 import '../../presentation/screens/realizado/realizado_screen.dart';
@@ -77,6 +78,10 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/realizado',
           builder: (_, __) => const RealizadoScreen(),
+        ),
+        GoRoute(
+          path: '/pendente',
+          builder: (_, __) => const PendenteScreen(),
         ),
         GoRoute(
           path: '/faltas',
