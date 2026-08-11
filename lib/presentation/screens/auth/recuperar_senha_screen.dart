@@ -108,9 +108,18 @@ class _RecuperarSenhaScreenState extends State<RecuperarSenhaScreen> {
     } on AuthException catch (e) {
       final msg = e.message.toLowerCase();
       setState(() {
-        _erro = msg.contains('expired') || msg.contains('invalid')
-            ? 'O link expirou. Solicite um novo no login.'
-            : 'Não foi possível alterar a senha agora. Tente novamente.';
+        // `same_password` (422): o Supabase recusa senha nova igual à
+        // atual — sem este caso a tela caía no genérico "tente
+        // novamente", que não explica nada (relato do Alan, 11/08).
+        if (e.code == 'same_password' ||
+            msg.contains('different from the old password')) {
+          _erro = 'A nova senha não pode ser igual à senha anterior. '
+              'Escolha uma senha diferente.';
+        } else if (msg.contains('expired') || msg.contains('invalid')) {
+          _erro = 'O link expirou. Solicite um novo no login.';
+        } else {
+          _erro = 'Não foi possível alterar a senha agora. Tente novamente.';
+        }
         _salvando = false;
       });
     } catch (e) {
