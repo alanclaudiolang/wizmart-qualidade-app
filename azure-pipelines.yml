@@ -18,10 +18,16 @@ variables:
   - name: APP_VERSION
     value: '1.0.2'
   - name: BUILD_NUMBER
-    value: '269'
+    value: '270'
   # true → atualização obrigatória IMEDIATA nos apps (latest.json).
   # false → obrigatória só no dia seguinte (regra D+1 do app).
   - name: FORCE_UPDATE
+    value: 'false'
+  # true → passo final publica no Supabase (APK fixo + latest.json —
+  # isso É publicação para a frota). false → build gera só os artefatos
+  # apk/aab no Azure, sem tocar em nada que os promotores usam.
+  # Regra 3a do projeto: publicar exige OK explícito do Alan.
+  - name: PUBLISH_SUPABASE
     value: 'false'
   # Preencher com a URL da ficha na Play quando o app for APROVADO
   # (ex.: https://play.google.com/store/apps/details?id=com.wizmart.wizmart_app)
@@ -117,6 +123,7 @@ steps:
       cat /tmp/latest.json; echo ""
       up "latest.json" "application/json" /tmp/latest.json
     displayName: 'Publicar no Supabase (APK fixo + latest.json)'
+    condition: and(succeeded(), eq(variables['PUBLISH_SUPABASE'], 'true'))
     env:
       SUPABASE_URL: $(SUPABASE_URL)
       SUPABASE_SERVICE_KEY: $(SUPABASE_SERVICE_KEY)
