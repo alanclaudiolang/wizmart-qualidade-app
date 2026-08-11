@@ -1,8 +1,14 @@
-# Build Android assinado (APK) — WizMart Promotor
+# Build Android assinado (APK + AAB) — WizMart Promotor
 #
 # Usa a keystore do Secure Files (wizmart-upload-2026.jks) e as senhas do
 # variable group `android-signing`. Disparo MANUAL somente (trigger: none)
 # — regra do projeto: publicar exige OK explícito do Alan a cada vez.
+#
+# Saída: artefatos `apk` e `aab` do run. Distribuição é 100% pelas lojas
+# (Play/App Store) desde 08/2026 — o passo que publicava no Supabase
+# (URL fixa + latest.json) foi REMOVIDO em 12/08/2026 a pedido do Alan:
+# o site já aponta para as lojas e nenhum sistema usa mais aquele canal.
+# Os arquivos antigos em Arquivos/versoes-apk ficam como histórico.
 #
 # Parâmetros do build (versão/numeração) ficam nas variáveis abaixo.
 
@@ -14,28 +20,10 @@ pool:
 
 variables:
   - group: android-signing
-  - group: supabase-distribution
   - name: APP_VERSION
     value: '1.0.2'
   - name: BUILD_NUMBER
     value: '270'
-  # true → atualização obrigatória IMEDIATA nos apps (latest.json).
-  # false → obrigatória só no dia seguinte (regra D+1 do app).
-  - name: FORCE_UPDATE
-    value: 'false'
-  # true → passo final publica no Supabase (APK fixo + latest.json —
-  # isso É publicação para a frota). false → build gera só os artefatos
-  # apk/aab no Azure, sem tocar em nada que os promotores usam.
-  # Regra 3a do projeto: publicar exige OK explícito do Alan.
-  - name: PUBLISH_SUPABASE
-    value: 'false'
-  # Preencher com a URL da ficha na Play quando o app for APROVADO
-  # (ex.: https://play.google.com/store/apps/details?id=com.wizmart.wizmart_app)
-  # → o botão Atualizar dos builds 266+ passa a abrir a LOJA em vez de
-  # baixar APK (interruptor remoto via latest.json; exigência de política
-  # do Google Play). Vazio = comportamento atual (baixa APK da URL fixa).
-  - name: PLAY_STORE_URL
-    value: ''
   - name: FLUTTER_URL
     value: 'https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.44.6-stable.tar.xz'
 
@@ -94,36 +82,3 @@ steps:
   - publish: build/app/outputs/bundle/release/app-release.aab
     artifact: aab
     displayName: 'Publicar artefato AAB (Play Store)'
-
-  # Publica no Supabase Storage (bucket Arquivos/versoes-apk):
-  #   1. APK versionado (histórico, imutável por convenção)
-  #   2. APK na URL FIXA (o link do site — sobrescrito a cada build)
-  #   3. latest.json (dispara o auto-update dentro do app, build 264+)
-  - script: |
-      set -e
-      APK=build/app/outputs/flutter-apk/app-release.apk
-      BASE="$SUPABASE_URL/storage/v1/object/Arquivos/versoes-apk"
-      up() {
-        curl -sS -f -X POST "$BASE/$1" \
-          -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
-          -H "apikey: $SUPABASE_SERVICE_KEY" \
-          -H "x-upsert: true" -H "Content-Type: $2" \
-          --data-binary @"$3" > /dev/null
-        echo "OK: $1"
-      }
-      up "promotor-wizmart-v$(APP_VERSION)-build$(BUILD_NUMBER).apk" \
-         "application/vnd.android.package-archive" "$APK"
-      up "promotor-wizmart.apk" \
-         "application/vnd.android.package-archive" "$APK"
-      PUBAT=`date -u +%Y-%m-%dT%H:%M:%SZ`
-      printf '{"buildNumber":"%s","apkUrl":"%s","forceUpdate":%s,"publishedAt":"%s","playStoreUrl":"%s"}' \
-        "$(BUILD_NUMBER)" \
-        "$SUPABASE_URL/storage/v1/object/public/Arquivos/versoes-apk/promotor-wizmart.apk?v=$(BUILD_NUMBER)" \
-        "$(FORCE_UPDATE)" "$PUBAT" "$(PLAY_STORE_URL)" > /tmp/latest.json
-      cat /tmp/latest.json; echo ""
-      up "latest.json" "application/json" /tmp/latest.json
-    displayName: 'Publicar no Supabase (APK fixo + latest.json)'
-    condition: and(succeeded(), eq(variables['PUBLISH_SUPABASE'], 'true'))
-    env:
-      SUPABASE_URL: $(SUPABASE_URL)
-      SUPABASE_SERVICE_KEY: $(SUPABASE_SERVICE_KEY)
