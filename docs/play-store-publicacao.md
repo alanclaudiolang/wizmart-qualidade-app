@@ -1,5 +1,23 @@
 # Publicação na Play Store — Promotor Wizmart
 
+## ✅ APROVADO E PUBLICADO EM 09/08/2026
+
+Página no ar (verificado 11/08 por acesso público):
+https://play.google.com/store/apps/details?id=com.wizmart.wizmart_app
+Após a rejeição de 04/08 (credenciais — ver abaixo), o reenvio de 05/08
+com a conta demo alan.lang+promotor_rj passou. **NÃO apagar essa conta:
+é a credencial de revisão registrada no Console (necessária em toda
+atualização futura).** A conta revisor.google.teste@wizmart.com.br pode
+ser apagada.
+
+**Migração da frota (fato verificado 11/08):** o APK 262 de campo é
+assinado com a CHAVE ANTIGA (sha256 do cert `581b017f...`, perdida na
+suspensão do GitHub) — diferente da chave da loja. Logo 257/262 NÃO
+atualizam por cima: o caminho é sincronizar 100% → desinstalar →
+instalar da loja. Galeria (fotos com marca d'água) sobrevive à
+desinstalação. Manter o canal Supabase (URL fixa/latest.json) até a
+frota migrar.
+
 ## ❌→✅ REJEIÇÃO 04/08 CORRIGIDA em 05/08 — REENVIADO
 
 Google rejeitou em 04/08: "As credenciais de login estão incorretas" —
