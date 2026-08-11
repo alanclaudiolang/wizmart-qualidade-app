@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:drift/drift.dart' as drift;
 import 'package:gal/gal.dart';
@@ -399,6 +400,44 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       _loading = false;
     });
     _updateSyncPause(localState);
+    // Build 270 (caso Caline): se um marcador de captura sobreviveu de
+    // uma execução anterior, a câmera foi aberta e o app nunca recebeu o
+    // resultado — registra o FATO no log e avisa o promotor (3s).
+    // ignore: discarded_futures
+    _avisarCapturaPerdida();
+  }
+
+  /// Marcador de captura em andamento (armazenamento interno do app).
+  static const capturaEmAndamentoKey = 'captura_em_andamento';
+
+  Future<void> _limparMarcadorCaptura() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(capturaEmAndamentoKey);
+    } catch (_) {}
+  }
+
+  /// Se existe marcador de captura de uma execução ANTERIOR (o app morreu
+  /// com a câmera aberta), registra o fato no log persistente — sem causa
+  /// deduzida — e mostra o aviso de 3 segundos definido pelo Alan (11/08).
+  Future<void> _avisarCapturaPerdida() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final marcador = prefs.getString(capturaEmAndamentoKey);
+      if (marcador == null) return;
+      await prefs.remove(capturaEmAndamentoKey);
+      await PersistentLogger.append(
+          'foto',
+          'foto não captada: câmera aberta e nenhum resultado recebido '
+          'pelo app (marcador: $marcador)',
+          erro: true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Erro de captura da foto. Celular com pouca memória.'),
+        backgroundColor: Colors.red,
+        duration: Duration(seconds: 3),
+      ));
+    } catch (_) {}
   }
 
   // ── Localização ────────────────────────────────────────────────────────────
@@ -453,8 +492,18 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     final limite = slot == 'antes'
         ? AppConstants.maxFotosAntes
         : AppConstants.maxFotosDepois;
-    final atual =
-        slot == 'antes' ? _fotosAntes.length : _fotosDepois.length;
+    // Build 270 (caso Caline 12/8): o limite passa a valer também contra
+    // o DB — a lista em memória pode estar defasada da row (restauração/
+    // reset com pending_photos acumuladas). Usa a MAIOR das contagens.
+    var atual = slot == 'antes' ? _fotosAntes.length : _fotosDepois.length;
+    try {
+      final v = await _db.getVisitaById(widget.visitaId);
+      final json = slot == 'antes' ? v?.fotosAntesJson : v?.fotosDepoisJson;
+      if (json != null && json.isNotEmpty) {
+        final noDb = (jsonDecode(json) as List).length;
+        if (noDb > atual) atual = noDb;
+      }
+    } catch (_) {/* DB indisponível → mantém a contagem da tela */}
 
     if (atual >= limite) {
       _showError('Limite de $limite fotos atingido.');
@@ -498,6 +547,17 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     // Pausa sync enquanto a câmera estiver aberta — câmera consome CPU/RAM
     // e qualquer upload concorrente em device de baixa memória pode travar.
     await SyncPause.pause();
+    // Marcador "captura em andamento" (build 270, caso Caline): gravado
+    // no armazenamento INTERNO do app (SharedPreferences — nenhuma
+    // permissão nova). Se o sistema matar o app com a câmera aberta, o
+    // marcador sobrevive e o próximo load da visita avisa o promotor que
+    // a foto não foi captada. Em toda volta normal da câmera (foto,
+    // cancelamento ou erro) o marcador é removido logo abaixo.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(capturaEmAndamentoKey,
+          '${widget.visitaId}|$slot|${DateTime.now().toIso8601String()}');
+    } catch (_) {}
     XFile? picked;
     try {
       picked = await _picker.pickImage(
@@ -508,6 +568,7 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         preferredCameraDevice: CameraDevice.rear,
       );
     } on PlatformException catch (e) {
+      await _limparMarcadorCaptura();
       _updateSyncPause(_localState);
       final code = e.code.toLowerCase();
       if (code.contains('denied') || code.contains('permission')) {
@@ -519,6 +580,10 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
       }
       return;
     }
+
+    // Câmera devolveu o controle (com ou sem foto) → captura não se
+    // perdeu; remove o marcador.
+    await _limparMarcadorCaptura();
 
     if (picked == null) {
       // Cancelamento normal (usuário fechou a câmera sem foto).

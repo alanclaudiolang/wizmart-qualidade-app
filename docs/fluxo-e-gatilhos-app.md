@@ -561,7 +561,7 @@ Envolto em `ProcessingTracker.begin/end(visitaId)` — alimenta a "engrenagem" d
    - **Galeria:** `Gal.putImage(wmPath)` com timeout de **5 s**; falha é **silenciosa pro fluxo** mas enfileira anomalia `D6-gal-falhou` ("em geral permissão negada (...) pra eu saber qual promotor está sem backup automático") (`watermark_queue.dart:274-295`). Esta é a **única** interação do subsistema com a galeria — só adiciona, nunca apaga.
    - **Descarte do cru:** `File(p.localPath).delete()` somente se `wmPath != p.localPath`, com catch vazio (297-302).
    - **Falha/timeout do watermark:** catch genérico promove `status='pending'` mantendo o **caminho cru** na lista — a foto sobe sem carimbo em vez de travar (305-313).
-4. Ao final do lote, regrava `fotosAntesJson`/`fotosDepoisJson` da visita com a lista completa de novos caminhos (316-327).
+4. **(Build 270 — caso Caline 06-08/08)** A reescrita em massa de `fotosAntesJson`/`fotosDepoisJson` ao final do lote foi **REMOVIDA**. Ela substituía a lista da grade pelo conteúdo INTEIRO de `pending_photos` do par (visita, slot) — que acumula TODAS as capturas históricas, inclusive de tentativas zeradas por reset/purga — fazendo fotos "ressuscitarem" na grade (12/8 no aparelho da Caline) e, na corrida com uma captura simultânea, descartando a foto recém-tirada. A troca raw→wm por foto (`_trocarPathNoJson`, com confirmação) já mantém o JSON correto; a lista da grade pertence à tela.
 
 ### 3.3 O carimbo em si (`WatermarkUtil.applyWatermark`)
 
@@ -583,11 +583,11 @@ Envolto em `ProcessingTracker.begin/end(visitaId)` — alimenta a "engrenagem" d
 ### 4.1 Tirar foto (`_tirarFoto`, `visita_screen.dart:432-585`)
 
 Sequência completa:
-1. Checa limite (8 por slot, `app_constants.dart:21-22`); bloqueia com SnackBar (`visita_screen.dart:440-442`).
+1. Checa limite (8 por slot, `app_constants.dart:21-22`); **build 270:** a contagem usa a MAIOR entre a lista em memória e o `fotosXxxJson` lido do DB na hora (lista em memória pode estar defasada após restauração/reset); bloqueia com SnackBar.
 2. Guard de GPS: se `gpsStatusProvider != ok`, nem abre a câmera (anti-race com o overlay do GpsGuard) (449-452).
 3. **Pré-check de storage:** < 100 MB livres ⇒ dialog bloqueante "Armazenamento cheio" e aborta (457-470).
 4. Lê tier de performance (473-477) e **pausa o sync** ("câmera consome CPU/RAM e qualquer upload concorrente em device de baixa memória pode travar", 479-481).
-5. `pickImage(camera)` com quality/maxSide do tier (484-490). `PlatformException` ⇒ dialog de permissão ou erro de câmera (491-502). Cancelamento ⇒ restaura pausa de sync conforme o estado e retorna (504-507).
+5. **Build 270 (caso Caline):** antes do `pickImage`, grava o marcador `captura_em_andamento` = `visitaId|slot|timestamp` em SharedPreferences (armazenamento interno, sem permissão nova). Toda volta da câmera (foto, cancelamento ou `PlatformException`) REMOVE o marcador. Se o sistema matar o app com a câmera aberta, o marcador sobrevive; no próximo `_loadVisita`, `_avisarCapturaPerdida()` registra o FATO no log persistente ("foto não captada: câmera aberta e nenhum resultado recebido") — sem causa deduzida — e mostra SnackBar de 3 s "Erro de captura da foto. Celular com pouca memória." (texto definido pelo Alan, 11/08). `pickImage(camera)` com quality/maxSide do tier. `PlatformException` ⇒ dialog de permissão ou erro de câmera. Cancelamento ⇒ restaura pausa de sync conforme o estado e retorna.
 6. Overlay "Salvando foto... Aguarde, não toque na tela" (`_savingPhoto`, 510 e 1260-1295).
 7. Captura GPS da foto + `capturedAt` (514-515).
 8. Copia o arquivo da câmera para `<documents>/wizmart_fotos/<uuid>_raw.<ext>` (caminho estável) (521-526).

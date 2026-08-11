@@ -221,8 +221,6 @@ class WatermarkQueueService {
       }
     }
 
-    final novosCaminhos = <String>[];
-
     for (final p in pendentes) {
       // Pausa pra UI thread terminar transições/renderizar frames
       // antes do trabalho pesado. Sem isso, fotos em sequência
@@ -233,7 +231,6 @@ class WatermarkQueueService {
       // Foto já com watermark (cenário: voltou do checklist e re-concluiu).
       final isRaw = p.localPath.contains('_raw.');
       if (!isRaw) {
-        novosCaminhos.add(p.localPath);
         if (p.status == 'watermark_pending') {
           await db.updatePendingPhoto(PendingPhotosCompanion(
             id: drift.Value(p.id),
@@ -322,8 +319,6 @@ class WatermarkQueueService {
             await File(p.localPath).delete();
           } catch (_) {}
         }
-
-        novosCaminhos.add(wmPath);
       } catch (_) {
         // Watermark falhou — libera mesmo assim com o caminho cru pra
         // que o sync suba pelo menos a foto original.
@@ -331,22 +326,18 @@ class WatermarkQueueService {
           id: drift.Value(p.id),
           status: const drift.Value('pending'),
         ));
-        novosCaminhos.add(p.localPath);
       }
     }
 
-    // Atualiza o JSON da visita com os novos paths.
-    if (item.slot == 'antes') {
-      await db.updateVisita(VisitasCompanion(
-        id: drift.Value(item.visitaId),
-        fotosAntesJson: drift.Value(jsonEncode(novosCaminhos)),
-      ));
-    } else {
-      await db.updateVisita(VisitasCompanion(
-        id: drift.Value(item.visitaId),
-        fotosDepoisJson: drift.Value(jsonEncode(novosCaminhos)),
-      ));
-    }
+    // NÃO reescrever fotosXxxJson em massa aqui (removido no build 270,
+    // caso Caline 06-07/08). A reescrita `jsonEncode(novosCaminhos)`
+    // substituía a lista da grade pelo conteúdo INTEIRO de
+    // pending_photos daquele (visita, slot) — que guarda TODAS as
+    // capturas históricas, inclusive de tentativas zeradas — fazendo
+    // fotos "ressuscitarem" na grade (12/8) e, na direção oposta,
+    // descartando foto recém-tirada durante a corrida com a captura.
+    // A troca raw→wm por foto (_trocarPathNoJson, com confirmação) já
+    // mantém o JSON correto; a lista da grade pertence à tela.
   }
 
   /// Decide se o arquivo CRU pode ser apagado (item 3). Só apaga quando há
