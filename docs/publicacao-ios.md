@@ -1,5 +1,15 @@
 # Publicação iOS — status e contexto consolidado
 
+## 🚀 12/08/2026 — 1.0.3 (build 271) SUBMETIDA (WAITING_FOR_REVIEW)
+
+Conteúdo: tela "Pendente" no menu, correções do caso Caline (fotos) e
+mensagem de senha igual à anterior. Versão ASC
+`2b6eb870-83d7-4a8c-93d2-827dca046d7a`, build 271 VALID, liberação
+AFTER_APPROVAL (publica sozinha). Fluxo 100% via API, mesmo padrão da
+1.0.2 (chave recuperada do variable group `ios-signing` do Azure e
+injetada no disparo do Codemagic). Android 1.0.3(271) enviado à Play na
+mesma data pelo Alan (AAB entregue via Storage).
+
 > Consolidado em 11/06/2026 a partir de: memórias recuperadas do Codespace
 > (`docs/memoria-codespace/`), histórico de commits do repo e verificações
 > feitas em 11/06 (API pública da Apple, codemagic.yaml). Substitui o

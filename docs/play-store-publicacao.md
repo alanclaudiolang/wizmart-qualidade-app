@@ -1,5 +1,12 @@
 # Publicação na Play Store — Promotor Wizmart
 
+## 🔁 12/08/2026 — versão 1.0.3 (build 271) gerada p/ atualização
+
+AAB em `Arquivos/versoes-apk/promotor-wizmart-v1.0.3-build271.aab`
+(sha256 f8fb828a...). Upload no Console feito pelo Alan (Produção →
+Nova versão). Conteúdo: tela Pendente, correções caso Caline, msg de
+senha. versionCode 271 > 269 em produção.
+
 ## ✅ APROVADO E PUBLICADO EM 09/08/2026
 
 Página no ar (verificado 11/08 por acesso público):
