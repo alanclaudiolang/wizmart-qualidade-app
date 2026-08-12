@@ -30,7 +30,7 @@ workflows:
         # CFBundleVersion (precisa ser MAIOR que o último build enviado
         # ao App Store Connect — histórico foi até 23). Alinhado ao
         # BUILD_NUMBER do Android (azure-pipelines.yml) por clareza.
-        IOS_BUILD_NUMBER: "269"
+        IOS_BUILD_NUMBER: "271"
       flutter: 3.44.6
       xcode: latest
       cocoapods: default
