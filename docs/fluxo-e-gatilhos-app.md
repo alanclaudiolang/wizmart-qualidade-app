@@ -98,7 +98,7 @@
 | 5 | `Supabase.initialize(url, anonKey)` — se falhar, guarda em `_initError` (`lib/main.dart:82`) e o app sobe mesmo assim | `lib/main.dart:113-119` |
 | 6 | `Workmanager().initialize(callbackDispatcher)` + `registerPeriodicTask` (ver §1.4) — falha também só preenche `_initError` | `lib/main.dart:121-132` |
 | 7 | `runApp(ProviderScope(child: WizMartApp(initError: _initError)))` | `lib/main.dart:134` |
-| 8 | Handler do `runZonedGuarded`: erro fatal no boot → tenta `ErrorReporter.reportar(screen:'boot')` e mostra `_ErrorScreen` (versão amigável se o issue foi criado; versão "tire um print" se offline) | `lib/main.dart:135-156`, `lib/main.dart:263-296` |
+| 8 | Handler do `runZonedGuarded`: **1º filtra rede transitória** (`ErrorClassifier.textoPareceRedeTransitoria` → ignora e segue — caso Douglas 13/08: timeout do refresh de token no boot derrubava o app rodando p/ tela vermelha; o filtro do PlatformDispatcher.onError NÃO vale dentro da zona). Só erro NÃO-rede → tenta `ErrorReporter.reportar(screen:'boot')` e mostra `_ErrorScreen` | `lib/main.dart` handler do runZonedGuarded |
 
 Se `initError != null`, o `build` do `WizMartApp` renderiza só a `_ErrorScreen` e nada mais sobe (`lib/main.dart:223-228`).
 
@@ -1036,7 +1036,7 @@ O sistema tem 3 peças:
 **Quando dispara (ganchos globais em `lib/main.dart`):**
 - `FlutterError.onError` — qualquer erro Flutter não tratado (`main.dart:90-98`);
 - `PlatformDispatcher.instance.onError` — erros assíncronos não tratados (`main.dart:101-109`);
-- `runZonedGuarded` — erro fatal no boot, com `screen: 'boot'`; se o issue foi criado, mostra mensagem amigável; se não (offline), mostra tela vermelha pedindo print (`main.dart:135-156`);
+- `runZonedGuarded` — erro fatal no boot, com `screen: 'boot'`; **rede transitória é filtrada ANTES (ignorada — caso Douglas 13/08)**; se o issue foi criado, mostra mensagem amigável; se não (offline), mostra tela vermelha pedindo print;
 - Pontuais: falha de item na watermark queue (`watermark_queue.dart:144-149`) e três pontos da tela de visita (`visita_screen.dart:570, 901, 1067`).
 
 **Comportamento:**

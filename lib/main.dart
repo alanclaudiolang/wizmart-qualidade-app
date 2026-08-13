@@ -140,6 +140,18 @@ void main() async {
 
     runApp(ProviderScope(child: WizMartApp(initError: _initError)));
   }, (error, stack) async {
+    // ITEM 11 TAMBÉM AQUI (caso Douglas 13/08, iPhone/4G, app 1.0.3): o
+    // refresh de token do boot (recoverSession do supabase_flutter) roda
+    // DENTRO desta zona — quando dava timeout de rede
+    // (AuthRetryableFetchException/SocketException), o erro escapava do
+    // filtro do PlatformDispatcher.onError (que só vale fora da zona) e
+    // este handler DERRUBAVA o app rodando para a tela vermelha de erro.
+    // Rede transitória não é bug num app offline-first: ignora e segue —
+    // o supabase_flutter tenta o refresh de novo sozinho quando a rede
+    // volta, e o fluxo local (SessionService) não depende disso.
+    if (ErrorClassifier.textoPareceRedeTransitoria(error.toString())) {
+      return;
+    }
     // Erros assíncronos não capturados que escaparam do FlutterError.onError
     // e do PlatformDispatcher.onError. Antes de mostrar a tela vermelha
     // pedindo print, tenta reportar o issue automaticamente. Se conseguir
