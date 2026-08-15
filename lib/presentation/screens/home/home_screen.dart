@@ -590,7 +590,7 @@ class _HomeContent extends ConsumerWidget {
                     Icon(Icons.cloud_upload_outlined,
                         color: AppColors.warning, size: 20),
                     SizedBox(width: 8),
-                    Text('Pendente',
+                    Text('Sincronismo',
                         style: TextStyle(color: AppColors.textPrimary)),
                   ],
                 ),

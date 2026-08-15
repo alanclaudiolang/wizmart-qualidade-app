@@ -1,6 +1,6 @@
 // lib/presentation/screens/pendente/pendente_screen.dart
 //
-// Tela "Pendente" (build 270, pedido do Alan em 12/08): histórico de
+// Tela "Sincronismo" (nome trocado de "Pendente" em 14/08; build 270): histórico de
 // TODAS as visitas ainda não 100% sincronizadas — incluindo as de hoje
 // que aparecem na home — na ORDEM em que o sync vai enviá-las (a mesma
 // do motor, build 262: visita mais recente primeiro; dentro da visita a
@@ -79,7 +79,7 @@ class PendenteScreen extends ConsumerWidget {
           onPressed: () => context.go('/home'),
         ),
         title: const Text(
-          'Pendente',
+          'Sincronismo',
           style: TextStyle(
             color: AppColors.textPrimary,
             fontSize: 18,

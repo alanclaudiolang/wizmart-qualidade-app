@@ -111,6 +111,7 @@ Sequência do `_redirect()` (`lib/core/utils/app_router.dart:96-181`):
 1. **Delay de 300 ms** (`app_router.dart:97`).
 2. **Recovery de estados presos** (dentro de try que não pode bloquear o boot, `app_router.dart:111-120`):
    - `db.resetUploadingNoBoot()` (`app_router.dart:113`) → `UPDATE pending_photos SET status='pending', next_retry_at=agora WHERE status='uploading'` (`lib/core/database/app_database.dart:565-574`). Seguro porque o upload pro Storage usa `x-upsert: true` — retry é idempotente (`app_database.dart:562-564`). Se resetou >0, grava no `PersistentLogger` canal `boot` (`app_router.dart:114-116`).
+   - **Build 272 (caso Douglas):** ANTES do recovery, `reconciliarCaminhosDeFotos(docsAtual)` reescreve o prefixo de caminhos absolutos gravados (pending_photos, pending_bug_photos, fotosXxxJson) que não apontem para a pasta atual do app — o iOS troca o UUID do container em TODA atualização e os caminhos completos quebravam ("Arquivo local sumiu"). Android: no-op.
    - `wmQueue.recoverPendingOnBoot()` (`app_router.dart:118-119`) → lê `getStaleWatermarkPending()` (todas as `pending_photos` com `status='watermark_pending'`, `app_database.dart:579-583`), agrupa por par único `(visitaId, slot)`, descarta pares cuja visita não existe mais no DB, e re-enfileira no `WatermarkQueueService` (`lib/core/utils/watermark_queue.dart:89-131`). Idempotente: o processador detecta foto que já tem watermark (path sem `_raw.`) e só atualiza status sem re-renderizar (`watermark_queue.dart:217-228`).
    - **Motivo histórico documentado**: sem esse recovery, fotos congeladas em `uploading`/`watermark_pending` faziam `countFotosEmProgresso` retornar sempre >0 e o outbox da visita postergava eternamente — visita nunca consolidava no servidor (**caso Glaucia/Camila/Thiago no build 220**, `app_router.dart:100-110`; ver também `app_database.dart:552-560` e `app_database.dart:698-718`).
 3. **Checagem de sessão**: `SessionService.hasSession()` (`app_router.dart:122`) — lê `wizmart_user_id` do `FlutterSecureStorage` (`lib/core/utils/session_service.dart:41-44`). Sem sessão → `context.go('/auth')` (`app_router.dart:123-125`). Com sessão mas `getSession()` nulo → `/auth` também (`app_router.dart:128-133`).
@@ -348,9 +349,9 @@ Quando `outdated` mas sem bloqueio: badge "atualizar" sublinhado no AppBar (toca
 
 Lista **somente leitura** — promotor não interage com os cards (`faltas_screen.dart:4-5`). Pull-to-refresh = `ref.invalidate(faltasProvider)` (`faltas_screen.dart:224`). Sem gatilho de sync. Menu de navegação + soft logout (`faltas_screen.dart:81-111`).
 
-### 4.3-bis. Pendente (`/pendente`, `lib/presentation/screens/pendente/pendente_screen.dart`) — build 270
+### 4.3-bis. Sincronismo (ex-"Pendente") (`/pendente`, `lib/presentation/screens/pendente/pendente_screen.dart`) — build 270
 
-Item "Pendente" no menu "..." da home (entre Faltas e Reportar problema).
+Item "Sincronismo" no menu "..." da home (entre Faltas e Reportar problema).
 Lista TODAS as visitas ainda não 100% sincronizadas — incluindo as de
 hoje na home — na ORDEM em que o sync vai enviá-las (mesma do motor,
 build 262: `COALESCE(dia_hora_realizado, dia_hora_agendado) DESC`).

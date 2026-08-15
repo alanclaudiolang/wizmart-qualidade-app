@@ -1,5 +1,6 @@
 // lib/core/database/app_database.dart
 
+import 'dart:convert';
 import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
@@ -734,7 +735,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// Fotos ainda não enviadas de UMA visita (todos os slots) — para a
-  /// tela "Pendente" mostrar o que falta subir de cada card.
+  /// tela "Sincronismo" mostrar o que falta subir de cada card.
   Future<int> countFotosPendentesDaVisita(int visitaId) async {
     final rows = await (select(pendingPhotos)
           ..where((p) =>
@@ -747,6 +748,77 @@ class AppDatabase extends _$AppDatabase {
               ])))
         .get();
     return rows.length;
+  }
+
+  /// Reconcilia caminhos absolutos de fotos após o iOS trocar a pasta do
+  /// app (caso Douglas 13/08, build 271): em TODA atualização de app o
+  /// iOS muda o UUID do container e os caminhos completos gravados
+  /// quebram ("Arquivo local sumiu") — os arquivos EXISTEM, na pasta
+  /// nova. Reescreve o prefixo (tudo antes de /wizmart_fotos/ ou
+  /// /wizmart_bugs/) de qualquer caminho que não aponte para a pasta
+  /// atual. No Android o prefixo nunca muda → no-op barato. Chamado UMA
+  /// vez no boot, ANTES de qualquer uso de foto (recovery/sync/telas).
+  /// Retorna quantos caminhos foram corrigidos.
+  Future<int> reconciliarCaminhosDeFotos(String docsPathAtual) async {
+    var corrigidos = 0;
+    String? corrige(String? path) {
+      if (path == null || path.isEmpty) return null;
+      for (final marcador in const ['/wizmart_fotos/', '/wizmart_bugs/']) {
+        final i = path.indexOf(marcador);
+        if (i < 0) continue;
+        final novo = '$docsPathAtual${path.substring(i)}';
+        return novo == path ? null : novo;
+      }
+      return null;
+    }
+
+    for (final foto in await select(pendingPhotos).get()) {
+      final novo = corrige(foto.localPath);
+      if (novo != null) {
+        await updatePendingPhoto(PendingPhotosCompanion(
+            id: Value(foto.id), localPath: Value(novo)));
+        corrigidos++;
+      }
+    }
+
+    for (final bug in await select(pendingBugPhotos).get()) {
+      final novo = corrige(bug.localPath);
+      if (novo != null) {
+        await (update(pendingBugPhotos)..where((b) => b.id.equals(bug.id)))
+            .write(PendingBugPhotosCompanion(localPath: Value(novo)));
+        corrigidos++;
+      }
+    }
+
+    for (final v in await select(visitas).get()) {
+      String? novoJson(String? json) {
+        if (json == null || json.isEmpty) return null;
+        final lista = List<String>.from(jsonDecode(json));
+        var mudou = false;
+        for (var i = 0; i < lista.length; i++) {
+          final novo = corrige(lista[i]);
+          if (novo != null) {
+            lista[i] = novo;
+            mudou = true;
+            corrigidos++;
+          }
+        }
+        return mudou ? jsonEncode(lista) : null;
+      }
+
+      final antes = novoJson(v.fotosAntesJson);
+      final depois = novoJson(v.fotosDepoisJson);
+      if (antes != null || depois != null) {
+        await updateVisita(VisitasCompanion(
+          id: Value(v.id),
+          fotosAntesJson:
+              antes != null ? Value(antes) : const Value.absent(),
+          fotosDepoisJson:
+              depois != null ? Value(depois) : const Value.absent(),
+        ));
+      }
+    }
+    return corrigidos;
   }
 
   // ── Pending Photos ─────────────────────────────────────────────────────────

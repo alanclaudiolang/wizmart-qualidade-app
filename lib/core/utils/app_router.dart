@@ -12,6 +12,7 @@ import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/programado/programado_screen.dart';
 import '../../presentation/screens/realizado/realizado_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../presentation/screens/visita/visita_screen.dart';
 import '../../presentation/widgets/gps_guard.dart';
 import '../../presentation/widgets/permissions_guard.dart';
@@ -128,6 +129,17 @@ class _SplashRedirectState extends ConsumerState<_SplashRedirect> {
     // build 220).
     try {
       final db = ref.read(appDatabaseProvider);
+      // Build 272 (caso Douglas): iOS troca a pasta do app em TODA
+      // atualização — reconcilia os caminhos absolutos gravados ANTES
+      // de qualquer uso de foto (recovery/sync/telas). Android: no-op.
+      try {
+        final docs = await getApplicationDocumentsDirectory();
+        final nCam = await db.reconciliarCaminhosDeFotos(docs.path);
+        if (nCam > 0) {
+          await PersistentLogger.append('boot',
+              'reconciliação de pasta (iOS update): $nCam caminho(s) de foto corrigido(s)');
+        }
+      } catch (_) {}
       final n = await db.resetUploadingNoBoot();
       if (n > 0) {
         await PersistentLogger.append('boot',
