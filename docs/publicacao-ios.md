@@ -1,5 +1,14 @@
 # Publicação iOS — status e contexto consolidado
 
+## 🚀 14/08/2026 — 1.0.4 (build 272) SUBMETIDA (WAITING_FOR_REVIEW)
+
+Blindagens do caso Douglas: rede transitória não derruba mais o app
+(filtro no runZonedGuarded) + reconciliação de caminhos de fotos no
+boot (iOS troca a pasta do app a cada atualização) + menu "Sincronismo"
+(ex-Pendente). Versão ASC `7f3b11c8-...`, build 272 VALID, liberação
+AFTER_APPROVAL. Android 272 aguardando decisão do Alan (artefato no
+Azure run 95).
+
 ## 🚀 12/08/2026 — 1.0.3 (build 271) SUBMETIDA (WAITING_FOR_REVIEW)
 
 Conteúdo: tela "Pendente" no menu, correções do caso Caline (fotos) e
