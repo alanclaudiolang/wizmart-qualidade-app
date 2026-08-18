@@ -1,9 +1,14 @@
 # Diagnóstico temporário — apagar depois.
 # Workflow mínimo para verificar se runners hospedados estão
 # disponíveis para a conta (runs do build falham em ~3s sem runner).
+# Dispara no push deste próprio arquivo na branch transicao.
 name: Diagnostico runner
 
 on:
+  push:
+    branches: [ transicao ]
+    paths:
+      - '.github/workflows/diag.yml'
   workflow_dispatch:
 
 jobs:
