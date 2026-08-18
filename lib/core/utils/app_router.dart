@@ -7,6 +7,7 @@ import '../../presentation/screens/auth/login_automatico_screen.dart';
 import '../../presentation/screens/auth/recuperar_senha_screen.dart';
 import '../../presentation/screens/auth/onboarding_permissoes_screen.dart';
 import '../../presentation/screens/faltas/faltas_screen.dart';
+import '../../presentation/screens/migracao/migracao_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/programado/programado_screen.dart';
 import '../../presentation/screens/realizado/realizado_screen.dart';
@@ -47,6 +48,10 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/auth',
           builder: (_, __) => const AuthScreen(),
+        ),
+        GoRoute(
+          path: '/migracao',
+          builder: (_, __) => const MigracaoScreen(),
         ),
         // Deep link de login automático (magic link). O SDK do Supabase
         // já estabeleceu a sessão pelo fragmento do link; a tela faz a
@@ -133,6 +138,15 @@ class _SplashRedirectState extends ConsumerState<_SplashRedirect> {
       await wmQueue.recoverPendingOnBoot();
     } catch (_) {/* não bloquear boot */}
 
+    // BUILD TRANSITÓRIO (299): todo boot cai na tela de migração para
+    // a Play Store — o restante do fluxo fica inalcançável de propósito.
+    // O recovery acima continua rodando para destravar fotos presas e o
+    // sync termina de enviar o que faltar (a própria tela mantém o sync
+    // ativo e mostra o passo a passo quando zerar).
+    if (mounted) context.go('/migracao');
+    return;
+    // ignore: dead_code
+
     final hasSession = await SessionService.hasSession();
     if (!hasSession) {
       if (mounted) context.go('/auth');
@@ -204,4 +218,3 @@ class _SplashRedirectState extends ConsumerState<_SplashRedirect> {
     );
   }
 }
-
