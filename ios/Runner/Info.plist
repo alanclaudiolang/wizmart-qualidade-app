@@ -105,5 +105,10 @@
 	     evita o popup "Faltam dados de conformidade" em todo build. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- Roteia o caminho do deep link (ex.: /loginautomatico) pelo
+	     go_router — presente no 262 real do GitHub, perdido na recriação
+	     (restaurado 18/08). -->
+	<key>FlutterDeepLinkingEnabled</key>
+	<true/>
 </dict>
 </plist>

@@ -60,6 +60,15 @@ void callbackDispatcher() {
         await Supabase.initialize(
           url: AppConstants.supabaseUrl,
           anonKey: AppConstants.supabaseAnonKey,
+          // Fluxo IMPLÍCITO — restaurado em 18/08 na comparação com o
+          // GitHub (o 262 real usava de propósito: "mesmo fluxo do app
+          // FlutterFlow antigo, comprovado em campo"). A recriação de
+          // julho omitiu e o app caiu no PKCE, que fragiliza os links de
+          // e-mail (login automático do site não completa; link só vale
+          // no aparelho que pediu).
+          authOptions: const FlutterAuthClientOptions(
+            authFlowType: AuthFlowType.implicit,
+          ),
         );
         final db = AppDatabase();
         final logger = SyncLoggerNotifier();
@@ -120,6 +129,10 @@ void main() async {
       await Supabase.initialize(
         url: AppConstants.supabaseUrl,
         anonKey: AppConstants.supabaseAnonKey,
+        // Fluxo implícito (ver comentário no callbackDispatcher acima).
+        authOptions: const FlutterAuthClientOptions(
+          authFlowType: AuthFlowType.implicit,
+        ),
       );
     } catch (e) {
       _initError = 'Supabase.initialize falhou:\n$e';
