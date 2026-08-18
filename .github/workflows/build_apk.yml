@@ -51,8 +51,8 @@ jobs:
           echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
           echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
           echo "flutter.buildMode=release" >> android/local.properties
-          echo "flutter.versionName=1.0.0" >> android/local.properties
-          echo "flutter.versionCode=${{ github.run_number }}" >> android/local.properties
+          echo "flutter.versionName=1.0.9" >> android/local.properties
+          echo "flutter.versionCode=299" >> android/local.properties
 
       - name: Computar metadados do build
         id: meta
@@ -68,11 +68,11 @@ jobs:
           if [ "${{ github.ref }}" = "refs/heads/dev" ]; then
             CHANNEL="DEV"
             FIXED_NAME="promotor-wizmart-dev.apk"
-            APK_NAME="wizmart-app-DEV-v${VERSION}-build${{ github.run_number }}-${TIMESTAMP}.apk"
+            APK_NAME="wizmart-app-DEV-v${VERSION}-build299-${TIMESTAMP}.apk"
           else
             CHANNEL="PROD"
             FIXED_NAME="promotor-wizmart.apk"
-            APK_NAME="wizmart-app-v${VERSION}-build${{ github.run_number }}-${TIMESTAMP}.apk"
+            APK_NAME="wizmart-app-v${VERSION}-build299-${TIMESTAMP}.apk"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
@@ -80,7 +80,7 @@ jobs:
           echo "apk_name=$APK_NAME" >> $GITHUB_OUTPUT
           echo "fixed_name=$FIXED_NAME" >> $GITHUB_OUTPUT
           echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
-          echo "Canal: $CHANNEL | Versão: $VERSION | Build: ${{ github.run_number }} | Time: $BUILD_TIME (BRT)"
+          echo "Canal: $CHANNEL | Versão: $VERSION | Build: 299 | Time: $BUILD_TIME (BRT)"
           echo "APK final: $APK_NAME | Fixo: $FIXED_NAME"
 
       - name: Diferenciar app dev (label + applicationId)
@@ -111,7 +111,7 @@ jobs:
           GITHUB_BUG_TOKEN: ${{ secrets.BUG_REPORT_PAT }}
           APP_VERSION: ${{ steps.meta.outputs.version }}
           BUILD_TIME: ${{ steps.meta.outputs.build_time }}
-          BUILD_NUMBER: ${{ github.run_number }}
+          BUILD_NUMBER: "299"
           # Variáveis lidas pelo signingConfig em android/app/build.gradle.kts
           # Quando estiverem vazias (sem secrets configuradas), o gradle cai
           # para a debug keystore — apk só instalável em dev.
@@ -143,11 +143,14 @@ jobs:
           path: ${{ steps.meta.outputs.apk_name }}
           retention-days: 30
 
-      # ── Publicação dos releases ─────────────────────────────────────────
+      # ── Publicação dos releases ─────────────────────────────────
       # main → v-latest (canal de PRODUÇÃO, visto por promotores)
       # dev  → v-dev    (canal de TESTE pra desenvolvedor; promotores
       #                  em produção NÃO veem esse release porque o
       #                  app instalado checa apenas v-latest)
+      # transicao → v-transicao (STAGING do build de migração — promotores
+      #                  também NÃO veem; na virada os assets são copiados
+      #                  manualmente para o v-latest)
 
       - name: Publicar release v-latest (PRODUÇÃO)
         if: github.ref == 'refs/heads/main'
@@ -167,8 +170,22 @@ jobs:
           gh release create v-latest \
             "${{ steps.meta.outputs.apk_name }}" \
             "${{ steps.meta.outputs.fixed_name }}" \
-            --title "Promotor Wizmart v${{ steps.meta.outputs.version }} (build ${{ github.run_number }})" \
+            --title "Promotor Wizmart v${{ steps.meta.outputs.version }} (build 299)" \
             --notes "$NOTES" \
+            --target ${{ github.sha }}
+
+      - name: Publicar release v-transicao (STAGING da migração)
+        if: github.ref == 'refs/heads/transicao'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete v-transicao --yes --cleanup-tag 2>/dev/null || true
+          gh release create v-transicao \
+            "${{ steps.meta.outputs.apk_name }}" \
+            "${{ steps.meta.outputs.fixed_name }}" \
+            --title "Build transitório 299 — migração para a Play Store" \
+            --notes "STAGING — os promotores NÃO veem este release (eles leem v-latest). Na virada (sexta), copiar estes assets para o v-latest." \
+            --prerelease \
             --target ${{ github.sha }}
 
       - name: Publicar release v-dev (TESTE)
@@ -180,7 +197,7 @@ jobs:
           gh release create v-dev \
             "${{ steps.meta.outputs.apk_name }}" \
             "${{ steps.meta.outputs.fixed_name }}" \
-            --title "[DEV] Promotor Wizmart v${{ steps.meta.outputs.version }} (build ${{ github.run_number }})" \
+            --title "[DEV] Promotor Wizmart v${{ steps.meta.outputs.version }} (build 299)" \
             --notes "Build de TESTE — applicationId 'com.wizmart.wizmart_app.dev' (instala lado a lado com prod, dados isolados). Não distribuir pra promotores. Commit ${{ github.sha }} em ${{ steps.meta.outputs.build_time }}." \
             --prerelease \
             --target ${{ github.sha }}
