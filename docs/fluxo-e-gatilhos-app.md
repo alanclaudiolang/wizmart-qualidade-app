@@ -18,6 +18,58 @@
 > As linhas citadas no corpo deste mapa refletem o código ANTERIOR a
 > estas mudanças; os trechos abaixo prevalecem onde houver diferença.
 
+### Build 273 (preparado 24/08/2026) — casos Adriana 20/08 e Brenda 21/08
+
+0a. **Guard cross-day no ramo idTemp do pull** (`sync_engine.dart`,
+   `vagaColideComVisitaDeOutroDia` + fiação no passo 6): o idTemp
+   determinístico NÃO inclui a data — a vaga de hoje nascia na MESMA PK
+   da visita de ontem não consolidada e o upsert a sobrescrevia (zerava
+   execução); o guard de fantasma então apagava row+outbox (caso Brenda:
+   visita de 20/08 destruída; servidor ficou Incompleta vazia). Agora,
+   com `existente==null` (sem row de hoje), o pull consulta a PK
+   diretamente (`getVisitaById(idTemp)`): row de OUTRO dia com
+   trabalho/syncPending/foto em voo/outbox pendente → **vaga ADIADA
+   neste ciclo** (log `Vaga ADIADA (colisão de PK entre dias)`); quando
+   a antiga consolidar (pivô libera a PK), o próximo pull cria a vaga.
+   Sobra antiga LIMPA continua reciclável (comportamento preservado).
+   **2ª decisão** (`colisaoPodeRealocar` +
+   `app_database.realocarVisitaLocalParaIdLivre`): se NADA está em
+   uso/em voo (tela fechada, sem processamento, 0 fotos em voo, 0
+   outbox pendente — ex.: visita antiga em estado terminal com itens
+   estacionados), a visita antiga é REALOCADA para uma PK negativa
+   livre (row inteira + fotos + outbox re-vinculados em transação) e a
+   vaga de hoje é criada JÁ — sem isso, uma antiga presa bloquearia a
+   vaga daquele PDV/turno para sempre. Com algo em uso/em voo, só ADIA
+   (mover a PK sob os pés repetiria a Causa A).
+   Testes: `caso_brenda_colisao_entre_dias_test.dart`.
+0b. **Guard anti-fantasma endurecido** (`sync_engine.dart`,
+   `fantasmaDeveSerPreservado` + `app_database.countFotosNaoErroDaVisita`):
+   row que parece fantasma mas ainda tem fotos em `pending_photos`
+   (qualquer status exceto `error`, inclui `uploaded`) NÃO é apagada —
+   o item do outbox é ESTACIONADO (`status='error'`,
+   `lastError='fantasma-com-fotos: preservado'`) + anomalia
+   `D8-fantasma-com-fotos-preservado`. Fantasma sem foto alguma segue
+   descartado como antes.
+0c. **Recuperação periódica da fila de watermark** (`watermark_queue.dart`
+   `recoverStale`; gatilhos em `main.dart`: Timer de 5 min +
+   `_kickSync` de lifecycle/conectividade): antes, foto presa em
+   `watermark_pending` só destravava REINICIANDO o app
+   (`recoverPendingOnBoot`) — Adriana ficou 2h40 presa; Brenda 21h.
+   Regra de segurança (`deveReenfileirarPar`): re-enfileira quando a
+   etapa do slot já foi concluída OU quando a foto mais nova está presa
+   há 30+ min; durante captura ativa não mexe (não travar a câmera).
+   Dedup contra a fila em memória. Testes:
+   `watermark_recover_stale_test.dart`.
+0d. **Data da CAPTURA no nome do arquivo do Storage**
+   (`sync_engine.dart`, `nomeArquivoFoto`/`segmentoDataCaptura`, usado
+   por `_processPhotoUpload`): formato novo
+   `{nomePdv}-{hash}-{yyyyMMdd}-{slot}-{numero}.{ext}` (data do
+   `createdAt` da foto, imutável) — fotos de dias diferentes nunca
+   dividem o mesmo nome (caso Brenda: fotos de ontem sobrescritas no
+   bucket pelas de hoje via x-upsert). `createdAt` não-parseável → cai
+   no formato antigo. Retry da mesma foto continua determinístico
+   (sobrescreve a si mesma).
+
 1. **Purga do pull condicionada à Edge Function** (`sync_engine.dart`,
    passo 5 do `_pullVisitasDia`): a purga "destruir + re-baixar" agora SÓ
    roda se a Edge Function respondeu HTTP 200. Function falhou = purga

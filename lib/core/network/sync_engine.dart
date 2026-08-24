@@ -202,6 +202,40 @@ class SyncEngine {
     return 'abastecimentos/$authUid/$dataSeg/$nomeSeg-$visitaHash-$slot-$numero.$extSeg';
   }
 
+  /// Segmento de data da CAPTURA (yyyyMMdd) a partir do createdAt da
+  /// pending_photo — imutável desde o clique da câmera. Entra no NOME do
+  /// arquivo no Storage pra que fotos de DIAS diferentes nunca dividam o
+  /// mesmo nome (caso Brenda 21/08: fotos de ontem subiram com o mesmo
+  /// nome das de hoje e foram SOBRESCRITAS pelo x-upsert). String vazia
+  /// quando o createdAt não parseia (nome cai no formato antigo).
+  static String segmentoDataCaptura(String createdAt) {
+    final t = DateTime.tryParse(createdAt);
+    if (t == null) return '';
+    return '${t.year.toString().padLeft(4, '0')}'
+        '${t.month.toString().padLeft(2, '0')}'
+        '${t.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Nome do arquivo da foto no Storage (sem o diretório). Determinístico
+  /// por FOTO: mesma foto física gera o mesmo nome entre retries (upsert
+  /// sobrescreve a si mesma), e fotos de dias/capturas diferentes geram
+  /// nomes diferentes (data da captura no nome). Formato:
+  ///   {nomePdv}-{hashVisita}-{yyyyMMdd}-{slot}-{numero}.{ext}
+  /// (sem o segmento de data quando o createdAt não parseia — formato
+  /// idêntico ao anterior ao build 273).
+  static String nomeArquivoFoto({
+    required String nomeSeg,
+    required int visitaHash,
+    required String createdAt,
+    required String slot,
+    required int numero,
+    required String extSeg,
+  }) {
+    final dataSeg = segmentoDataCaptura(createdAt);
+    final dataParte = dataSeg.isEmpty ? '' : '$dataSeg-';
+    return '$nomeSeg-$visitaHash-$dataParte$slot-$numero.$extSeg';
+  }
+
   /// `true` se a visita tem QUALQUER sinal de execução. Usado pelo reset do
   /// pull (Causa B) para NUNCA zerar uma visita que o promotor iniciou —
   /// protege contra a corrida "clicar Iniciar no instante do sync".
@@ -214,6 +248,80 @@ class SyncEngine {
         diaHoraAbertura != null ||
         statusVisita == AppConstants.statusEmAndamento ||
         statusVisita == AppConstants.statusRealizada;
+  }
+
+  /// GUARD CROSS-DAY (caso Brenda 21/08): decide se a criação da VAGA de
+  /// hoje deve ser PULADA porque a PK que ela usaria (idTemp determinístico
+  /// de gabarito|pdv|turno — igual em qualquer dia) ainda pertence a uma
+  /// visita de OUTRO dia não consolidada. Sem isso, o upsert por PK
+  /// sobrescrevia a visita de ontem (zerava abertura/fotos/status) e o
+  /// guard de fantasma a apagava em seguida, descartando o outbox — o
+  /// trabalho de ontem nunca chegava ao servidor (Brenda: visita 20/08
+  /// destruída às 08:43:35 de 21/08; servidor ficou Incompleta vazia).
+  ///
+  /// Regras:
+  ///   - Row de HOJE (dentro de [inicioDiaUtc, fimDiaUtc]) não é colisão —
+  ///     o fluxo normal (existente/temTrabalho) cuida dela.
+  ///   - Row de outro dia SEM trabalho e SEM pendências é sobra reciclável
+  ///     (comportamento antigo preservado — o upsert reusa a PK).
+  ///   - Row de outro dia COM qualquer sinal (trabalho, syncStatus pending,
+  ///     foto em voo, outbox pendente) → PULA a vaga neste ciclo. Quando a
+  ///     visita antiga consolidar (pivô → PK vira serverId), o idTemp fica
+  ///     livre e o próximo pull cria a vaga normalmente.
+  ///   - Data da row não-parseável: trata como "outro dia" (só protege se
+  ///     houver sinal de trabalho/pendência; senão recicla como antes).
+  static bool vagaColideComVisitaDeOutroDia({
+    required String? diaHoraAgendadoRow,
+    required String inicioDiaUtc,
+    required String fimDiaUtc,
+    required bool temTrabalho,
+    required bool syncPending,
+    required int fotosEmVoo,
+    required int outboxPendentes,
+  }) {
+    final ag = DateTime.tryParse(diaHoraAgendadoRow ?? '');
+    final ini = DateTime.tryParse(inicioDiaUtc);
+    final fim = DateTime.tryParse(fimDiaUtc);
+    if (ag != null && ini != null && fim != null) {
+      final agUtc = ag.toUtc();
+      final ehDeHoje = !agUtc.isBefore(ini.toUtc()) && !agUtc.isAfter(fim.toUtc());
+      if (ehDeHoje) return false;
+    }
+    return temTrabalho ||
+        syncPending ||
+        fotosEmVoo > 0 ||
+        outboxPendentes > 0;
+  }
+
+  /// Segunda decisão do guard cross-day: detectada a colisão, a visita
+  /// antiga pode ser REALOCADA para uma PK livre (preserva tudo e libera
+  /// a vaga de hoje JÁ) — mas SÓ quando nada está em uso: tela fechada,
+  /// sem processamento ativo e nada em voo (foto/outbox). Com algo em
+  /// voo, mover a PK sob os pés repetiria a Causa A (escrita no id
+  /// morto); nesse caso a vaga é só ADIADA e o dreno natural (pivô)
+  /// libera a PK em minutos. Sem a realocação, uma visita antiga presa
+  /// em estado terminal (itens estacionados) bloquearia a vaga daquele
+  /// PDV/turno PARA SEMPRE.
+  static bool colisaoPodeRealocar({
+    required bool telaAberta,
+    required bool processandoAtivo,
+    required int fotosEmVoo,
+    required int outboxPendentes,
+  }) {
+    return !telaAberta &&
+        !processandoAtivo &&
+        fotosEmVoo == 0 &&
+        outboxPendentes == 0;
+  }
+
+  /// Endurecimento do guard de fantasma (caso Brenda): uma row que PARECE
+  /// fantasma (sem serverId/abertura/status/fotosJson) mas ainda tem fotos
+  /// em pending_photos (qualquer status exceto 'error') NÃO pode ser
+  /// apagada — as fotos são evidência de trabalho real (a row pode ter
+  /// sido zerada por outro caminho). Nesse caso o item do outbox é
+  /// ESTACIONADO (visível, sem loop) em vez de descartado.
+  static bool fantasmaDeveSerPreservado({required int fotosNaoErro}) {
+    return fotosNaoErro > 0;
   }
 
   /// Detecta o "0 rows" do PostgREST (PGRST116) de forma ROBUSTA. A lib às
@@ -722,6 +830,75 @@ class SyncEngine {
           if (temTrabalho) {
             puladas++;
             continue;
+          }
+          // GUARD CROSS-DAY (caso Brenda 21/08): o lookup acima é restrito
+          // a HOJE — uma visita de ONTEM com a MESMA PK (idTemp repete
+          // entre dias) fica invisível pra ele, mas o upsert abaixo a
+          // sobrescreveria (insertOnConflictUpdate por PK), zerando a
+          // execução de ontem; o guard de fantasma então apagava row e
+          // outbox — trabalho de ontem destruído sem nunca chegar ao
+          // servidor. Se a PK está ocupada por visita de OUTRO dia com
+          // trabalho/pendências, PULA a vaga neste ciclo: quando a antiga
+          // consolidar (pivô libera a PK), o próximo pull cria a vaga.
+          if (existente == null) {
+            final rowMesmoPk = await _db.getVisitaById(idTemp);
+            if (rowMesmoPk != null) {
+              final fotosEmVoo = await _db.getPendingPhotosEmVoo(idTemp);
+              final outboxPend = await (_db.select(_db.outboxItems)
+                    ..where((o) =>
+                        o.entityId.equals(idTemp) &
+                        (o.status.equals('pending') |
+                            o.status.equals('processing'))))
+                  .get();
+              if (vagaColideComVisitaDeOutroDia(
+                diaHoraAgendadoRow: rowMesmoPk.diaHoraAgendado,
+                inicioDiaUtc: inicioDia,
+                fimDiaUtc: fimDia,
+                temTrabalho: visitaTemTrabalho(
+                  serverId: rowMesmoPk.serverId,
+                  diaHoraAbertura: rowMesmoPk.diaHoraAbertura,
+                  statusVisita: rowMesmoPk.statusVisita,
+                ),
+                syncPending: rowMesmoPk.syncStatus == 'pending',
+                fotosEmVoo: fotosEmVoo.length,
+                outboxPendentes: outboxPend.length,
+              )) {
+                final telaAberta =
+                    (await LastVisitaService.get()) == idTemp;
+                final processando = ProcessingTracker.isActive(idTemp);
+                if (colisaoPodeRealocar(
+                  telaAberta: telaAberta,
+                  processandoAtivo: processando,
+                  fotosEmVoo: fotosEmVoo.length,
+                  outboxPendentes: outboxPend.length,
+                )) {
+                  // Nada em uso/em voo: realoca a visita antiga pra uma
+                  // PK livre (preserva 100% do trabalho, re-vincula
+                  // fotos+outbox) e libera o idTemp pra vaga de hoje —
+                  // o fluxo segue pro upsert normal logo abaixo.
+                  final novoId =
+                      await _db.realocarVisitaLocalParaIdLivre(idTemp);
+                  _logger.log(
+                      'salvar',
+                      'Colisão de PK entre dias: visita antiga '
+                      '(${rowMesmoPk.diaHoraAgendado}) REALOCADA '
+                      '$idTemp → $novoId (fotos+outbox re-vinculados); '
+                      'idTemp liberado pra vaga de hoje');
+                } else {
+                  puladas++;
+                  _logger.log(
+                      'salvar',
+                      'Vaga ADIADA (colisão de PK entre dias): '
+                      'idTemp=$idTemp ocupado por visita de '
+                      '${rowMesmoPk.diaHoraAgendado} com trabalho em uso/'
+                      'em voo (tela=$telaAberta proc=$processando '
+                      'fotos=${fotosEmVoo.length} '
+                      'outbox=${outboxPend.length}) — vaga de hoje será '
+                      'criada quando a antiga consolidar');
+                  continue;
+                }
+              }
+            }
           }
           final idAlvo = existente?.id ?? idTemp;
           // Reseta campos de execução da rodada anterior. Sem isso, em
@@ -1368,6 +1545,45 @@ class SyncEngine {
         statusVisita: visita.statusVisita,
         fotosAntesJson: visita.fotosAntesJson,
       )) {
+        // ENDURECIMENTO (caso Brenda 21/08): a row parece fantasma, mas se
+        // ainda existem fotos em pending_photos (qualquer status exceto
+        // 'error' — inclui uploaded), há trabalho real por trás: a row
+        // pode ter sido zerada por outro caminho. Apagar aqui descartava
+        // outbox + fotos e a visita nunca chegava ao servidor. Em vez de
+        // apagar, ESTACIONA o item (sem loop, visível em anomalia) e
+        // preserva row + fotos para recuperação.
+        final fotosNaoErro = await _db.countFotosNaoErroDaVisita(entityId);
+        if (fantasmaDeveSerPreservado(fotosNaoErro: fotosNaoErro)) {
+          _logger.log(
+              'outbox',
+              'FANTASMA COM FOTOS ($fotosNaoErro) — preservando visita '
+              'id=$entityId e estacionando op=${item.operation} em vez de '
+              'apagar (evidência de trabalho real)',
+              erro: true);
+          try {
+            // ignore: discarded_futures
+            AnomaliaReporter.enfileirar(
+              db: _db,
+              tipo: 'D8-fantasma-com-fotos-preservado',
+              entidadeId: entityId.toString(),
+              resumo: 'Row sem marcas de execução mas com $fotosNaoErro '
+                  'foto(s) em pending_photos — preservada em vez de apagada',
+              contextoExtra: {
+                'visitaId': entityId,
+                'operation': item.operation,
+                'fotosNaoErro': fotosNaoErro,
+                'agendado': visita.diaHoraAgendado,
+              },
+            );
+          } catch (_) {/* alerta é best-effort */}
+          await _db.updateOutboxItem(OutboxItemsCompanion(
+            id: Value(item.id),
+            status: const Value('error'),
+            lastError: const Value(
+                'fantasma-com-fotos: preservado (não descartar trabalho)'),
+          ));
+          return;
+        }
         _logger.log(
             'outbox',
             'DESCARTANDO fantasma: visita id=$entityId '
@@ -1881,8 +2097,18 @@ class SyncEngine {
       final dataSeg = _sanitizePathSegment(dataAgendadoBr);
       final nomeSeg = _sanitizePathSegment(nomeBase);
       final extSeg = _sanitizePathSegment(ext);
-      final storagePath =
-          'abastecimentos/$authUid/$dataSeg/$nomeSeg-$visitaHash-${photo.slot}-${photo.numero}.$extSeg';
+      // Nome com a DATA DA CAPTURA embutida (build 273, caso Brenda):
+      // fotos de dias diferentes nunca dividem o mesmo nome — elimina a
+      // sobrescrita no bucket quando dois dias se misturam.
+      final nomeArquivo = nomeArquivoFoto(
+        nomeSeg: nomeSeg,
+        visitaHash: visitaHash,
+        createdAt: photo.createdAt,
+        slot: photo.slot,
+        numero: photo.numero,
+        extSeg: extSeg,
+      );
+      final storagePath = 'abastecimentos/$authUid/$dataSeg/$nomeArquivo';
 
       _logger.log('photo',
           'Upload photo id=${photo.id} path=$storagePath bytes=${(await file.length())}');

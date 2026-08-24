@@ -868,6 +868,52 @@ class AppDatabase extends _$AppDatabase {
       (delete(pendingPhotos)..where((p) => p.localPath.equals(localPath)))
           .go();
 
+  /// Realoca uma visita local presa para uma PK LIVRE, re-vinculando
+  /// pending_photos e outbox_items na MESMA transação (espelho local do
+  /// consolidarVisitaNoServer). Usado pelo guard cross-day (caso Brenda)
+  /// quando a PK do idTemp de hoje está ocupada por visita de OUTRO dia
+  /// que não tem mais nada em voo (nada vai consolidá-la sozinha): mover
+  /// preserva 100% do trabalho antigo E libera a PK pra vaga de hoje —
+  /// sem isso, a vaga daquele PDV/turno ficaria bloqueada para sempre.
+  /// Retorna o novo id.
+  Future<int> realocarVisitaLocalParaIdLivre(int idOcupado) async {
+    return transaction(() async {
+      final row = await (select(visitas)
+            ..where((v) => v.id.equals(idOcupado)))
+          .getSingle();
+      // Primeiro id negativo livre abaixo do ocupado. Determinístico
+      // (mesmo estado → mesmo resultado) e sem colisão possível.
+      var novoId = idOcupado - 1;
+      while (await (select(visitas)..where((v) => v.id.equals(novoId)))
+              .getSingleOrNull() !=
+          null) {
+        novoId -= 1;
+      }
+      await into(visitas)
+          .insert(row.toCompanion(false).copyWith(id: Value(novoId)));
+      await (update(pendingPhotos)
+            ..where((p) => p.visitaId.equals(idOcupado)))
+          .write(PendingPhotosCompanion(visitaId: Value(novoId)));
+      await (update(outboxItems)..where((o) => o.entityId.equals(idOcupado)))
+          .write(OutboxItemsCompanion(entityId: Value(novoId)));
+      await (delete(visitas)..where((v) => v.id.equals(idOcupado))).go();
+      return novoId;
+    });
+  }
+
+  /// Conta fotos da visita em QUALQUER status exceto 'error' (inclui
+  /// 'uploaded'). Usado pelo endurecimento do guard de fantasma (caso
+  /// Brenda 21/08): fotos existentes = evidência de trabalho real — a
+  /// row que parece fantasma NÃO pode ser apagada.
+  Future<int> countFotosNaoErroDaVisita(int visitaId) async {
+    final rows = await (select(pendingPhotos)
+          ..where((p) =>
+              p.visitaId.equals(visitaId) &
+              p.status.equals('error').not()))
+        .get();
+    return rows.length;
+  }
+
   /// Apaga todas as pending_photos de uma visita. Usado pelo guard
   /// "descarte de visita-fantasma" do sync engine.
   Future<int> deletePendingPhotosByVisita(int visitaId) =>

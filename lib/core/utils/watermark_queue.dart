@@ -130,6 +130,105 @@ class WatermarkQueueService {
     }
   }
 
+  /// Mesma fórmula do anti-ruído do D2: a etapa do slot ainda está em
+  /// captura? (localState não avançou além da etapa daquele slot).
+  /// Pública e estática pra teste.
+  static bool parAindaEmCaptura(String slot, String localState) {
+    return (slot == 'antes' &&
+            (localState == 'idle' ||
+                localState == 'abertura' ||
+                localState == 'fotos_antes')) ||
+        (slot == 'depois' &&
+            (localState == 'fotos_depois' || localState == 'em_reposicao'));
+  }
+
+  /// Decide se um par (visita,slot) com foto em `watermark_pending` deve
+  /// ser re-enfileirado FORA do boot (recuperação periódica — casos
+  /// Adriana 20/08 e Brenda 21/08, fotos presas por horas com o app
+  /// aberto). Regra: re-enfileira quando a etapa do slot JÁ FOI concluída
+  /// (a fila deveria ter rodado e não rodou) OU quando a foto mais nova
+  /// está presa há 30+ min (localState pode ter ficado preso). Durante a
+  /// captura ativa (etapa aberta, foto recente) NÃO mexe — o watermark é
+  /// disparado pelo "Concluir" e rodar antes disso travaria a câmera em
+  /// aparelho fraco.
+  static bool deveReenfileirarPar({
+    required bool aindaCapturando,
+    required Duration idadeFotoMaisNova,
+  }) {
+    if (!aindaCapturando) return true;
+    return idadeFotoMaisNova >= const Duration(minutes: 30);
+  }
+
+  /// Recuperação PERIÓDICA de fotos travadas em `watermark_pending` — a
+  /// versão segura-com-app-em-uso do [recoverPendingOnBoot]. Antes, a
+  /// única recuperação era no boot: foto presa só destravava REINICIANDO
+  /// o app (Adriana: 4 fotos presas 2h40; Brenda: fila de ontem presa
+  /// 21h + 4 de hoje presas 2h48). Idempotente e barata: sai cedo quando
+  /// não há foto travada. Retorna quantos pares re-enfileirou.
+  Future<int> recoverStale() async {
+    try {
+      final db = _ref.read(appDatabaseProvider);
+      final stale = await db.getStaleWatermarkPending();
+      if (stale.isEmpty) return 0;
+      final session = await SessionService.getSession();
+      final promotorNome = session?.nome ?? '';
+      final agora = DateTime.now();
+      // Foto mais nova de cada par (visitaId, slot).
+      final maisNovaPorPar = <String, DateTime>{};
+      final fotoPorPar = <String, PendingPhoto>{};
+      for (final p in stale) {
+        final key = '${p.visitaId}|${p.slot}';
+        final criado = DateTime.tryParse(p.createdAt) ?? agora;
+        final atual = maisNovaPorPar[key];
+        if (atual == null || criado.isAfter(atual)) {
+          maisNovaPorPar[key] = criado;
+          fotoPorPar[key] = p;
+        }
+      }
+      var enfileirados = 0;
+      for (final entry in fotoPorPar.entries) {
+        final p = entry.value;
+        // Dedup: par já na fila em memória aguardando processamento.
+        final jaNaFila = _pending
+            .any((q) => q.visitaId == p.visitaId && q.slot == p.slot);
+        if (jaNaFila) continue;
+        final v = await db.getVisitaById(p.visitaId);
+        if (v == null) continue;
+        final aindaCapturando = parAindaEmCaptura(p.slot, v.localState);
+        final idade = agora.difference(maisNovaPorPar[entry.key]!);
+        if (!deveReenfileirarPar(
+            aindaCapturando: aindaCapturando, idadeFotoMaisNova: idade)) {
+          continue;
+        }
+        final pdvNome = v.titulo?.trim().isNotEmpty == true
+            ? v.titulo!
+            : 'PDV ${v.idPdvAssociado ?? "?"}';
+        _pending.add(_QueueItem(
+          visitaId: p.visitaId,
+          slot: p.slot,
+          pdvNome: pdvNome,
+          promotorNome: promotorNome,
+        ));
+        enfileirados++;
+      }
+      if (enfileirados > 0) {
+        await PersistentLogger.append('watermark',
+            'recoverStale: $enfileirados par(es) (visita,slot) travados '
+            're-enfileirados sem reiniciar o app');
+        // ignore: discarded_futures
+        _processNext();
+      }
+      return enfileirados;
+    } catch (e) {
+      try {
+        await PersistentLogger.append(
+            'watermark', 'recoverStale falhou: $e',
+            erro: true);
+      } catch (_) {}
+      return 0;
+    }
+  }
+
   Future<void> _processNext() async {
     if (_running) return;
     _running = true;

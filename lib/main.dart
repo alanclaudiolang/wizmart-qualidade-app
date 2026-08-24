@@ -18,6 +18,7 @@ import 'core/utils/gps_status_service.dart';
 import 'core/utils/permissions_status_service.dart';
 import 'core/utils/error_reporter.dart';
 import 'core/utils/error_classifier.dart';
+import 'core/utils/watermark_queue.dart';
 import 'core/utils/sync_logger.dart';
 import 'presentation/screens/home/home_screen.dart'
     show contadoresProvider, pdvsProvider, visitasHojeProvider;
@@ -199,11 +200,22 @@ class WizMartApp extends ConsumerStatefulWidget {
 class _WizMartAppState extends ConsumerState<WizMartApp>
     with WidgetsBindingObserver {
   StreamSubscription<AuthState>? _authSub;
+  Timer? _wmRecoveryTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Recuperação PERIÓDICA de fotos travadas em watermark_pending
+    // (casos Adriana 20/08 e Brenda 21/08): antes, foto presa só
+    // destravava reiniciando o app (recoverPendingOnBoot). Barato:
+    // sai cedo quando não há foto travada; não mexe em captura ativa
+    // (ver deveReenfileirarPar na WatermarkQueueService).
+    _wmRecoveryTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      if (!mounted) return;
+      // ignore: discarded_futures
+      ref.read(watermarkQueueProvider).recoverStale();
+    });
     // Evento de recuperação de senha vindo do deep link do e-mail
     // (wizmartapp://wizmartapp.com/recoverpassword). O supabase_flutter
     // valida o token do link e emite passwordRecovery — daqui navegamos
@@ -222,6 +234,7 @@ class _WizMartAppState extends ConsumerState<WizMartApp>
 
   @override
   void dispose() {
+    _wmRecoveryTimer?.cancel();
     _authSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -233,6 +246,13 @@ class _WizMartAppState extends ConsumerState<WizMartApp>
   /// absorvido sem efeito.
   Future<void> _kickSync() async {
     if (!mounted) return;
+    // Antes do sync: re-enfileira fotos travadas em watermark_pending
+    // (independe de rede — o processamento é local; ao terminar, a
+    // própria fila dispara o sync das fotos prontas).
+    try {
+      // ignore: discarded_futures
+      ref.read(watermarkQueueProvider).recoverStale();
+    } catch (_) {}
     if (!ref.read(connectivityProvider)) return;
     final session = await SessionService.getSession();
     final engine = ref.read(syncEngineProvider);
