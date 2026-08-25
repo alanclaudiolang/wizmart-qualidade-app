@@ -1,5 +1,23 @@
 # Publicação iOS — status e contexto consolidado
 
+## 🚀 25/08/2026 — 1.0.5 (build 273) SUBMETIDA (WAITING_FOR_REVIEW)
+
+Conteúdo: correções dos casos Adriana/Brenda (guard cross-day do
+idTemp + realocação, guard de fantasma endurecido, recuperação
+periódica da fila de watermark, data da captura no nome do arquivo) +
+fluxo implícito do Supabase Auth e FlutterDeepLinkingEnabled
+restaurados (comparação com o GitHub de 18/08). Versão ASC
+`66559de9-f048-4175-ab78-f11a9d71f6da`, build 273 VALID
+(`1debe283-...`), liberação AFTER_APPROVAL, submission
+`cccee2ca-...` em 25/08 14:37 UTC. Codemagic build
+`6a8da3caa1bdfd8d4167c4b6` (workflow `ios-testflight` — atenção: o id
+correto é este; `ios-release` não existe). Android 1.0.5(273): Azure
+run 116, AAB entregue ao Alan via
+`Arquivos/builds-loja/wizmart-1.0.5-273.aab` (o bucket `versoes-apk`
+não existe mais) para upload manual no Play Console. Obs: 1.0.4 iOS
+ficou READY_FOR_SALE (aprovada e publicada sozinha via
+AFTER_APPROVAL); o Android 272 nunca foi ao Play (superado pelo 273).
+
 ## 🚀 14/08/2026 — 1.0.4 (build 272) SUBMETIDA (WAITING_FOR_REVIEW)
 
 Blindagens do caso Douglas: rede transitória não derruba mais o app
