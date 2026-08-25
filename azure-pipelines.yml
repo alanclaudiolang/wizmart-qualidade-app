@@ -21,9 +21,9 @@ pool:
 variables:
   - group: android-signing
   - name: APP_VERSION
-    value: '1.0.4'
+    value: '1.0.5'
   - name: BUILD_NUMBER
-    value: '272'
+    value: '273'
   - name: FLUTTER_URL
     value: 'https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.44.6-stable.tar.xz'
 
