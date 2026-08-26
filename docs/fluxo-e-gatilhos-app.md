@@ -20,6 +20,25 @@
 
 ### Build 273 (preparado 24/08/2026) — casos Adriana 20/08 e Brenda 21/08
 
+0e. **(build 274) Recuperação de foto perdida — caso Yago 26/08**
+   (`visita_screen.dart`: `VisitaScreen.parseMarcadorCaptura`,
+   `VisitaScreen.podeRecuperarCaptura`, `_avisarCapturaPerdida`,
+   `_registrarFotoRecuperada`): em aparelho de pouca RAM o Android MATA
+   o app a cada abertura de câmera (Yago, Samsung A06/4GB, Android 16:
+   ~19 tentativas para 4 fotos). Quando o marcador de captura perdida
+   existe (caminho que antes SÓ avisava), o app agora chama
+   `retrieveLostData` (mecanismo oficial do image_picker, Android-only,
+   try/catch para iOS): se o Android devolver a foto, ela é registrada
+   pelo MESMO caminho do retorno normal da câmera (cópia validada, DB
+   antes do grid, fila de upload; `capturedAt` = instante real do clique
+   vindo do marcador; localização recapturada ou preservada do DB) +
+   aviso verde "Foto recuperada."; travas: só registra na MESMA visita
+   do marcador e abaixo do limite do slot. Sem lost data → comportamento
+   anterior na íntegra (log factual + aviso vermelho de 3s do Alan).
+   Aprovado pelo Alan em 26/08 após veto anterior (caso Caline) — o
+   cenário mudou com a evidência do log do Yago. Testes:
+   `caso_yago_recuperacao_captura_test.dart`.
+
 0a. **Guard cross-day no ramo idTemp do pull** (`sync_engine.dart`,
    `vagaColideComVisitaDeOutroDia` + fiação no passo 6): o idTemp
    determinístico NÃO inclui a data — a vaga de hoje nascia na MESMA PK

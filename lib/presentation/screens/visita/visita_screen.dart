@@ -39,6 +39,39 @@ class VisitaScreen extends ConsumerStatefulWidget {
   final int visitaId;
   const VisitaScreen({super.key, required this.visitaId});
 
+  /// Interpreta o marcador `'<visitaId>|<slot>|<isoTimestamp>'`. Retorna
+  /// null se o formato não bater (marcador corrompido) — nesse caso a
+  /// recuperação não roda e fica só o aviso, como antes. Pública e
+  /// estática pra teste.
+  static ({int visitaId, String slot, DateTime? capturadaEm})?
+      parseMarcadorCaptura(String marcador) {
+    final partes = marcador.split('|');
+    if (partes.length < 2) return null;
+    final id = int.tryParse(partes[0]);
+    if (id == null) return null;
+    final slot = partes[1];
+    if (slot != 'antes' && slot != 'depois') return null;
+    return (
+      visitaId: id,
+      slot: slot,
+      capturadaEm: partes.length > 2 ? DateTime.tryParse(partes[2]) : null,
+    );
+  }
+
+  /// Decide se a foto devolvida pelo Android (retrieveLostData) pode ser
+  /// registrada nesta tela: o marcador precisa ser DESTA visita (nunca
+  /// registrar foto em visita diferente da que abriu a câmera) e o slot
+  /// não pode ter estourado o limite. Pública e estática pra teste.
+  static bool podeRecuperarCaptura({
+    required int visitaIdMarcador,
+    required int visitaIdTela,
+    required int fotosNoSlot,
+    required int limite,
+  }) {
+    return visitaIdMarcador == visitaIdTela && fotosNoSlot < limite;
+  }
+
+
   @override
   ConsumerState<VisitaScreen> createState() => _VisitaScreenState();
 }
@@ -417,15 +450,80 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
     } catch (_) {}
   }
 
+  /// Conta as fotos do slot considerando a MAIOR contagem entre a tela e
+  /// o DB (mesma regra do limite em _tirarFoto, build 270/caso Caline).
+  Future<int> _contarFotosSlot(String slot) async {
+    var atual = slot == 'antes' ? _fotosAntes.length : _fotosDepois.length;
+    try {
+      final v = await _db.getVisitaById(widget.visitaId);
+      final json = slot == 'antes' ? v?.fotosAntesJson : v?.fotosDepoisJson;
+      if (json != null && json.isNotEmpty) {
+        final noDb = (jsonDecode(json) as List).length;
+        if (noDb > atual) atual = noDb;
+      }
+    } catch (_) {}
+    return atual;
+  }
+
   /// Se existe marcador de captura de uma execução ANTERIOR (o app morreu
-  /// com a câmera aberta), registra o fato no log persistente — sem causa
-  /// deduzida — e mostra o aviso de 3 segundos definido pelo Alan (11/08).
+  /// com a câmera aberta), TENTA RECUPERAR a foto que a câmera capturou
+  /// (build 274, caso Yago 26/08: Android mata o app a cada abertura de
+  /// câmera em aparelho de pouca RAM — ~19 tentativas para 4 fotos). O
+  /// `retrieveLostData` é o mecanismo oficial do image_picker para
+  /// exatamente este cenário. Recuperou → registra a foto pelo MESMO
+  /// caminho da volta normal da câmera + aviso verde. Não recuperou →
+  /// comportamento anterior na íntegra: log factual + aviso vermelho de
+  /// 3s definido pelo Alan (11/08).
   Future<void> _avisarCapturaPerdida() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final marcador = prefs.getString(capturaEmAndamentoKey);
       if (marcador == null) return;
       await prefs.remove(capturaEmAndamentoKey);
+
+      // ── Tentativa de recuperação (só Android; no iOS o image_picker
+      //    não implementa lost data — cai direto no aviso) ──
+      final info = VisitaScreen.parseMarcadorCaptura(marcador);
+      XFile? arquivo;
+      if (info != null && Platform.isAndroid) {
+        try {
+          final lost = await _picker.retrieveLostData();
+          if (lost.file != null) {
+            arquivo = lost.file;
+          } else if (lost.files != null && lost.files!.isNotEmpty) {
+            arquivo = lost.files!.last;
+          }
+        } catch (_) {
+          arquivo = null; // sem lost data → segue pro aviso
+        }
+      }
+      if (arquivo != null && info != null) {
+        final limite = info.slot == 'antes'
+            ? AppConstants.maxFotosAntes
+            : AppConstants.maxFotosDepois;
+        final fotosNoSlot = await _contarFotosSlot(info.slot);
+        final f = File(arquivo.path);
+        final tamanho = await f.exists() ? await f.length() : 0;
+        if (tamanho > 0 &&
+            VisitaScreen.podeRecuperarCaptura(
+              visitaIdMarcador: info.visitaId,
+              visitaIdTela: widget.visitaId,
+              fotosNoSlot: fotosNoSlot,
+              limite: limite,
+            )) {
+          await _registrarFotoRecuperada(
+              arquivo, info.slot, fotosNoSlot, info.capturadaEm, marcador);
+          return;
+        }
+        await PersistentLogger.append(
+            'foto',
+            'lost data devolvido mas NÃO registrado (visita marcador='
+            '${info.visitaId} tela=${widget.visitaId} slot=${info.slot} '
+            'fotos=$fotosNoSlot/$limite tamanho=$tamanho) — mantém aviso',
+            erro: true);
+      }
+
+      // ── Sem recuperação: comportamento anterior na íntegra ──
       await PersistentLogger.append(
           'foto',
           'foto não captada: câmera aberta e nenhum resultado recebido '
@@ -438,6 +536,68 @@ class _VisitaScreenState extends ConsumerState<VisitaScreen> {
         duration: Duration(seconds: 3),
       ));
     } catch (_) {}
+  }
+
+  /// Registra a foto recuperada pelo MESMO caminho do retorno normal da
+  /// câmera (_tirarFoto pós-picked): cópia validada pro diretório do app,
+  /// DB antes do grid, fila de upload. `capturadaEm` vem do marcador (o
+  /// instante real do clique); localização: tenta capturar agora (o
+  /// promotor continua no PDV) e, falhando, preserva a já gravada no DB
+  /// para não sobrescrever com null.
+  Future<void> _registrarFotoRecuperada(XFile picked, String slot,
+      int fotosNoSlot, DateTime? capturadaEm, String marcador) async {
+    final logger = ref.read(syncLoggerProvider.notifier);
+    final capturedAt = capturadaEm ?? DateTime.now();
+    var loc = await _capturarLocalizacao();
+    if (loc == null) {
+      final v = await _db.getVisitaById(widget.visitaId);
+      loc = slot == 'antes'
+          ? v?.localizacaoFotosAntes
+          : v?.localizacaoFotosDepois;
+    }
+
+    final docs = await getApplicationDocumentsDirectory();
+    final outDir = '${docs.path}/wizmart_fotos';
+    await Directory(outDir).create(recursive: true);
+    final ext = picked.path.split('.').last;
+    final rawPath = '$outDir/${const Uuid().v4()}_raw.$ext';
+    await File(picked.path).copy(rawPath);
+    final f = File(rawPath);
+    final exists = await f.exists();
+    final size = exists ? await f.length() : 0;
+    if (!exists || size <= 0) {
+      logger.log('foto',
+          'Recuperação: cópia falhou exists=$exists size=$size',
+          erro: true);
+      return;
+    }
+
+    final novaLista = slot == 'antes'
+        ? [..._fotosAntes, rawPath]
+        : [..._fotosDepois, rawPath];
+    await _persistirListaEMetadados(slot, novaLista, loc, capturedAt);
+    await _enfileirarUploadFoto(rawPath, slot, fotosNoSlot + 1, capturedAt);
+
+    await PersistentLogger.append(
+        'foto',
+        'foto RECUPERADA via lost data: câmera capturou durante morte do '
+        'app e o Android devolveu o arquivo (marcador: $marcador, '
+        '${(size / 1024).toStringAsFixed(0)}KB, slot=$slot '
+        'n=${fotosNoSlot + 1})');
+
+    if (!mounted) return;
+    setState(() {
+      if (slot == 'antes') {
+        _fotosAntes = novaLista;
+      } else {
+        _fotosDepois = novaLista;
+      }
+    });
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Foto recuperada.'),
+      backgroundColor: AppColors.primary,
+      duration: Duration(seconds: 3),
+    ));
   }
 
   // ── Localização ────────────────────────────────────────────────────────────
