@@ -8,6 +8,18 @@ on:
       - '**.md'
       - 'docs/**'
   workflow_dispatch:
+    inputs:
+      canal:
+        description: >-
+          Só na branch transicao: 'transicao' publica o release de
+          staging v-transicao; 'latest' publica no v-latest (VIRADA —
+          todo build 262 em campo passa a ver o bloqueio).
+        type: choice
+        required: true
+        default: transicao
+        options:
+          - transicao
+          - latest
 
 jobs:
   build:
@@ -175,7 +187,7 @@ jobs:
             --target ${{ github.sha }}
 
       - name: Publicar release v-transicao (STAGING da migração)
-        if: github.ref == 'refs/heads/transicao'
+        if: github.ref == 'refs/heads/transicao' && inputs.canal != 'latest'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -186,6 +198,23 @@ jobs:
             --title "Build transitório 299 — migração para a Play Store" \
             --notes "STAGING — os promotores NÃO veem este release (eles leem v-latest). Na virada (sexta), copiar estes assets para o v-latest." \
             --prerelease \
+            --target ${{ github.sha }}
+
+      - name: VIRADA — publicar build de bloqueio no v-latest
+        # Só por disparo manual com canal=latest na branch transicao.
+        # Sem [FORCE-UPDATE]: o 262 usa a regra nativa D+1 (BUILD_TIME
+        # de 24/06/2026 já venceu → bloqueio obrigatório no 1º acesso
+        # online na home ou na tela de login).
+        if: github.ref == 'refs/heads/transicao' && inputs.canal == 'latest'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete v-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create v-latest \
+            "${{ steps.meta.outputs.apk_name }}" \
+            "${{ steps.meta.outputs.fixed_name }}" \
+            --title "Promotor Wizmart v${{ steps.meta.outputs.version }} (build 299) — bloqueio: instale pela Play Store" \
+            --notes "Build de BLOQUEIO do canal antigo (commit ${{ github.sha }} em ${{ steps.meta.outputs.build_time }}). Ao abrir, o app só mostra o passo a passo para instalar pela Play Store." \
             --target ${{ github.sha }}
 
       - name: Publicar release v-dev (TESTE)

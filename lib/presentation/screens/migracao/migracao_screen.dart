@@ -1,15 +1,16 @@
 // lib/presentation/screens/migracao/migracao_screen.dart
 //
-// BUILD TRANSITÓRIO (299) — existe SÓ no canal GitHub (v-latest), para
-// migrar a frota 257/262 para a Play Store (a assinatura da loja é
-// outra, então não há update por cima: o caminho é sincronizar →
+// BUILD DE BLOQUEIO (299) — existe SÓ no canal antigo (release v-latest),
+// para tirar a frota do build 262 e levá-la à Play Store (a assinatura
+// da loja é outra, então não há update por cima: o caminho é
 // desinstalar → instalar da loja).
 //
-// O app inteiro vira esta tela:
-//   - Enquanto houver pendências locais (visitas/fotos não enviadas),
-//     mantém o sync rodando e pede pra aguardar com o app aberto.
-//   - Quando zera (ou não há sessão), mostra o passo a passo com o
-//     link clicável da loja.
+// O app inteiro vira esta tela. Decisão do Alan (14/09/2026): o bloqueio
+// vale MESMO com pendências locais — o botão da loja aparece sempre. O
+// sync continua rodando em segundo plano (melhor esforço) enquanto a
+// tela estiver aberta, e um aviso discreto mostra quantas visitas ainda
+// faltam enviar, pedindo para manter o app aberto alguns minutos antes
+// de apagar. Nenhuma outra rota do app é alcançável.
 
 import 'dart:async';
 
@@ -42,6 +43,7 @@ class _MigracaoScreenState extends ConsumerState<MigracaoScreen> {
         Timer.periodic(const Duration(seconds: 45), (_) => _kickSync());
   }
 
+  /// Sync de melhor esforço: nunca bloqueia a tela nem o botão da loja.
   Future<void> _kickSync() async {
     if (_syncRodando) return;
     _syncRodando = true;
@@ -64,136 +66,148 @@ class _MigracaoScreenState extends ConsumerState<MigracaoScreen> {
     super.dispose();
   }
 
+  Future<void> _abrirLoja() async {
+    try {
+      await launchUrl(Uri.parse(_lojaUrl),
+          mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     final db = ref.read(appDatabaseProvider);
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: StreamBuilder<int>(
-          stream: db.watchVisitasComPendencia(),
-          builder: (context, snap) {
-            if (!snap.hasData) {
-              return const Center(
-                  child:
-                      CircularProgressIndicator(color: AppColors.primary));
-            }
-            final pend = snap.data!;
-            return SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 24, vertical: 32),
-              child: pend > 0 ? _telaAguarde(pend) : _telaMigrar(),
-            );
-          },
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(
+          child: StreamBuilder<int>(
+            stream: db.watchVisitasComPendencia(),
+            builder: (context, snap) {
+              final pend = snap.data ?? 0;
+              return SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 24, vertical: 28),
+                child: _telaBloqueio(pend),
+              );
+            },
+          ),
         ),
       ),
     );
   }
 
-  Widget _telaAguarde(int pend) {
+  Widget _telaBloqueio(int pend) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: 40),
-        const Icon(Icons.cloud_upload_outlined,
-            size: 64, color: AppColors.primary),
-        const SizedBox(height: 24),
+        const SizedBox(height: 8),
+        const Icon(Icons.warning_amber_rounded,
+            size: 60, color: AppColors.danger),
+        const SizedBox(height: 14),
         const Text(
-          'Enviando seus dados...',
+          'Urgente: esta versão do app foi desativada',
           textAlign: TextAlign.center,
           style: TextStyle(
               color: AppColors.textPrimary,
               fontSize: 22,
               fontWeight: FontWeight.bold),
         ),
-        const SizedBox(height: 16),
-        Text(
-          'Falta enviar $pend visita(s) para o servidor.\n\n'
-          'Mantenha o app ABERTO e com internet até este número zerar. '
-          'Quando terminar, esta tela vai mostrar como instalar o novo '
-          'aplicativo da loja.',
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-              color: AppColors.textSecondary, fontSize: 15, height: 1.5),
-        ),
-        const SizedBox(height: 32),
-        const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        ),
-      ],
-    );
-  }
-
-  Widget _telaMigrar() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SizedBox(height: 16),
-        const Icon(Icons.celebration_outlined,
-            size: 56, color: AppColors.primary),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
         const Text(
-          'O Promotor Wizmart agora está na Play Store!',
+          'Você está em uma versão muito antiga do app Promotor Wizmart e '
+          'ela não funciona mais. Para continuar registrando suas '
+          'visitas, instale o aplicativo novo pela Play Store '
+          '(leva 2 minutos):',
           textAlign: TextAlign.center,
           style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 21,
-              fontWeight: FontWeight.bold),
+              color: AppColors.textSecondary, fontSize: 15, height: 1.45),
         ),
-        const SizedBox(height: 8),
-        const Text(
-          'Seus dados já foram todos enviados. Siga os 3 passos abaixo '
-          'para trocar para o aplicativo novo (leva 2 minutos):',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-              color: AppColors.textSecondary, fontSize: 15, height: 1.4),
-        ),
-        const SizedBox(height: 28),
+        const SizedBox(height: 24),
         _passo(
           numero: '1',
-          child: SizedBox(
-            height: 52,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () async {
-                try {
-                  await launchUrl(Uri.parse(_lojaUrl),
-                      mode: LaunchMode.externalApplication);
-                } catch (_) {}
-              },
-              icon: const Icon(Icons.shop),
-              label: const Text('Abrir a página do app na loja',
-                  style: TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600)),
-            ),
-          ),
-        ),
-        const SizedBox(height: 18),
-        _passo(
-          numero: '2',
           child: const Text(
-            'Desinstale ESTE aplicativo.\nSuas fotos com marca d\'água '
-            'continuam salvas na galeria do celular.',
+            'Apague ESTE aplicativo do celular.\nSuas fotos com marca '
+            'd\'água continuam salvas na galeria.',
             style: TextStyle(
                 color: AppColors.textPrimary, fontSize: 15, height: 1.4),
           ),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 16),
+        _passo(
+          numero: '2',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Instale pelo Google Play:',
+                style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 15,
+                    height: 1.4),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 52,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF16A34A),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: _abrirLoja,
+                  icon: const Icon(Icons.shop),
+                  label: const Text('Atualizar pela Play Store',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
         _passo(
           numero: '3',
           child: const Text(
-            'Na página da loja, toque em INSTALAR e entre com seu '
-            'e-mail e senha de sempre.',
+            'Abra o app novo e entre com seu e-mail e senha de sempre.',
             style: TextStyle(
                 color: AppColors.textPrimary, fontSize: 15, height: 1.4),
           ),
         ),
-        const SizedBox(height: 28),
+        if (pend > 0) ...[
+          const SizedBox(height: 22),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: AppColors.primary),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Ainda enviando $pend visita(s) ao servidor em segundo '
+                    'plano. Se puder, deixe o app aberto com internet por '
+                    'alguns minutos antes de apagar.',
+                    style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                        height: 1.4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 24),
         const Text(
           'Dúvidas? Fale com seu supervisor.',
           textAlign: TextAlign.center,
@@ -205,7 +219,7 @@ class _MigracaoScreenState extends ConsumerState<MigracaoScreen> {
 
   Widget _passo({required String numero, required Widget child}) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
           width: 34,
